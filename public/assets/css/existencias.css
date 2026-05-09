@@ -1,0 +1,241 @@
+body {
+    background: #eef2f7;
+}
+
+/* ===== RESUMEN ===== */
+.existencias-resumen-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.existencia-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.existencia-card span {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.existencia-card strong {
+    font-size: 24px;
+    color: #0f172a;
+}
+
+.existencia-card.warning strong {
+    color: #d97706;
+}
+
+.existencia-card.danger strong {
+    color: #dc2626;
+}
+
+.existencia-card.money strong {
+    color: #16a34a;
+}
+
+/* ===== FILTROS ===== */
+.existencias-filter-card {
+    background: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.06);
+}
+
+.existencias-filter-form {
+    display: grid;
+    grid-template-columns: 1.8fr 240px 220px auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.existencia-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.existencia-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.existencia-field input,
+.existencia-field select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 9px;
+    font-size: 13px;
+    background: #f9fafb;
+    outline: none;
+    transition: 0.2s ease;
+}
+
+.existencia-field input:focus,
+.existencia-field select:focus {
+    border-color: #2563eb;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.existencias-actions {
+    display: flex;
+    gap: 8px;
+    align-items: end;
+}
+
+/* ===== BOTONES ===== */
+.btn-primary-action {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-primary-action:hover {
+    background: #1d4ed8;
+}
+
+.btn-secondary-action {
+    background: #e5e7eb;
+    color: #111827;
+    border: none;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-secondary-action:hover {
+    background: #d1d5db;
+}
+
+/* ===== TABLA ===== */
+.tabla-existencias {
+    min-width: 1400px;
+    border-collapse: collapse;
+}
+
+.tabla-existencias th {
+    background: #0f172a;
+    color: #fff;
+    padding: 10px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.tabla-existencias td {
+    padding: 10px;
+    font-size: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+}
+
+.tabla-existencias tr:hover {
+    background: #f3f4f6;
+}
+
+.descripcion-cell {
+    min-width: 260px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.existencia-number {
+    font-weight: 800;
+    color: #0f172a;
+}
+
+/* ===== BADGES ===== */
+.stock-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.estado-normal {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.estado-bajo {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.estado-sin {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1350px) {
+    .existencias-resumen-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .existencias-filter-form {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .existencias-actions {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 800px) {
+    .existencias-resumen-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .existencias-filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .existencias-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+@media (max-width: 520px) {
+    .existencias-resumen-grid {
+        grid-template-columns: 1fr;
+    }
+}

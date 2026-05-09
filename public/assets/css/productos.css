@@ -1,0 +1,85 @@
+.erp-container {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.form-group-full {
+    grid-column: 1 / -1;
+}
+
+.search-form {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 580px;
+}
+
+.search-form input {
+    flex: 1;
+    min-width: 230px;
+    padding: 11px 12px;
+    border: 1px solid #cfd8e3;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-buttons form {
+    margin: 0;
+}
+
+.action-buttons a,
+.action-buttons button {
+    min-width: 80px;
+    text-align: center;
+}
+
+@media (max-width: 1100px) {
+    .erp-container {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-group-full {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .search-form {
+        max-width: 100%;
+    }
+
+    .search-form input {
+        min-width: 100%;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .action-buttons a,
+    .action-buttons button {
+        width: 100%;
+    }
+}

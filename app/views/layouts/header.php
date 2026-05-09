@@ -38,7 +38,10 @@ $moduleCss = $moduleCss ?? null;
         <a href="existencias.php">Existencias</a>
         <a href="kardex.php">Kardex</a>
         <a href="reportes.php">Reportes</a>
+        <a href="historial_entradas.php">Historial de Entradas</a>
         <a href="historial_salidas.php">Historial Salidas</a>
+        <a href="inventario_fisico.php">Inventario Físico</a>
+        
     </nav>
     <?php endif; ?>
 

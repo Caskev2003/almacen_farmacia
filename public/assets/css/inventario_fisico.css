@@ -1,0 +1,269 @@
+.inventario-screen {
+    padding: 24px;
+}
+
+.inventario-card {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.inventario-card h2 {
+    margin: 0 0 8px;
+}
+
+.inventario-card p {
+    color: #666;
+    margin-bottom: 18px;
+}
+
+.grupo-input-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.grupo-input-box input {
+    height: 44px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 0 14px;
+    font-size: 15px;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #222;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.chip button {
+    border: none;
+    background: #fff;
+    color: #222;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.acciones {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.acciones button {
+    border: none;
+    background: #222;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+/* HOJA CARTA */
+.hoja-inventario {
+    width: 216mm;
+    min-height: 279mm;
+    background: white;
+    margin: 20px auto;
+    padding: 7mm 16mm 5mm;
+    box-sizing: border-box;
+    font-family: "Times New Roman", serif;
+    color: #222;
+}
+
+/* ENCABEZADO MÁS COMPACTO */
+.encabezado {
+    width: 150mm;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 38mm 1fr;
+    align-items: start;
+    column-gap: 4mm;
+}
+
+.encabezado img {
+    width: 70px;
+    margin-top: -2mm;
+    margin-left: -3mm;
+    justify-self: start;
+}
+
+.titulo {
+    text-align: center;
+    min-width: 0;
+    padding-top: 2mm;
+}
+
+.titulo h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: .4px;
+}
+
+.titulo h2 {
+    margin: 1px 0 0;
+    font-size: 15px;
+    letter-spacing: 6px;
+    font-weight: 700;
+}
+
+/* FECHA UN POCO MÁS ABAJO */
+.fecha-linea {
+    margin-top: 7mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.fecha-linea div {
+    width: 250px;
+    border-bottom: 3px solid #222;
+    height: 10px;
+}
+
+.equipo-linea {
+    margin: 3mm auto 2mm;
+    width: 150mm;
+    font-size: 10px;
+}
+
+.tabla-inventario {
+    width: 150mm;
+    margin: 0 auto;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.tabla-inventario th {
+    background: #333;
+    color: white;
+    border: 2px solid #333;
+    font-size: 11px;
+    padding: 1px 2px;
+    text-align: center;
+    letter-spacing: .5px;
+}
+
+.tabla-inventario td {
+    border: 2px solid #333;
+    height: 5.7mm;
+    font-size: 10px;
+    text-align: center;
+    padding: 0 3px;
+}
+
+.tabla-inventario th:nth-child(1),
+.tabla-inventario td:nth-child(1) {
+    width: 38mm;
+}
+
+.tabla-inventario th:nth-child(2),
+.tabla-inventario td:nth-child(2),
+.tabla-inventario th:nth-child(3),
+.tabla-inventario td:nth-child(3),
+.tabla-inventario th:nth-child(4),
+.tabla-inventario td:nth-child(4),
+.tabla-inventario th:nth-child(5),
+.tabla-inventario td:nth-child(5) {
+    width: 28mm;
+}
+
+.firmas {
+    width: 150mm;
+    margin: 0 auto;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.firmas td {
+    border: 2px solid #333;
+    text-align: center;
+    font-weight: 700;
+}
+
+.firmas tr:first-child td {
+    height: 12mm;
+    vertical-align: top;
+    padding-top: 3px;
+    font-size: 10px;
+}
+
+.firmas tr:last-child td {
+    height: 5mm;
+    font-size: 9px;
+}
+
+.equipo-final {
+    width: 150mm;
+    margin: 4px auto 0;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 11px;
+}
+
+.equipo-final span {
+    flex: 1;
+    border-bottom: 2px solid #222;
+    height: 14px;
+    margin-top: 6px;
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    .hoja-inventario,
+    .hoja-inventario * {
+        visibility: visible;
+    }
+
+    .hoja-inventario {
+        position: absolute;
+        left: 0;
+        top: 0;
+        margin: 0;
+        box-shadow: none;
+        width: 216mm;
+        min-height: 279mm;
+        padding: 6mm 16mm 4mm;
+        box-sizing: border-box;
+    }
+
+    .no-print,
+    header,
+    nav,
+    aside,
+    .sidebar {
+        display: none !important;
+    }
+
+    @page {
+        size: Letter;
+        margin: 0;
+    }
+}

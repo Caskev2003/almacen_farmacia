@@ -153,8 +153,17 @@ class SalidaController
         return $this->movimientoModel->obtenerSalidaPorId($movimientoId);
     }
 
-    public function historialSalidas(string $buscar = ''): array
-    {
-        return $this->movimientoModel->historialSalidas($buscar);
-    }
+    public function historialSalidas(
+    string $buscar = '',
+    int $almacenId = 0,
+    string $fechaInicio = '',
+    string $fechaFinal = ''
+): array {
+    return $this->movimientoModel->historialSalidas(
+        trim($buscar),
+        $almacenId,
+        trim($fechaInicio),
+        trim($fechaFinal)
+    );
+}
 }

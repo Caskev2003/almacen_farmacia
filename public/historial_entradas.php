@@ -44,10 +44,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <strong><?= number_format((int)$resumen['total_unidades']) ?></strong>
     </div>
 
-    <div class="historial-card money">
-        <span>Total ingresado</span>
-        <strong>$<?= number_format((float)$resumen['total_importe'], 2) ?></strong>
-    </div>
+    
 </div>
 
 <div class="historial-filter-card">

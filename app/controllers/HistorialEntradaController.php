@@ -8,6 +8,10 @@ class HistorialEntradaController
 
     public function __construct()
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $this->movimientoModel = new Movimiento();
     }
 
@@ -22,6 +26,15 @@ class HistorialEntradaController
         string $fechaInicio = '',
         string $fechaFinal = ''
     ): array {
+        $usuario = $_SESSION['user'] ?? [];
+
+        $rol = $usuario['rol'] ?? '';
+        $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
+
+        if ($rol !== 'ADMINISTRADOR') {
+            $almacenId = $almacenSesion;
+        }
+
         return $this->movimientoModel->historialEntradas(
             trim($buscar),
             $almacenId,

@@ -8,6 +8,10 @@ class SalidaController
 
     public function __construct()
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $this->movimientoModel = new Movimiento();
     }
 
@@ -51,8 +55,18 @@ class SalidaController
         $tipoSalida = trim($postData['tipo_salida'] ?? '');
         $tipoOperacion = trim($postData['tipo_operacion'] ?? '');
         $folioOperacion = trim($postData['folio_operacion'] ?? '');
-        $almacenId = trim($postData['almacen_id'] ?? '');
         $observaciones = trim($postData['observaciones'] ?? '');
+
+        $usuario = $_SESSION['user'] ?? [];
+
+        $rol = $usuario['rol'] ?? '';
+        $almacenSesion = $usuario['almacen_id'] ?? null;
+
+        if ($rol === 'ADMINISTRADOR') {
+            $almacenId = trim($postData['almacen_id'] ?? '');
+        } else {
+            $almacenId = $almacenSesion;
+        }
 
         $productoIds = $postData['producto_id'] ?? [];
         $cantidades = $postData['cantidad'] ?? [];
@@ -83,8 +97,14 @@ class SalidaController
             ];
         }
 
-        if ($almacenId === '') {
-            return ['success' => false, 'message' => 'Debes seleccionar un almacén.'];
+        if (empty($almacenId)) {
+            return ['success' => false, 'message' => 'No tienes un almacén asignado.'];
+        }
+
+        $almacenId = (int)$almacenId;
+
+        if ($almacenId <= 0) {
+            return ['success' => false, 'message' => 'El almacén asignado no es válido.'];
         }
 
         if (empty($productoIds)) {
@@ -94,6 +114,7 @@ class SalidaController
         $detalle = [];
 
         foreach ($productoIds as $i => $productoId) {
+
             $productoId = (int)$productoId;
             $cantidad = isset($cantidades[$i]) ? (int)$cantidades[$i] : 0;
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
@@ -105,11 +126,17 @@ class SalidaController
             }
 
             if ($cantidad <= 0) {
-                return ['success' => false, 'message' => 'La cantidad debe ser mayor a 0 en todos los productos.'];
+                return [
+                    'success' => false,
+                    'message' => 'La cantidad debe ser mayor a 0 en todos los productos.'
+                ];
             }
 
             if ($precio < 0 || $costo < 0) {
-                return ['success' => false, 'message' => 'Costo o precio inválido.'];
+                return [
+                    'success' => false,
+                    'message' => 'Costo o precio inválido.'
+                ];
             }
 
             $detalle[] = [
@@ -118,16 +145,21 @@ class SalidaController
                 'costo_unitario' => $costo,
                 'precio_unitario' => $precio,
                 'ubicacion' => $ubicacion,
+                'almacen_id' => $almacenId,
             ];
         }
 
         if (count($detalle) === 0) {
-            return ['success' => false, 'message' => 'No hay productos válidos para guardar.'];
+            return [
+                'success' => false,
+                'message' => 'No hay productos válidos para guardar.'
+            ];
         }
 
         $observacionesFinales = $observaciones;
 
         if ($folioOperacion !== '') {
+
             $textoFolio = 'Folio ' . strtolower($tipoOperacion) . ': ' . $folioOperacion;
 
             if ($observacionesFinales !== '') {
@@ -154,16 +186,26 @@ class SalidaController
     }
 
     public function historialSalidas(
-    string $buscar = '',
-    int $almacenId = 0,
-    string $fechaInicio = '',
-    string $fechaFinal = ''
-): array {
-    return $this->movimientoModel->historialSalidas(
-        trim($buscar),
-        $almacenId,
-        trim($fechaInicio),
-        trim($fechaFinal)
-    );
-}
+        string $buscar = '',
+        int $almacenId = 0,
+        string $fechaInicio = '',
+        string $fechaFinal = ''
+    ): array {
+
+        $usuario = $_SESSION['user'] ?? [];
+
+        $rol = $usuario['rol'] ?? '';
+        $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
+
+        if ($rol !== 'ADMINISTRADOR') {
+            $almacenId = $almacenSesion;
+        }
+
+        return $this->movimientoModel->historialSalidas(
+            trim($buscar),
+            $almacenId,
+            trim($fechaInicio),
+            trim($fechaFinal)
+        );
+    }
 }

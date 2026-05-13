@@ -8,6 +8,10 @@ class ExistenciaController
 
     public function __construct()
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $this->productoModel = new Producto();
     }
 
@@ -18,6 +22,15 @@ class ExistenciaController
 
     public function index(string $buscar = '', int $almacenId = 0, string $estadoStock = ''): array
     {
+        $usuario = $_SESSION['user'] ?? [];
+
+        $rol = $usuario['rol'] ?? '';
+        $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
+
+        if ($rol !== 'ADMINISTRADOR') {
+            $almacenId = $almacenSesion;
+        }
+
         return $this->productoModel->getExistencias(
             trim($buscar),
             $almacenId,

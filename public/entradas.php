@@ -110,14 +110,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field">
                 <label>Proveedor</label>
-                <select name="proveedor_id">
-                    <option value="">Seleccione un proveedor</option>
-                    <?php foreach ($proveedores as $proveedor): ?>
-                        <option value="<?= (int)$proveedor['id'] ?>">
-                            <?= e($proveedor['nombre']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
+
+                <input
+                        type="text"
+                        name="proveedor_nombre"
+                        placeholder="Ingrese el nombre del proveedor"
+                >
             </div>
 
             <div class="salida-field">

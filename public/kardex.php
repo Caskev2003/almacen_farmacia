@@ -11,8 +11,18 @@ $model = new Movimiento();
 $productos = $model->getProductosActivos();
 $almacenes = $model->getAlmacenes();
 
+$usuario = $_SESSION['user'] ?? [];
+$rol = $usuario['rol'] ?? '';
+$almacenSesion = (int)($usuario['almacen_id'] ?? 0);
+
 $productoId = isset($_GET['producto_id']) ? (int)$_GET['producto_id'] : 0;
-$almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
+
+if ($rol === 'ADMINISTRADOR') {
+    $almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
+} else {
+    $almacenId = $almacenSesion;
+}
+
 $fechaInicio = $_GET['fecha_inicio'] ?? date('Y-m-01');
 $fechaFinal = $_GET['fecha_final'] ?? date('Y-m-d');
 
@@ -27,7 +37,11 @@ foreach ($almacenes as $almacen) {
     }
 }
 
-if ($productoId > 0) {
+if ($rol !== 'ADMINISTRADOR' && $almacenId <= 0) {
+    $almacenSeleccionado = 'SIN ALMACÉN ASIGNADO';
+}
+
+if ($productoId > 0 && ($rol === 'ADMINISTRADOR' || $almacenId > 0)) {
     $kardex = $model->generarKardex($productoId, $almacenId, $fechaInicio, $fechaFinal);
 
     foreach ($productos as $producto) {
@@ -122,7 +136,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #f8fafc;
 }
 
-/* Ocultar partes de impresión en pantalla */
 .print-header,
 .print-info,
 .print-line,
@@ -131,9 +144,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     display: none;
 }
 
-/* =========================
-   IMPRESIÓN HORIZONTAL
-========================= */
 @media print {
     @page {
         size: A4 landscape;
@@ -181,7 +191,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         display: none !important;
     }
 
-    /* ENCABEZADO */
     .print-header {
         position: relative !important;
         display: flex !important;
@@ -191,7 +200,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         min-height: 62px !important;
     }
 
-    /* LOGO + EMPRESA A LA IZQUIERDA */
     .print-left {
         display: flex !important;
         align-items: center !important;
@@ -222,7 +230,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         text-transform: uppercase !important;
     }
 
-    /* TÍTULO CENTRADO REAL */
     .print-title-box {
         position: absolute !important;
         left: 50% !important;
@@ -346,14 +353,24 @@ include __DIR__ . '/../app/views/layouts/header.php';
     <form method="GET" class="kardex-filtros">
         <div class="kardex-field">
             <label>Almacén</label>
-            <select name="almacen_id">
-                <option value="0">TODOS</option>
+            <select name="almacen_id" <?= $rol !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
+                <?php if ($rol === 'ADMINISTRADOR'): ?>
+                    <option value="0">TODOS</option>
+                <?php endif; ?>
+
                 <?php foreach ($almacenes as $almacen): ?>
-                    <option value="<?= (int)$almacen['id'] ?>" <?= $almacenId === (int)$almacen['id'] ? 'selected' : '' ?>>
+                    <option 
+                        value="<?= (int)$almacen['id'] ?>" 
+                        <?= $almacenId === (int)$almacen['id'] ? 'selected' : '' ?>
+                    >
                         <?= e($almacen['nombre']) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
+
+            <?php if ($rol !== 'ADMINISTRADOR'): ?>
+                <input type="hidden" name="almacen_id" value="<?= (int)$almacenId ?>">
+            <?php endif; ?>
         </div>
 
         <div class="kardex-field">
@@ -361,7 +378,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <select name="producto_id" required>
                 <option value="">Seleccione producto</option>
                 <?php foreach ($productos as $producto): ?>
-                    <option value="<?= (int)$producto['id'] ?>" <?= $productoId === (int)$producto['id'] ? 'selected' : '' ?>>
+                    <option 
+                        value="<?= (int)$producto['id'] ?>" 
+                        <?= $productoId === (int)$producto['id'] ? 'selected' : '' ?>
+                    >
                         <?= e($producto['codigo']) ?> - <?= e($producto['descripcion']) ?>
                     </option>
                 <?php endforeach; ?>

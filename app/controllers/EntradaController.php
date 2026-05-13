@@ -8,6 +8,10 @@ class EntradaController
 
     public function __construct()
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $this->movimientoModel = new Movimiento();
     }
 
@@ -30,12 +34,12 @@ class EntradaController
     {
         return $this->movimientoModel->generarFolioEntrada();
     }
-    
+
     public function obtenerEntrada(int $id): ?array
     {
-    return $this->movimientoModel->obtenerEntradaPorId($id);
+        return $this->movimientoModel->obtenerEntradaPorId($id);
     }
-    
+
     public function tiposEntrada(): array
     {
         return [
@@ -60,10 +64,19 @@ class EntradaController
         $fecha = trim($postData['fecha'] ?? '');
         $folioAnterior = trim($postData['folio_anterior'] ?? '');
         $tipoEntrada = trim($postData['tipo_entrada'] ?? '');
-        $almacenId = trim($postData['almacen_id'] ?? '');
         $proveedorId = trim($postData['proveedor_id'] ?? '');
         $referencia = trim($postData['referencia'] ?? '');
         $observaciones = trim($postData['observaciones'] ?? '');
+
+        $usuario = $_SESSION['user'] ?? [];
+        $rol = $usuario['rol'] ?? '';
+        $almacenSesionId = $usuario['almacen_id'] ?? null;
+
+        if ($rol === 'ADMINISTRADOR') {
+            $almacenId = trim($postData['almacen_id'] ?? '');
+        } else {
+            $almacenId = $almacenSesionId;
+        }
 
         $productoIds = $postData['producto_id'] ?? [];
         $cantidades = $postData['cantidad'] ?? [];
@@ -84,8 +97,14 @@ class EntradaController
             return ['success' => false, 'message' => 'Debes seleccionar el tipo de entrada.'];
         }
 
-        if ($almacenId === '') {
-            return ['success' => false, 'message' => 'Debes seleccionar un almacén.'];
+        if (empty($almacenId)) {
+            return ['success' => false, 'message' => 'No tienes un almacén asignado.'];
+        }
+
+        $almacenId = (int)$almacenId;
+
+        if ($almacenId <= 0) {
+            return ['success' => false, 'message' => 'El almacén asignado no es válido.'];
         }
 
         if (empty($productoIds)) {
@@ -121,6 +140,7 @@ class EntradaController
                 'numero_lote' => $lote,
                 'fecha_caducidad' => $caducidad,
                 'ubicacion' => $ubicacion,
+                'almacen_id' => $almacenId,
             ];
         }
 
@@ -129,9 +149,11 @@ class EntradaController
         }
 
         $referenciaFinal = $tipoEntrada;
+
         if ($folioAnterior !== '') {
             $referenciaFinal .= ' | Folio anterior: ' . $folioAnterior;
         }
+
         if ($referencia !== '') {
             $referenciaFinal .= ' | Ref: ' . $referencia;
         }
@@ -141,7 +163,7 @@ class EntradaController
             'tipo_movimiento' => 'ENTRADA',
             'fecha' => $fecha,
             'almacen_id' => $almacenId,
-            'proveedor_id' => $proveedorId,
+            'proveedor_id' => $proveedorId !== '' ? $proveedorId : null,
             'referencia' => $referenciaFinal,
             'observaciones' => $observaciones,
             'usuario_id' => $usuarioId,

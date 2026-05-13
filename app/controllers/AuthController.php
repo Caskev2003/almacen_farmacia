@@ -48,7 +48,8 @@ class AuthController
             'nombre' => $user['nombre'],
             'usuario' => $user['usuario'],
             'correo' => $user['correo'],
-            'rol' => $user['rol']
+            'rol' => $user['rol'],
+            'almacen_id' => $user['almacen_id'] ?? null
         ];
 
         return [

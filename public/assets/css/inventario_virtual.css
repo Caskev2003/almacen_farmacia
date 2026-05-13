@@ -1,0 +1,363 @@
+/* =========================
+   INVENTARIO VIRTUAL
+========================= */
+
+.inventario-virtual-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.inventario-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.inventario-header h2 {
+    margin: 0;
+    font-size: 32px;
+    color: #0f172a;
+}
+
+.inventario-header p {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 15px;
+}
+
+/* =========================
+   CARDS
+========================= */
+
+.card {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+}
+
+/* =========================
+   ALERTAS
+========================= */
+
+.alert {
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.alert.success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.alert.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* =========================
+   ENCABEZADO
+========================= */
+
+.grid-top {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.field input,
+.field select,
+.field textarea {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    outline: none;
+    transition: 0.2s;
+    background: #fff;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* =========================
+   SCANNER
+========================= */
+
+.scanner-box {
+    margin-bottom: 24px;
+}
+
+.scanner-box label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.scanner-box input {
+    width: 100%;
+    border: 2px solid #2563eb;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    outline: none;
+}
+
+/* =========================
+   TABLA
+========================= */
+
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.inventario-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1100px;
+}
+
+.inventario-table thead th {
+    background: #0f172a;
+    color: #ffffff;
+    padding: 14px 12px;
+    text-align: left;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.inventario-table tbody td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 10px;
+    vertical-align: middle;
+}
+
+.inventario-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+/* =========================
+   INPUTS TABLA
+========================= */
+
+.inventario-table input[type="text"],
+.inventario-table input[type="number"] {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+    background: #ffffff;
+}
+
+.inventario-table input:focus {
+    border-color: #2563eb;
+}
+
+.codigo-input {
+    min-width: 170px;
+    font-weight: 700;
+}
+
+.total-input {
+    background: #f1f5f9 !important;
+    font-weight: bold;
+    color: #0f172a;
+}
+
+/* =========================
+   BOTONES
+========================= */
+
+.acciones-footer {
+    margin-top: 24px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-guardar {
+    border: none;
+    background: #16a34a;
+    color: white;
+    padding: 14px 26px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-guardar:hover {
+    background: #15803d;
+}
+
+.btn-delete {
+    border: none;
+    background: #dc2626;
+    color: white;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.btn-delete:hover {
+    background: #b91c1c;
+}
+
+/* =========================
+   HISTORIAL
+========================= */
+
+.historial-card {
+    overflow: hidden;
+}
+
+.badge-estado {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge-estado.abierto {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.badge-estado.cerrado {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-estado.cancelado {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* =========================
+   ACCIONES
+========================= */
+
+.acciones-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-accion {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    text-decoration: none;
+    transition: 0.2s;
+}
+
+.btn-accion.excel {
+    background: #15803d;
+}
+
+.btn-accion.excel:hover {
+    background: #166534;
+}
+
+.btn-accion.pdf {
+    background: #dc2626;
+}
+
+.btn-accion.pdf:hover {
+    background: #991b1b;
+}
+
+.btn-nuevo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-weight: 700;
+    transition: 0.2s;
+}
+
+.btn-nuevo:hover {
+    background: #1d4ed8;
+}
+
+/* =========================
+   TEXTOS
+========================= */
+
+.text-center {
+    text-align: center;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 768px) {
+
+    .inventario-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .inventario-header h2 {
+        font-size: 24px;
+    }
+
+    .scanner-box input {
+        font-size: 16px;
+    }
+
+    .acciones-footer {
+        justify-content: stretch;
+    }
+
+    .btn-guardar {
+        width: 100%;
+    }
+}

@@ -77,89 +77,108 @@ class Producto
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function getExistencias(string $search = '', int $almacenId = 0, string $estadoStock = ''): array
-    {
-        $params = [];
+public function getExistencias(
+    string $search = '',
+    int $almacenId = 0,
+    string $estadoStock = ''
+): array {
 
-        $sql = "SELECT 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.existencia_actual,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
+    $params = [];
+
+    $sql = "SELECT 
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.laboratorio,
+                p.unidad_medida,
+                p.precio_compra,
+                p.precio_venta,
+                p.stock_minimo,
+                p.stock_maximo,
+                p.ubicacion,
+                c.nombre AS categoria,
+                pr.nombre AS proveedor,
+
+                COALESCE(SUM(
                     CASE 
-                        WHEN :almacen_id_case > 0 THEN COALESCE(SUM(l.existencia), 0)
-                        ELSE p.existencia_actual
-                    END AS existencia_consultada
-                FROM productos p
-                LEFT JOIN categorias c ON p.categoria_id = c.id
-                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
-                LEFT JOIN lotes l 
-                    ON l.producto_id = p.id
-                    AND l.estado = 1";
+                        WHEN l.estado = 1 THEN l.existencia
+                        ELSE 0
+                    END
+                ), 0) AS existencia_consultada
 
-        $params[':almacen_id_case'] = $almacenId;
+            FROM productos p
 
-        if ($almacenId > 0) {
-            $sql .= " AND l.almacen_id = :almacen_id_lote";
-            $params[':almacen_id_lote'] = $almacenId;
-        }
+            LEFT JOIN categorias c
+                ON p.categoria_id = c.id
 
-        $sql .= " WHERE p.estado = 1";
+            LEFT JOIN proveedores pr
+                ON p.proveedor_id = pr.id
 
-        if ($search !== '') {
-            $sql .= " AND (
-                        p.codigo LIKE :search
-                        OR p.codigo_barras LIKE :search
-                        OR p.descripcion LIKE :search
-                        OR p.laboratorio LIKE :search
-                        OR p.ubicacion LIKE :search
-                        OR c.nombre LIKE :search
-                        OR pr.nombre LIKE :search
-                    )";
-            $params[':search'] = "%{$search}%";
-        }
+            LEFT JOIN lotes l
+                ON l.producto_id = p.id";
 
-        $sql .= " GROUP BY 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.existencia_actual,
-                    c.nombre,
-                    pr.nombre";
+    if ($almacenId > 0) {
 
-        if ($estadoStock === 'sin_existencia') {
-            $sql .= " HAVING existencia_consultada <= 0";
-        } elseif ($estadoStock === 'bajo') {
-            $sql .= " HAVING existencia_consultada > 0 AND existencia_consultada <= stock_minimo";
-        } elseif ($estadoStock === 'normal') {
-            $sql .= " HAVING existencia_consultada > stock_minimo";
-        }
+        $sql .= " AND l.almacen_id = :almacen_id";
 
-        $sql .= " ORDER BY p.descripcion ASC";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $params[':almacen_id'] = $almacenId;
     }
+
+    $sql .= " WHERE p.estado = 1";
+
+    if ($search !== '') {
+
+        $sql .= " AND (
+                    p.codigo LIKE :search
+                    OR p.codigo_barras LIKE :search
+                    OR p.descripcion LIKE :search
+                    OR p.laboratorio LIKE :search
+                    OR p.ubicacion LIKE :search
+                    OR c.nombre LIKE :search
+                    OR pr.nombre LIKE :search
+                )";
+
+        $params[':search'] = '%' . $search . '%';
+    }
+
+    $sql .= " GROUP BY
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.laboratorio,
+                p.unidad_medida,
+                p.precio_compra,
+                p.precio_venta,
+                p.stock_minimo,
+                p.stock_maximo,
+                p.ubicacion,
+                c.nombre,
+                pr.nombre";
+
+    if ($estadoStock === 'sin_existencia') {
+
+        $sql .= " HAVING existencia_consultada <= 0";
+
+    } elseif ($estadoStock === 'bajo') {
+
+        $sql .= " HAVING existencia_consultada > 0
+                  AND existencia_consultada <= stock_minimo";
+
+    } elseif ($estadoStock === 'normal') {
+
+        $sql .= " HAVING existencia_consultada > stock_minimo";
+    }
+
+    $sql .= " ORDER BY p.descripcion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
     public function findById(int $id): ?array
     {

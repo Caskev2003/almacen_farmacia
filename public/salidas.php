@@ -209,7 +209,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <thead>
                     <tr>
                         <th>Cantidad</th>
-                        <th>Clave</th>
+                        <th>Codigo</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
                         <th>Existencia</th>

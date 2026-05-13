@@ -17,12 +17,42 @@ class Movimiento
         return $this->conn;
     }
 
-    public function getAlmacenes(): array
-    {
-        $sql = "SELECT id, nombre FROM almacenes WHERE estado = 1 ORDER BY nombre ASC";
-        $stmt = $this->conn->query($sql);
-        return $stmt->fetchAll();
+  public function getAlmacenes(): array
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
     }
+
+    $usuario = $_SESSION['user'] ?? [];
+    $rol = $usuario['rol'] ?? '';
+    $almacenId = $usuario['almacen_id'] ?? null;
+
+    if ($rol === 'ADMINISTRADOR') {
+
+        $sql = "SELECT id, nombre
+                FROM almacenes
+                WHERE estado = 1
+                ORDER BY nombre ASC";
+
+        $stmt = $this->conn->query($sql);
+
+    } else {
+
+        $sql = "SELECT id, nombre
+                FROM almacenes
+                WHERE estado = 1
+                AND id = :almacen_id
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+
+        $stmt->execute([
+            ':almacen_id' => $almacenId
+        ]);
+    }
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
     public function getProveedores(): array
     {

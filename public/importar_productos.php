@@ -70,14 +70,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($filas as $fila) {
 
                 $codigo = limpiarTexto($fila[$colCodigo] ?? '');
-                $codigo_barras = limpiarTexto($fila[$colCodigoBarras] ?? '');
-                $descripcion = limpiarTexto($fila[$colDescripcion] ?? '');
-                $existenciaTotalExcel = limpiarEntero($fila[$colExistencia] ?? 0);
+$codigo_barras = limpiarTexto($fila[$colCodigoBarras] ?? '');
+$descripcion = limpiarTexto($fila[$colDescripcion] ?? '');
+$existenciaTotalExcel = limpiarEntero($fila[$colExistencia] ?? 0);
 
-                if ($codigo === '' || $descripcion === '') {
-                    $omitidos++;
-                    continue;
-                }
+if (
+    $codigo === '' ||
+    $codigo === '000' ||
+    strlen($codigo) < 5 ||
+    $descripcion === ''
+) {
+    $omitidos++;
+    continue;
+}
 
                 $stmtExiste = $conn->prepare("
                     SELECT 

@@ -15,6 +15,35 @@ function limpiarTexto($valor): string
     return trim((string)($valor ?? ''));
 }
 
+function limpiarCodigo($valor): string
+{
+    $valor = trim((string)($valor ?? ''));
+    $valor = str_replace(["\n", "\r", "\t", " "], '', $valor);
+
+    if (str_contains($valor, '.')) {
+        $valor = rtrim(rtrim($valor, '0'), '.');
+    }
+
+    return $valor;
+}
+
+function codigoValido(string $codigo): bool
+{
+    if ($codigo === '') {
+        return false;
+    }
+
+    if (!preg_match('/[1-9]/', $codigo)) {
+        return false;
+    }
+
+    if (strlen($codigo) < 5) {
+        return false;
+    }
+
+    return true;
+}
+
 function limpiarEntero($valor): int
 {
     $valor = trim((string)($valor ?? ''));
@@ -51,13 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("El archivo Excel no contiene registros.");
             }
 
-            // TU EXCEL NO TRAE ENCABEZADOS.
-            // Columnas fijas:
-            // A = Articulo / Código
-            // B = Código de barras
-            // C = Nombre / Descripción
-            // D = Existencia total del Excel
-
             $colCodigo = 'A';
             $colCodigoBarras = 'B';
             $colDescripcion = 'C';
@@ -66,111 +88,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $insertados = 0;
             $actualizados = 0;
             $omitidos = 0;
+            $errores = 0;
 
-            foreach ($filas as $fila) {
+            foreach ($filas as $numeroFila => $fila) {
 
-                $codigo = limpiarTexto($fila[$colCodigo] ?? '');
-$codigo_barras = limpiarTexto($fila[$colCodigoBarras] ?? '');
-$descripcion = limpiarTexto($fila[$colDescripcion] ?? '');
-$existenciaTotalExcel = limpiarEntero($fila[$colExistencia] ?? 0);
+                $codigo = limpiarCodigo($fila[$colCodigo] ?? '');
+                $codigo_barras = limpiarCodigo($fila[$colCodigoBarras] ?? '');
+                $descripcion = limpiarTexto($fila[$colDescripcion] ?? '');
+                $existenciaTotalExcel = limpiarEntero($fila[$colExistencia] ?? 0);
 
-if (
-    $codigo === '' ||
-    $codigo === '000' ||
-    strlen($codigo) < 5 ||
-    $descripcion === ''
-) {
-    $omitidos++;
-    continue;
-}
-
-                $stmtExiste = $conn->prepare("
-                    SELECT 
-                        id,
-                        existencia_bodega
-                    FROM productos
-                    WHERE codigo = ?
-                    AND sucursal = ?
-                    LIMIT 1
-                ");
-
-                $stmtExiste->execute([$codigo, $sucursal]);
-                $productoExistente = $stmtExiste->fetch(PDO::FETCH_ASSOC);
-
-                if ($productoExistente) {
-
-                    // No tocar bodega en importación.
-                    // La farmacia se calcula con:
-                    // total_excel - bodega_actual
-                    $existenciaBodegaActual = (int)($productoExistente['existencia_bodega'] ?? 0);
-                    $existenciaFarmaciaCalculada = max(0, $existenciaTotalExcel - $existenciaBodegaActual);
-
-                    $stmtUpdate = $conn->prepare("
-                        UPDATE productos
-                        SET 
-                            codigo_barras = ?,
-                            descripcion = ?,
-                            existencia_actual = ?,
-                            existencia_farmacia = ?
-                        WHERE id = ?
-                    ");
-
-                    $stmtUpdate->execute([
-                        $codigo_barras !== '' ? $codigo_barras : null,
-                        $descripcion,
-                        $existenciaTotalExcel,
-                        $existenciaFarmaciaCalculada,
-                        $productoExistente['id']
-                    ]);
-
-                    $actualizados++;
+                if (!codigoValido($codigo) || $descripcion === '') {
+                    $omitidos++;
                     continue;
                 }
 
-                // Producto nuevo:
-                // Si no existe en tu sistema, toda la existencia queda como farmacia.
-                // Luego tú asignas bodega manualmente si realmente tienes ese producto en bodega.
-                $existenciaBodega = 0;
-                $existenciaFarmacia = $existenciaTotalExcel;
+                if ($codigo_barras === '') {
+                    $codigo_barras = $codigo;
+                }
 
-                $stmtProducto = $conn->prepare("
-                    INSERT INTO productos (
-                        codigo,
-                        codigo_barras,
-                        descripcion,
-                        categoria_id,
-                        proveedor_id,
-                        laboratorio,
-                        unidad_medida,
-                        precio_compra,
-                        precio_venta,
-                        stock_minimo,
-                        stock_maximo,
-                        ubicacion,
-                        existencia_actual,
-                        existencia_bodega,
-                        existencia_farmacia,
-                        sucursal,
-                        estado
-                    ) VALUES (
-                        ?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, ?, ?, ?, ?, 1
-                    )
-                ");
+                try {
+                    $stmtExiste = $conn->prepare("
+                        SELECT 
+                            id,
+                            existencia_bodega
+                        FROM productos
+                        WHERE codigo = ?
+                        AND sucursal = ?
+                        LIMIT 1
+                    ");
 
-                $stmtProducto->execute([
-                    $codigo,
-                    $codigo_barras !== '' ? $codigo_barras : null,
-                    $descripcion,
-                    $existenciaTotalExcel,
-                    $existenciaBodega,
-                    $existenciaFarmacia,
-                    $sucursal
-                ]);
+                    $stmtExiste->execute([$codigo, $sucursal]);
+                    $productoExistente = $stmtExiste->fetch(PDO::FETCH_ASSOC);
 
-                $insertados++;
+                    if ($productoExistente) {
+
+                        $existenciaBodegaActual = (int)($productoExistente['existencia_bodega'] ?? 0);
+                        $existenciaFarmaciaCalculada = max(0, $existenciaTotalExcel - $existenciaBodegaActual);
+
+                        $stmtUpdate = $conn->prepare("
+                            UPDATE productos
+                            SET 
+                                codigo_barras = ?,
+                                descripcion = ?,
+                                existencia_actual = ?,
+                                existencia_farmacia = ?
+                            WHERE id = ?
+                        ");
+
+                        $stmtUpdate->execute([
+                            $codigo_barras,
+                            $descripcion,
+                            $existenciaTotalExcel,
+                            $existenciaFarmaciaCalculada,
+                            $productoExistente['id']
+                        ]);
+
+                        $actualizados++;
+                        continue;
+                    }
+
+                    $existenciaBodega = 0;
+                    $existenciaFarmacia = $existenciaTotalExcel;
+
+                    $stmtProducto = $conn->prepare("
+                        INSERT INTO productos (
+                            codigo,
+                            codigo_barras,
+                            descripcion,
+                            categoria_id,
+                            proveedor_id,
+                            laboratorio,
+                            unidad_medida,
+                            precio_compra,
+                            precio_venta,
+                            stock_minimo,
+                            stock_maximo,
+                            ubicacion,
+                            existencia_actual,
+                            existencia_bodega,
+                            existencia_farmacia,
+                            sucursal,
+                            estado
+                        ) VALUES (
+                            ?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, ?, ?, ?, ?, 1
+                        )
+                    ");
+
+                    $stmtProducto->execute([
+                        $codigo,
+                        $codigo_barras,
+                        $descripcion,
+                        $existenciaTotalExcel,
+                        $existenciaBodega,
+                        $existenciaFarmacia,
+                        $sucursal
+                    ]);
+
+                    $insertados++;
+
+                } catch (Exception $e) {
+                    $errores++;
+                    continue;
+                }
             }
 
-            $mensaje = "Importación completada para $sucursal. Insertados: $insertados | Actualizados: $actualizados | Filas omitidas: $omitidos";
+            $mensaje = "Importación completada para $sucursal. Insertados: $insertados | Actualizados: $actualizados | Filas omitidas: $omitidos | Errores: $errores";
 
         } catch (Exception $e) {
             $mensaje = "Error: " . $e->getMessage();

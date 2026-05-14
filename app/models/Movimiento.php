@@ -264,10 +264,14 @@ class Movimiento
 
             $movimientoId = (int)$this->conn->lastInsertId();
 
-            $sqlProducto = "SELECT id, descripcion, existencia_actual 
-                            FROM productos 
-                            WHERE id = :id 
-                            LIMIT 1";
+            $sqlProducto = "SELECT 
+                    id, 
+                    descripcion, 
+                    existencia_actual,
+                    existencia_bodega
+                FROM productos 
+                WHERE id = :id 
+                LIMIT 1";
 
             $stmtProducto = $this->conn->prepare($sqlProducto);
 
@@ -282,8 +286,10 @@ class Movimiento
             $stmtDetalle = $this->conn->prepare($sqlDetalle);
 
             $sqlActualizarProducto = "UPDATE productos
-                                      SET existencia_actual = existencia_actual - :cantidad
-                                      WHERE id = :producto_id";
+                          SET 
+                              existencia_actual = existencia_actual - :cantidad,
+                              existencia_bodega = existencia_bodega - :cantidad
+                          WHERE id = :producto_id";
 
             $stmtActualizarProducto = $this->conn->prepare($sqlActualizarProducto);
 
@@ -295,9 +301,9 @@ class Movimiento
                     throw new Exception('Producto no encontrado.');
                 }
 
-                if ((int)$producto['existencia_actual'] < (int)$item['cantidad']) {
-                    throw new Exception('Stock insuficiente para el producto: ' . $producto['descripcion']);
-                }
+                if ((int)$producto['existencia_bodega'] < (int)$item['cantidad']) {
+    throw new Exception('Stock insuficiente en bodega para el producto: ' . $producto['descripcion']);
+}
 
                 $stmtDetalle->execute([
                     ':movimiento_id' => $movimientoId,

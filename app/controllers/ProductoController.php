@@ -33,6 +33,20 @@ class ProductoController
 
     private function sanitizeData(array $data): array
     {
+        $existenciaBodega = (int)($data['existencia_bodega'] ?? 0);
+        $existenciaFarmacia = (int)($data['existencia_farmacia'] ?? 0);
+
+        if ($existenciaBodega < 0) {
+            $existenciaBodega = 0;
+        }
+
+        if ($existenciaFarmacia < 0) {
+            $existenciaFarmacia = 0;
+        }
+
+        $existenciaActual = (int)($data['existencia_actual'] ?? 0);
+$existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
+
         return [
             'codigo' => trim($data['codigo'] ?? ''),
             'codigo_barras' => trim($data['codigo_barras'] ?? ''),
@@ -46,7 +60,9 @@ class ProductoController
             'stock_minimo' => trim($data['stock_minimo'] ?? '0'),
             'stock_maximo' => trim($data['stock_maximo'] ?? '0'),
             'ubicacion' => trim($data['ubicacion'] ?? ''),
-            'existencia_actual' => trim($data['existencia_actual'] ?? '0'),
+            'existencia_bodega' => $existenciaBodega,
+            'existencia_farmacia' => $existenciaFarmacia,
+            'existencia_actual' => $existenciaActual,
         ];
     }
 
@@ -76,8 +92,16 @@ class ProductoController
             return ['success' => false, 'message' => 'El stock máximo no es válido.'];
         }
 
+        if (!is_numeric($data['existencia_bodega']) || (int)$data['existencia_bodega'] < 0) {
+            return ['success' => false, 'message' => 'La existencia en bodega no es válida.'];
+        }
+
+        if (!is_numeric($data['existencia_farmacia']) || (int)$data['existencia_farmacia'] < 0) {
+            return ['success' => false, 'message' => 'La existencia en farmacia no es válida.'];
+        }
+
         if (!is_numeric($data['existencia_actual']) || (int)$data['existencia_actual'] < 0) {
-            return ['success' => false, 'message' => 'La existencia actual no es válida.'];
+            return ['success' => false, 'message' => 'La existencia total no es válida.'];
         }
 
         if ($this->productoModel->existsByCodigo($data['codigo'], $id)) {

@@ -49,6 +49,8 @@ class Producto
                     p.stock_maximo,
                     p.ubicacion,
                     p.existencia_actual,
+                    p.existencia_bodega,
+                    p.existencia_farmacia,
                     p.estado,
                     c.nombre AS categoria,
                     pr.nombre AS proveedor
@@ -65,6 +67,7 @@ class Producto
                         OR p.codigo_barras LIKE :search
                         OR p.descripcion LIKE :search
                         OR p.laboratorio LIKE :search
+                        OR p.ubicacion LIKE :search
                     )";
             $params[':search'] = "%{$search}%";
         }
@@ -77,108 +80,105 @@ class Producto
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-public function getExistencias(
-    string $search = '',
-    int $almacenId = 0,
-    string $estadoStock = ''
-): array {
+    public function getExistencias(
+        string $search = '',
+        int $almacenId = 0,
+        string $estadoStock = ''
+    ): array {
 
-    $params = [];
+        $params = [];
 
-    $sql = "SELECT 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.laboratorio,
-                p.unidad_medida,
-                p.precio_compra,
-                p.precio_venta,
-                p.stock_minimo,
-                p.stock_maximo,
-                p.ubicacion,
-                c.nombre AS categoria,
-                pr.nombre AS proveedor,
+        $sql = "SELECT 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.laboratorio,
+                    p.unidad_medida,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.stock_minimo,
+                    p.stock_maximo,
+                    p.ubicacion,
+                    p.existencia_actual,
+                    p.existencia_bodega,
+                    p.existencia_farmacia,
+                    c.nombre AS categoria,
+                    pr.nombre AS proveedor,
 
-                COALESCE(SUM(
-                    CASE 
-                        WHEN l.estado = 1 THEN l.existencia
-                        ELSE 0
-                    END
-                ), 0) AS existencia_consultada
+                    COALESCE(SUM(
+                        CASE 
+                            WHEN l.estado = 1 THEN l.existencia
+                            ELSE 0
+                        END
+                    ), 0) AS existencia_consultada
 
-            FROM productos p
+                FROM productos p
 
-            LEFT JOIN categorias c
-                ON p.categoria_id = c.id
+                LEFT JOIN categorias c
+                    ON p.categoria_id = c.id
 
-            LEFT JOIN proveedores pr
-                ON p.proveedor_id = pr.id
+                LEFT JOIN proveedores pr
+                    ON p.proveedor_id = pr.id
 
-            LEFT JOIN lotes l
-                ON l.producto_id = p.id";
+                LEFT JOIN lotes l
+                    ON l.producto_id = p.id";
 
-    if ($almacenId > 0) {
+        if ($almacenId > 0) {
+            $sql .= " AND l.almacen_id = :almacen_id";
+            $params[':almacen_id'] = $almacenId;
+        }
 
-        $sql .= " AND l.almacen_id = :almacen_id";
+        $sql .= " WHERE p.estado = 1";
 
-        $params[':almacen_id'] = $almacenId;
+        if ($search !== '') {
+            $sql .= " AND (
+                        p.codigo LIKE :search
+                        OR p.codigo_barras LIKE :search
+                        OR p.descripcion LIKE :search
+                        OR p.laboratorio LIKE :search
+                        OR p.ubicacion LIKE :search
+                        OR c.nombre LIKE :search
+                        OR pr.nombre LIKE :search
+                    )";
+
+            $params[':search'] = '%' . $search . '%';
+        }
+
+        $sql .= " GROUP BY
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.laboratorio,
+                    p.unidad_medida,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.stock_minimo,
+                    p.stock_maximo,
+                    p.ubicacion,
+                    p.existencia_actual,
+                    p.existencia_bodega,
+                    p.existencia_farmacia,
+                    c.nombre,
+                    pr.nombre";
+
+        if ($estadoStock === 'sin_existencia') {
+            $sql .= " HAVING existencia_consultada <= 0";
+        } elseif ($estadoStock === 'bajo') {
+            $sql .= " HAVING existencia_consultada > 0
+                      AND existencia_consultada <= stock_minimo";
+        } elseif ($estadoStock === 'normal') {
+            $sql .= " HAVING existencia_consultada > stock_minimo";
+        }
+
+        $sql .= " ORDER BY p.descripcion ASC";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
-    $sql .= " WHERE p.estado = 1";
-
-    if ($search !== '') {
-
-        $sql .= " AND (
-                    p.codigo LIKE :search
-                    OR p.codigo_barras LIKE :search
-                    OR p.descripcion LIKE :search
-                    OR p.laboratorio LIKE :search
-                    OR p.ubicacion LIKE :search
-                    OR c.nombre LIKE :search
-                    OR pr.nombre LIKE :search
-                )";
-
-        $params[':search'] = '%' . $search . '%';
-    }
-
-    $sql .= " GROUP BY
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.laboratorio,
-                p.unidad_medida,
-                p.precio_compra,
-                p.precio_venta,
-                p.stock_minimo,
-                p.stock_maximo,
-                p.ubicacion,
-                c.nombre,
-                pr.nombre";
-
-    if ($estadoStock === 'sin_existencia') {
-
-        $sql .= " HAVING existencia_consultada <= 0";
-
-    } elseif ($estadoStock === 'bajo') {
-
-        $sql .= " HAVING existencia_consultada > 0
-                  AND existencia_consultada <= stock_minimo";
-
-    } elseif ($estadoStock === 'normal') {
-
-        $sql .= " HAVING existencia_consultada > stock_minimo";
-    }
-
-    $sql .= " ORDER BY p.descripcion ASC";
-
-    $stmt = $this->conn->prepare($sql);
-
-    $stmt->execute($params);
-
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
 
     public function findById(int $id): ?array
     {
@@ -210,6 +210,10 @@ public function getExistencias(
 
     public function create(array $data): bool
     {
+        $existenciaBodega = (int)($data['existencia_bodega'] ?? 0);
+        $existenciaFarmacia = (int)($data['existencia_farmacia'] ?? 0);
+        $existenciaActual = $existenciaBodega + $existenciaFarmacia;
+
         $sql = "INSERT INTO productos (
                     codigo,
                     codigo_barras,
@@ -224,6 +228,8 @@ public function getExistencias(
                     stock_maximo,
                     ubicacion,
                     existencia_actual,
+                    existencia_bodega,
+                    existencia_farmacia,
                     estado
                 ) VALUES (
                     :codigo,
@@ -239,6 +245,8 @@ public function getExistencias(
                     :stock_maximo,
                     :ubicacion,
                     :existencia_actual,
+                    :existencia_bodega,
+                    :existencia_farmacia,
                     :estado
                 )";
 
@@ -257,13 +265,19 @@ public function getExistencias(
             ':stock_minimo' => $data['stock_minimo'],
             ':stock_maximo' => $data['stock_maximo'],
             ':ubicacion' => $data['ubicacion'] ?: null,
-            ':existencia_actual' => $data['existencia_actual'],
+            ':existencia_actual' => $existenciaActual,
+            ':existencia_bodega' => $existenciaBodega,
+            ':existencia_farmacia' => $existenciaFarmacia,
             ':estado' => 1,
         ]);
     }
 
     public function update(int $id, array $data): bool
     {
+        $existenciaBodega = (int)($data['existencia_bodega'] ?? 0);
+        $existenciaFarmacia = (int)($data['existencia_farmacia'] ?? 0);
+        $existenciaActual = $existenciaBodega + $existenciaFarmacia;
+
         $sql = "UPDATE productos SET
                     codigo = :codigo,
                     codigo_barras = :codigo_barras,
@@ -277,7 +291,9 @@ public function getExistencias(
                     stock_minimo = :stock_minimo,
                     stock_maximo = :stock_maximo,
                     ubicacion = :ubicacion,
-                    existencia_actual = :existencia_actual
+                    existencia_actual = :existencia_actual,
+                    existencia_bodega = :existencia_bodega,
+                    existencia_farmacia = :existencia_farmacia
                 WHERE id = :id";
 
         $stmt = $this->conn->prepare($sql);
@@ -295,7 +311,9 @@ public function getExistencias(
             ':stock_minimo' => $data['stock_minimo'],
             ':stock_maximo' => $data['stock_maximo'],
             ':ubicacion' => $data['ubicacion'] ?: null,
-            ':existencia_actual' => $data['existencia_actual'],
+            ':existencia_actual' => $existenciaActual,
+            ':existencia_bodega' => $existenciaBodega,
+            ':existencia_farmacia' => $existenciaFarmacia,
             ':id' => $id,
         ]);
     }

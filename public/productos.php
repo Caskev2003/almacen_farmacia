@@ -13,8 +13,15 @@ $messageType = '';
 $search = trim($_GET['search'] ?? '');
 $editando = null;
 
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 25;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+
+    $_POST['existencia_bodega'] = (int)($_POST['existencia_bodega'] ?? 0);
+    $_POST['existencia_farmacia'] = (int)($_POST['existencia_farmacia'] ?? 0);
+    $_POST['existencia_actual'] = $_POST['existencia_bodega'] + $_POST['existencia_farmacia'];
 
     if ($action === 'create') {
         $result = $controller->store($_POST);
@@ -42,9 +49,23 @@ if (isset($_GET['edit'])) {
     $editando = $controller->find($editId);
 }
 
-$productos = $controller->index($search);
+$productosTodos = $controller->index($search);
 $categorias = $controller->categorias();
 $proveedores = $controller->proveedores();
+
+$totalProductos = count($productosTodos);
+$totalPages = max(1, (int)ceil($totalProductos / $perPage));
+
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+
+$offset = ($page - 1) * $perPage;
+$productos = array_slice($productosTodos, $offset, $perPage);
+
+$queryBase = http_build_query([
+    'search' => $search
+]);
 
 $moduleCss = 'productos';
 include __DIR__ . '/../app/views/layouts/header.php';
@@ -63,12 +84,82 @@ include __DIR__ . '/../app/views/layouts/header.php';
     </div>
 <?php endif; ?>
 
+<style>
+    .pagination-wrapper {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+        flex-wrap: wrap;
+    }
+
+    .pagination-info {
+        font-size: 14px;
+        color: #475569;
+        font-weight: 600;
+    }
+
+    .pagination {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .pagination a,
+    .pagination span {
+        padding: 8px 12px;
+        border-radius: 8px;
+        text-decoration: none;
+        border: 1px solid #d1d5db;
+        color: #0f3b66;
+        font-size: 14px;
+        font-weight: 700;
+        background: #fff;
+    }
+
+    .pagination .active {
+        background: #00529b;
+        color: white;
+        border-color: #00529b;
+    }
+
+    .pagination .disabled {
+        opacity: .45;
+        cursor: not-allowed;
+    }
+
+    .table-topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .badge-total {
+        font-weight: bold;
+        color: #0f172a;
+    }
+
+    .badge-bodega {
+        font-weight: bold;
+        color: #1d4ed8;
+    }
+
+    .badge-farmacia {
+        font-weight: bold;
+        color: #15803d;
+    }
+</style>
+
 <div class="erp-container">
     <div class="erp-form-card">
         <h3><?= $editando ? 'Editar producto' : 'Nuevo producto' ?></h3>
 
         <form method="POST" action="">
             <input type="hidden" name="action" value="<?= $editando ? 'update' : 'create' ?>">
+
             <?php if ($editando): ?>
                 <input type="hidden" name="id" value="<?= (int)$editando['id'] ?>">
             <?php endif; ?>
@@ -146,23 +237,51 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 </div>
 
                 <div class="form-group">
-    <label>Ubicación</label>
-    <input 
-        type="text" 
-        name="ubicacion" 
-        id="ubicacion" 
-        list="listaUbicaciones" 
-        autocomplete="off"
-        placeholder="Ejemplo: R1N1Z01"
-        value="<?= e($editando['ubicacion'] ?? '') ?>"
-    >
-
-    <datalist id="listaUbicaciones"></datalist>
-</div>
+                    <label>Ubicación</label>
+                    <input
+                        type="text"
+                        name="ubicacion"
+                        id="ubicacion"
+                        list="listaUbicaciones"
+                        autocomplete="off"
+                        placeholder="Ejemplo: R1N1Z01"
+                        value="<?= e($editando['ubicacion'] ?? '') ?>"
+                    >
+                    <datalist id="listaUbicaciones"></datalist>
+                </div>
 
                 <div class="form-group">
-                    <label>Existencia actual</label>
-                    <input type="number" min="0" name="existencia_actual" value="<?= e($editando['existencia_actual'] ?? '0') ?>">
+                    <label>Existencia Bodega</label>
+                    <input
+                        type="number"
+                        min="0"
+                        name="existencia_bodega"
+                        id="existencia_bodega"
+                        value="<?= e($editando['existencia_bodega'] ?? '0') ?>"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Existencia Farmacia</label>
+                    <input
+                        type="number"
+                        min="0"
+                        name="existencia_farmacia"
+                        id="existencia_farmacia"
+                        value="<?= e($editando['existencia_farmacia'] ?? '0') ?>"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Total sistema</label>
+                    <input
+                        type="number"
+                        min="0"
+                        name="existencia_actual"
+                        id="existencia_actual"
+                        readonly
+                        value="<?= e($editando['existencia_actual'] ?? '0') ?>"
+                    >
                 </div>
             </div>
 
@@ -180,7 +299,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
     <div class="erp-table-card">
         <div class="table-topbar">
-            <h3>Lista de productos</h3>
+            <div class="table-topbar-actions">
+                <h3>Lista de productos</h3>
+
+                <a href="importar_productos.php" class="btn-primary-action">
+                    Importar Excel
+                </a>
+            </div>
 
             <form method="GET" action="" class="search-form">
                 <input
@@ -192,6 +317,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <button type="submit" class="btn-search">Buscar</button>
                 <a href="productos.php" class="btn-clear">Limpiar</a>
             </form>
+        </div>
+
+        <div class="pagination-info" style="margin-bottom:12px;">
+            Mostrando <?= $totalProductos > 0 ? ($offset + 1) : 0 ?> -
+            <?= min($offset + $perPage, $totalProductos) ?>
+            de <?= $totalProductos ?> productos
         </div>
 
         <div class="table-responsive">
@@ -208,7 +339,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Unidad</th>
                         <th>P. Compra</th>
                         <th>P. Venta</th>
-                        <th>Existencia</th>
+                        <th>Total</th>
+                        <th>Bodega</th>
+                        <th>Farmacia</th>
                         <th>Ubicación</th>
                         <th>Acciones</th>
                     </tr>
@@ -227,11 +360,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 <td><?= e($producto['unidad_medida']) ?></td>
                                 <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
                                 <td>$<?= number_format((float)$producto['precio_venta'], 2) ?></td>
-                                <td><?= (int)$producto['existencia_actual'] ?></td>
+                                <td class="badge-total"><?= (int)$producto['existencia_actual'] ?></td>
+                                <td class="badge-bodega"><?= (int)($producto['existencia_bodega'] ?? 0) ?></td>
+                                <td class="badge-farmacia"><?= (int)($producto['existencia_farmacia'] ?? 0) ?></td>
                                 <td><?= e($producto['ubicacion']) ?></td>
                                 <td>
                                     <div class="action-buttons">
-                                        <a href="productos.php?edit=<?= (int)$producto['id'] ?>" class="btn-edit">Editar</a>
+                                        <a href="productos.php?edit=<?= (int)$producto['id'] ?>&page=<?= $page ?>&<?= e($queryBase) ?>" class="btn-edit">Editar</a>
 
                                         <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto?');">
                                             <input type="hidden" name="action" value="delete">
@@ -244,17 +379,80 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="13" class="empty-table">No hay productos registrados.</td>
+                            <td colspan="15" class="empty-table">No hay productos registrados.</td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
+
+        <?php if ($totalPages > 1): ?>
+            <div class="pagination-wrapper">
+                <div class="pagination-info">
+                    Página <?= $page ?> de <?= $totalPages ?>
+                </div>
+
+                <div class="pagination">
+                    <?php if ($page > 1): ?>
+                        <a href="productos.php?page=1&<?= e($queryBase) ?>">Primera</a>
+                        <a href="productos.php?page=<?= $page - 1 ?>&<?= e($queryBase) ?>">Anterior</a>
+                    <?php else: ?>
+                        <span class="disabled">Primera</span>
+                        <span class="disabled">Anterior</span>
+                    <?php endif; ?>
+
+                    <?php
+                        $startPage = max(1, $page - 2);
+                        $endPage = min($totalPages, $page + 2);
+
+                        for ($i = $startPage; $i <= $endPage; $i++):
+                    ?>
+                        <?php if ($i === $page): ?>
+                            <span class="active"><?= $i ?></span>
+                        <?php else: ?>
+                            <a href="productos.php?page=<?= $i ?>&<?= e($queryBase) ?>"><?= $i ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+
+                    <?php if ($page < $totalPages): ?>
+                        <a href="productos.php?page=<?= $page + 1 ?>&<?= e($queryBase) ?>">Siguiente</a>
+                        <a href="productos.php?page=<?= $totalPages ?>&<?= e($queryBase) ?>">Última</a>
+                    <?php else: ?>
+                        <span class="disabled">Siguiente</span>
+                        <span class="disabled">Última</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const bodega = document.getElementById('existencia_bodega');
+    const farmacia = document.getElementById('existencia_farmacia');
+    const total = document.getElementById('existencia_actual');
+
+    function calcularFarmacia() {
+    const t = parseInt(total?.value || 0);
+    const b = parseInt(bodega?.value || 0);
+
+    let farmaciaCalculada = t - b;
+
+    if (farmaciaCalculada < 0) {
+        farmaciaCalculada = 0;
+    }
+
+    if (farmacia) {
+        farmacia.value = farmaciaCalculada;
+    }
+}
+
+if (bodega) bodega.addEventListener('input', calcularFarmacia);
+if (total) total.addEventListener('input', calcularFarmacia);
+
+calcularFarmacia();
+
     const lista = document.getElementById('listaUbicaciones');
     if (!lista) return;
 
@@ -291,4 +489,5 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+
 <?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>

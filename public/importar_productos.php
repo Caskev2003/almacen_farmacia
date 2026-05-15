@@ -221,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($tipoImportacion === 'informacion') {
 
                 $productosActuales = totalProductos($conn);
-                $permitirInsertar = $productosActuales === 0;
+                $permitirInsertar = true;
 
                 $colCodigoBarras = $encabezados['codigobarras'] ?? null;
                 $colNombre = $encabezados['nombre'] ?? null;
@@ -317,10 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         } else {
 
-                            if (!$permitirInsertar) {
-                                $noEncontrados++;
-                                continue;
-                            }
+                            
 
                             $categoriaId = obtenerCategoriaId($conn, $categoriaNombre);
 

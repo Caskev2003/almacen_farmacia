@@ -59,20 +59,53 @@ function normalizarEncabezado(string $texto): string
 
 function valorFila(array $fila, ?string $columna): string
 {
-    if (!$columna) {
-        return '';
-    }
-
-    return limpiarTexto($fila[$columna] ?? '');
+    return $columna ? limpiarTexto($fila[$columna] ?? '') : '';
 }
 
 function codigoFila(array $fila, ?string $columna): string
 {
-    if (!$columna) {
-        return '';
+    return $columna ? limpiarCodigo($fila[$columna] ?? '') : '';
+}
+
+function campoVacio($valor): bool
+{
+    $valor = trim((string)($valor ?? ''));
+    return $valor === '' || $valor === '-';
+}
+
+function numeroExcel($valor): float
+{
+    $valor = trim((string)($valor ?? '0'));
+    $valor = str_replace([',', '$'], '', $valor);
+
+    if ($valor === '' || !is_numeric($valor)) {
+        return 0;
     }
 
-    return limpiarCodigo($fila[$columna] ?? '');
+    return (float)$valor;
+}
+
+function catalogoCerrado(PDO $conn): bool
+{
+    $stmt = $conn->query("
+        SELECT catalogo_cerrado
+        FROM configuracion_importacion
+        WHERE id = 1
+        LIMIT 1
+    ");
+
+    return (int)($stmt->fetchColumn() ?: 0) === 1;
+}
+
+function totalProductos(PDO $conn): int
+{
+    $stmt = $conn->query("
+        SELECT COUNT(*)
+        FROM productos
+        WHERE estado = 1
+    ");
+
+    return (int)$stmt->fetchColumn();
 }
 
 function obtenerCategoriaId(PDO $conn, string $nombre): ?int
@@ -107,50 +140,20 @@ function obtenerCategoriaId(PDO $conn, string $nombre): ?int
     return (int)$conn->lastInsertId();
 }
 
-function totalProductos(PDO $conn): int
-{
-    $stmt = $conn->query("
-        SELECT COUNT(*) 
-        FROM productos
-        WHERE estado = 1
-    ");
-
-    return (int)$stmt->fetchColumn();
-}
-
-function buscarProductoPorCodigoBarras(PDO $conn, string $codigo): ?array
+function buscarProductoPorCodigo(PDO $conn, string $codigo): ?array
 {
     $stmt = $conn->prepare("
         SELECT *
         FROM productos
-        WHERE codigo_barras = ?
-           OR codigo = ?
+        WHERE codigo = ?
+           OR codigo_barras = ?
         LIMIT 1
     ");
 
     $stmt->execute([$codigo, $codigo]);
-
     $producto = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $producto ?: null;
-}
-
-function campoVacio($valor): bool
-{
-    $valor = trim((string)($valor ?? ''));
-    return $valor === '' || $valor === '-';
-}
-
-function numeroExcel($valor): float
-{
-    $valor = trim((string)($valor ?? '0'));
-    $valor = str_replace([',', '$'], '', $valor);
-
-    if ($valor === '' || !is_numeric($valor)) {
-        return 0;
-    }
-
-    return (float)$valor;
 }
 
 function actualizarExistencia(PDO $conn, int $productoId, string $sucursal, int $existencia): bool
@@ -215,13 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $actualizados = 0;
             $omitidos = 0;
             $noEncontrados = 0;
-            $sinCambios = 0;
             $detalleErrores = [];
 
             if ($tipoImportacion === 'informacion') {
 
                 $productosActuales = totalProductos($conn);
-                $permitirInsertar = true;
+                $catalogoCerrado = catalogoCerrado($conn);
 
                 $colCodigoBarras = $encabezados['codigobarras'] ?? null;
                 $colNombre = $encabezados['nombre'] ?? null;
@@ -261,7 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     try {
 
-                        $producto = buscarProductoPorCodigoBarras($conn, $codigo);
+                        $producto = buscarProductoPorCodigo($conn, $codigo);
 
                         if ($producto) {
 
@@ -317,7 +319,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         } else {
 
-                            
+                            if ($catalogoCerrado) {
+                                $noEncontrados++;
+                                continue;
+                            }
 
                             $categoriaId = obtenerCategoriaId($conn, $categoriaNombre);
 
@@ -379,8 +384,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Errores: <strong>{$errores}</strong>
                 ";
 
-                if (!$permitirInsertar) {
-                    $mensaje .= "<br><br><strong>Nota:</strong> Como ya existía catálogo, el sistema no agregó productos nuevos; solo comparó y rellenó información.";
+                if ($catalogoCerrado) {
+                    $mensaje .= "<br><br><strong>Catálogo cerrado:</strong> los códigos nuevos no fueron insertados.";
+                } else {
+                    $mensaje .= "<br><br><strong>Catálogo abierto:</strong> los códigos nuevos sí fueron insertados.";
                 }
 
             } elseif ($tipoImportacion === 'existencia') {
@@ -410,7 +417,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     try {
 
-                        $producto = buscarProductoPorCodigoBarras($conn, $codigo);
+                        $producto = buscarProductoPorCodigo($conn, $codigo);
 
                         if (!$producto) {
                             $noEncontrados++;
@@ -469,55 +476,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <title>Importar Productos</title>
-
     <link rel="stylesheet" href="assets/css/importar_productos.css">
 </head>
 
 <body>
 
 <div class="import-container">
-
     <div class="import-card">
 
-        <h1 class="import-title">
-            Importar Productos
-        </h1>
+        <h1 class="import-title">Importar Productos</h1>
 
-        <p class="import-subtitle">
-            Importación masiva desde Excel
-        </p>
+        <p class="import-subtitle">Importación masiva desde Excel</p>
 
         <form method="POST" enctype="multipart/form-data">
 
             <div class="form-group">
-                <label>
-                    Tipo de importación
-                </label>
+                <label>Tipo de importación</label>
 
                 <select name="tipo_importacion" id="tipo_importacion" class="form-control" required>
-                    <option value="">
-                        Seleccione una opción
-                    </option>
-
-                    <option value="informacion">
-                        Información de productos
-                    </option>
-
-                    <option value="existencia">
-                        Existencias por almacén
-                    </option>
+                    <option value="">Seleccione una opción</option>
+                    <option value="informacion">Información de productos</option>
+                    <option value="existencia">Existencias por almacén</option>
                 </select>
             </div>
 
             <div class="form-group">
-                <label>
-                    Sucursal / Almacén
-                </label>
+                <label>Sucursal / Almacén</label>
 
                 <select name="sucursal" id="sucursal" class="form-control" required>
-                    <option value="">
-                        Seleccione una opción
-                    </option>
+                    <option value="">Seleccione una opción</option>
                 </select>
 
                 <small id="ayudaSucursal" style="display:block; margin-top:6px; color:#64748b;">
@@ -526,9 +513,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-group">
-                <label>
-                    Archivo Excel
-                </label>
+                <label>Archivo Excel</label>
 
                 <input
                     type="file"
@@ -546,11 +531,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <?php if (!empty($mensaje)): ?>
-
             <div class="alert <?= $errores > 0 ? 'alert-error' : 'alert-success' ?>">
                 <?= $mensaje ?>
             </div>
-
         <?php endif; ?>
 
         <a href="productos.php" class="btn-volver">
@@ -558,7 +541,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </a>
 
     </div>
-
 </div>
 
 <script>
@@ -589,7 +571,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (tipo.value === 'informacion') {
             agregarOpcion('ADMINISTRADOR', 'ADMINISTRADOR', true);
             sucursal.disabled = false;
-            ayuda.textContent = 'La información de productos se carga como catálogo general del administrador.';
+            ayuda.textContent = 'La información de productos se carga como catálogo general.';
             return;
         }
 

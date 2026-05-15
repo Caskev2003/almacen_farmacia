@@ -8,9 +8,28 @@ requireLogin();
 
 $controller = new ExistenciaController();
 
+$user = currentUser();
+
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+$esAdmin = in_array($rolUsuario, ['ADMINISTRADOR', 'ADMIN'], true);
+
+$almacenIdSesion = (int)($user['almacen_id'] ?? 0);
+
+if ($almacenIdSesion === 1) {
+    $sucursalUsuario = 'CIUDAD HIDALGO';
+} elseif ($almacenIdSesion === 2 || $almacenIdSesion === 3) {
+    $sucursalUsuario = 'TUXTLA';
+} else {
+    $sucursalUsuario = '';
+}
+
 $buscar = trim($_GET['buscar'] ?? '');
 $almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
 $estadoStock = trim($_GET['estado_stock'] ?? '');
+
+if (!$esAdmin) {
+    $almacenId = $almacenIdSesion;
+}
 
 $almacenes = $controller->almacenes();
 $productos = $controller->index($buscar, $almacenId, $estadoStock);
@@ -23,7 +42,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <div class="module-header">
     <div>
         <h2>Existencias</h2>
-        <p>Consulta el inventario actual, productos bajos y productos sin existencia.</p>
+        <p>
+            Consulta el inventario actual, productos bajos y productos sin existencia.
+            <?php if (!$esAdmin && $sucursalUsuario !== ''): ?>
+                <strong>Almacén actual: <?= e($sucursalUsuario) ?></strong>
+            <?php endif; ?>
+        </p>
     </div>
 </div>
 
@@ -47,8 +71,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <span>Sin existencia</span>
         <strong><?= number_format((int)$resumen['sin_existencia']) ?></strong>
     </div>
-
-   
 </div>
 
 <div class="existencias-filter-card">
@@ -63,20 +85,22 @@ include __DIR__ . '/../app/views/layouts/header.php';
             >
         </div>
 
-        <div class="existencia-field">
-            <label>Almacén</label>
-            <select name="almacen_id">
-                <option value="0">Todos los almacenes</option>
-                <?php foreach ($almacenes as $almacen): ?>
-                    <option 
-                        value="<?= (int)$almacen['id'] ?>"
-                        <?= $almacenId === (int)$almacen['id'] ? 'selected' : '' ?>
-                    >
-                        <?= e($almacen['nombre']) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
+        <?php if ($esAdmin): ?>
+            <div class="existencia-field">
+                <label>Almacén</label>
+                <select name="almacen_id">
+                    <option value="0">Todos los almacenes</option>
+                    <?php foreach ($almacenes as $almacen): ?>
+                        <option 
+                            value="<?= (int)$almacen['id'] ?>"
+                            <?= $almacenId === (int)$almacen['id'] ? 'selected' : '' ?>
+                        >
+                            <?= e($almacen['nombre']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        <?php endif; ?>
 
         <div class="existencia-field">
             <label>Estado de stock</label>
@@ -113,7 +137,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <th>Ubicación</th>
                     <th>Stock mín.</th>
                     <th>Stock máx.</th>
-                    <th>Existencia</th>
+
+                    <?php if ($esAdmin && $almacenId === 0): ?>
+                        <th>Ciudad Hidalgo</th>
+                        <th>Tuxtla</th>
+                        <th>Total</th>
+                    <?php else: ?>
+                        <th>Existencia</th>
+                    <?php endif; ?>
+
                     <th>Estado</th>
                     <th>Valor</th>
                 </tr>
@@ -123,10 +155,19 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <?php if (!empty($productos)): ?>
                     <?php foreach ($productos as $producto): ?>
                         <?php
-                            $existencia = (int)($producto['existencia_consultada'] ?? 0);
                             $stockMinimo = (int)($producto['stock_minimo'] ?? 0);
                             $stockMaximo = (int)($producto['stock_maximo'] ?? 0);
                             $precioCompra = (float)($producto['precio_compra'] ?? 0);
+
+                            $existenciaHidalgo = (int)($producto['existencia_hidalgo'] ?? 0);
+                            $existenciaTuxtla = (int)($producto['existencia_tuxtla'] ?? 0);
+
+                            if ($esAdmin && $almacenId === 0) {
+                                $existencia = $existenciaHidalgo + $existenciaTuxtla;
+                            } else {
+                                $existencia = (int)($producto['existencia_consultada'] ?? $producto['existencia'] ?? 0);
+                            }
+
                             $valor = $existencia * $precioCompra;
 
                             $estadoTexto = 'Stock normal';
@@ -135,7 +176,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             if ($existencia <= 0) {
                                 $estadoTexto = 'Sin existencia';
                                 $estadoClase = 'estado-sin';
-                            } elseif ($existencia <= $stockMinimo) {
+                            } elseif ($stockMinimo > 0 && $existencia <= $stockMinimo) {
                                 $estadoTexto = 'Stock bajo';
                                 $estadoClase = 'estado-bajo';
                             }
@@ -151,18 +192,27 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             <td><?= e($producto['ubicacion'] ?? '') ?></td>
                             <td class="text-right"><?= number_format($stockMinimo) ?></td>
                             <td class="text-right"><?= number_format($stockMaximo) ?></td>
-                            <td class="text-right existencia-number"><?= number_format($existencia) ?></td>
+
+                            <?php if ($esAdmin && $almacenId === 0): ?>
+                                <td class="text-right existencia-number"><?= number_format($existenciaHidalgo) ?></td>
+                                <td class="text-right existencia-number"><?= number_format($existenciaTuxtla) ?></td>
+                                <td class="text-right existencia-number"><?= number_format($existencia) ?></td>
+                            <?php else: ?>
+                                <td class="text-right existencia-number"><?= number_format($existencia) ?></td>
+                            <?php endif; ?>
+
                             <td>
                                 <span class="stock-badge <?= e($estadoClase) ?>">
                                     <?= e($estadoTexto) ?>
                                 </span>
                             </td>
+
                             <td class="text-right">$<?= number_format($valor, 2) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <tr>
-                        <td colspan="12" class="empty-table">
+                        <td colspan="<?= ($esAdmin && $almacenId === 0) ? '14' : '12' ?>" class="empty-table">
                             No se encontraron existencias con los filtros seleccionados.
                         </td>
                     </tr>

@@ -15,9 +15,23 @@ class Usuario
 
     public function findByUsuarioOrCorreo(string $login): ?array
     {
-        $sql = "SELECT * FROM {$this->table}
-                WHERE (usuario = :login OR correo = :login)
-                AND estado = 1
+        $sql = "SELECT 
+                    u.*,
+                    a.nombre AS almacen_nombre,
+                    UPPER(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(a.nombre, ' ', '_'),
+                                'Á', 'A'
+                            ),
+                            'É', 'E'
+                        )
+                    ) AS almacen_codigo
+                FROM {$this->table} u
+                LEFT JOIN almacenes a
+                    ON u.almacen_id = a.id
+                WHERE (u.usuario = :login OR u.correo = :login)
+                AND u.estado = 1
                 LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
@@ -26,7 +40,7 @@ class Usuario
             ':login' => $login
         ]);
 
-        $user = $stmt->fetch();
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $user ?: null;
     }
@@ -34,17 +48,29 @@ class Usuario
     public function findById(int $id): ?array
     {
         $sql = "SELECT 
-                    id,
-                    nombre,
-                    usuario,
-                    correo,
-                    rol,
-                    estado,
-                    almacen_id,
-                    created_at,
-                    updated_at
-                FROM {$this->table}
-                WHERE id = :id
+                    u.id,
+                    u.nombre,
+                    u.usuario,
+                    u.correo,
+                    u.rol,
+                    u.estado,
+                    u.almacen_id,
+                    u.created_at,
+                    u.updated_at,
+                    a.nombre AS almacen_nombre,
+                    UPPER(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(a.nombre, ' ', '_'),
+                                'Á', 'A'
+                            ),
+                            'É', 'E'
+                        )
+                    ) AS almacen_codigo
+                FROM {$this->table} u
+                LEFT JOIN almacenes a
+                    ON u.almacen_id = a.id
+                WHERE u.id = :id
                 LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
@@ -53,7 +79,7 @@ class Usuario
             ':id' => $id
         ]);
 
-        $user = $stmt->fetch();
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $user ?: null;
     }
@@ -69,14 +95,10 @@ class Usuario
                     u.estado,
                     u.almacen_id,
                     u.created_at,
-
                     a.nombre AS almacen_nombre
-
                 FROM usuarios u
-
                 LEFT JOIN almacenes a
                     ON u.almacen_id = a.id
-
                 ORDER BY
                     u.nombre ASC";
 
@@ -148,25 +170,26 @@ class Usuario
             ':id' => $id
         ]);
     }
+
     public function update(int $id, array $data): bool
-{
-    $sql = "UPDATE usuarios SET
-                nombre = :nombre,
-                usuario = :usuario,
-                correo = :correo,
-                rol = :rol,
-                almacen_id = :almacen_id
-            WHERE id = :id";
+    {
+        $sql = "UPDATE usuarios SET
+                    nombre = :nombre,
+                    usuario = :usuario,
+                    correo = :correo,
+                    rol = :rol,
+                    almacen_id = :almacen_id
+                WHERE id = :id";
 
-    $stmt = $this->conn->prepare($sql);
+        $stmt = $this->conn->prepare($sql);
 
-    return $stmt->execute([
-        ':nombre' => $data['nombre'],
-        ':usuario' => $data['usuario'],
-        ':correo' => $data['correo'],
-        ':rol' => $data['rol'],
-        ':almacen_id' => $data['almacen_id'] ?? null,
-        ':id' => $id,
-    ]);
-}
+        return $stmt->execute([
+            ':nombre' => $data['nombre'],
+            ':usuario' => $data['usuario'],
+            ':correo' => $data['correo'],
+            ':rol' => $data['rol'],
+            ':almacen_id' => $data['almacen_id'] ?? null,
+            ':id' => $id,
+        ]);
+    }
 }

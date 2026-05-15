@@ -11,9 +11,66 @@ class ProductoController
         $this->productoModel = new Producto();
     }
 
-    public function index(string $search = ''): array
+    private function esAdministrador(): bool
     {
-        return $this->productoModel->getAll(trim($search));
+        $user = $_SESSION['user'] ?? null;
+
+        return isset($user['rol'])
+            && strtoupper(trim($user['rol'])) === 'ADMINISTRADOR';
+    }
+
+    private function sucursalUsuario(): string
+    {
+        $user = $_SESSION['user'] ?? null;
+
+        if (!$user) {
+            return '';
+        }
+
+        // PRIMERO intentamos por nombre
+        $almacenNombre = strtoupper(trim($user['almacen_nombre'] ?? ''));
+
+        if (str_contains($almacenNombre, 'HIDALGO')) {
+            return 'CIUDAD HIDALGO';
+        }
+
+        if (str_contains($almacenNombre, 'TUXTLA')) {
+            return 'TUXTLA';
+        }
+
+        // SI NO EXISTE EL NOMBRE, usamos el ID
+        $almacenId = (int)($user['almacen_id'] ?? 0);
+
+        // AJUSTA ESTOS IDS SEGÚN TU TABLA almacenes
+        if ($almacenId === 1) {
+            return 'CIUDAD HIDALGO';
+        }
+
+        if ($almacenId === 2) {
+            return 'TUXTLA';
+        }
+
+        return '';
+    }
+
+    public function index(string $search = '', string $sucursal = ''): array
+    {
+        $isAdmin = $this->esAdministrador();
+
+        if (!$isAdmin) {
+            $sucursal = $this->sucursalUsuario();
+        }
+
+        return $this->productoModel->getAll(
+            trim($search),
+            trim($sucursal),
+            $isAdmin
+        );
+    }
+
+    public function count(string $search = '', string $sucursal = ''): int
+    {
+        return $this->productoModel->countAll(trim($search));
     }
 
     public function categorias(): array
@@ -26,6 +83,11 @@ class ProductoController
         return $this->productoModel->getProveedores();
     }
 
+    public function almacenes(): array
+    {
+        return $this->productoModel->getAlmacenes();
+    }
+
     public function find(int $id): ?array
     {
         return $this->productoModel->findById($id);
@@ -33,20 +95,6 @@ class ProductoController
 
     private function sanitizeData(array $data): array
     {
-        $existenciaBodega = (int)($data['existencia_bodega'] ?? 0);
-        $existenciaFarmacia = (int)($data['existencia_farmacia'] ?? 0);
-
-        if ($existenciaBodega < 0) {
-            $existenciaBodega = 0;
-        }
-
-        if ($existenciaFarmacia < 0) {
-            $existenciaFarmacia = 0;
-        }
-
-        $existenciaActual = (int)($data['existencia_actual'] ?? 0);
-$existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
-
         return [
             'codigo' => trim($data['codigo'] ?? ''),
             'codigo_barras' => trim($data['codigo_barras'] ?? ''),
@@ -60,60 +108,69 @@ $existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
             'stock_minimo' => trim($data['stock_minimo'] ?? '0'),
             'stock_maximo' => trim($data['stock_maximo'] ?? '0'),
             'ubicacion' => trim($data['ubicacion'] ?? ''),
-            'existencia_bodega' => $existenciaBodega,
-            'existencia_farmacia' => $existenciaFarmacia,
-            'existencia_actual' => $existenciaActual,
         ];
     }
 
     private function validate(array $data, ?int $id = null): array
     {
         if ($data['codigo'] === '') {
-            return ['success' => false, 'message' => 'El código es obligatorio.'];
+            return [
+                'success' => false,
+                'message' => 'El código es obligatorio.'
+            ];
         }
 
         if ($data['descripcion'] === '') {
-            return ['success' => false, 'message' => 'La descripción es obligatoria.'];
+            return [
+                'success' => false,
+                'message' => 'La descripción es obligatoria.'
+            ];
         }
 
-        if (!is_numeric($data['precio_compra']) || $data['precio_compra'] < 0) {
-            return ['success' => false, 'message' => 'El precio de compra no es válido.'];
+        if (!is_numeric($data['precio_compra']) || (float)$data['precio_compra'] < 0) {
+            return [
+                'success' => false,
+                'message' => 'El precio de compra no es válido.'
+            ];
         }
 
-        if (!is_numeric($data['precio_venta']) || $data['precio_venta'] < 0) {
-            return ['success' => false, 'message' => 'El precio de venta no es válido.'];
+        if (!is_numeric($data['precio_venta']) || (float)$data['precio_venta'] < 0) {
+            return [
+                'success' => false,
+                'message' => 'El precio de venta no es válido.'
+            ];
         }
 
         if (!is_numeric($data['stock_minimo']) || (int)$data['stock_minimo'] < 0) {
-            return ['success' => false, 'message' => 'El stock mínimo no es válido.'];
+            return [
+                'success' => false,
+                'message' => 'El stock mínimo no es válido.'
+            ];
         }
 
         if (!is_numeric($data['stock_maximo']) || (int)$data['stock_maximo'] < 0) {
-            return ['success' => false, 'message' => 'El stock máximo no es válido.'];
-        }
-
-        if (!is_numeric($data['existencia_bodega']) || (int)$data['existencia_bodega'] < 0) {
-            return ['success' => false, 'message' => 'La existencia en bodega no es válida.'];
-        }
-
-        if (!is_numeric($data['existencia_farmacia']) || (int)$data['existencia_farmacia'] < 0) {
-            return ['success' => false, 'message' => 'La existencia en farmacia no es válida.'];
-        }
-
-        if (!is_numeric($data['existencia_actual']) || (int)$data['existencia_actual'] < 0) {
-            return ['success' => false, 'message' => 'La existencia total no es válida.'];
+            return [
+                'success' => false,
+                'message' => 'El stock máximo no es válido.'
+            ];
         }
 
         if ($this->productoModel->existsByCodigo($data['codigo'], $id)) {
-            return ['success' => false, 'message' => 'Ya existe un producto con ese código.'];
+            return [
+                'success' => false,
+                'message' => 'Ya existe un producto con ese código en el catálogo.'
+            ];
         }
 
-        return ['success' => true];
+        return [
+            'success' => true
+        ];
     }
 
     public function store(array $postData): array
     {
         $data = $this->sanitizeData($postData);
+
         $validation = $this->validate($data);
 
         if (!$validation['success']) {
@@ -123,15 +180,31 @@ $existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
         $ok = $this->productoModel->create($data);
 
         if (!$ok) {
-            return ['success' => false, 'message' => 'No se pudo registrar el producto.'];
+            return [
+                'success' => false,
+                'message' => 'No se pudo registrar el producto.'
+            ];
         }
 
-        return ['success' => true, 'message' => 'Producto registrado correctamente.'];
+        return [
+            'success' => true,
+            'message' => 'Producto registrado correctamente.'
+        ];
     }
 
     public function update(int $id, array $postData): array
     {
+        $productoActual = $this->productoModel->findById($id);
+
+        if (!$productoActual) {
+            return [
+                'success' => false,
+                'message' => 'El producto no existe.'
+            ];
+        }
+
         $data = $this->sanitizeData($postData);
+
         $validation = $this->validate($data, $id);
 
         if (!$validation['success']) {
@@ -141,10 +214,91 @@ $existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
         $ok = $this->productoModel->update($id, $data);
 
         if (!$ok) {
-            return ['success' => false, 'message' => 'No se pudo actualizar el producto.'];
+            return [
+                'success' => false,
+                'message' => 'No se pudo actualizar el producto.'
+            ];
         }
 
-        return ['success' => true, 'message' => 'Producto actualizado correctamente.'];
+        return [
+            'success' => true,
+            'message' => 'Producto actualizado correctamente.'
+        ];
+    }
+
+    public function importarInformacion(array $data): array
+    {
+        $codigo = trim($data['codigo'] ?? '');
+
+        if ($codigo === '') {
+            return [
+                'success' => false,
+                'message' => 'El código de barras es obligatorio.'
+            ];
+        }
+
+        $ok = $this->productoModel->crearOActualizarCatalogo([
+            'codigo' => $codigo,
+            'codigo_barras' => $data['codigo_barras'] ?? $codigo,
+            'descripcion' => $data['descripcion'] ?? '',
+            'laboratorio' => $data['marca'] ?? '',
+            'unidad_medida' => '',
+            'categoria_id' => null,
+            'proveedor_id' => null,
+            'precio_compra' => 0,
+            'precio_venta' => 0,
+            'stock_minimo' => 0,
+            'stock_maximo' => 0,
+            'ubicacion' => '',
+        ]);
+
+        return [
+            'success' => $ok,
+            'message' => $ok
+                ? 'Producto importado correctamente.'
+                : 'No se pudo importar el producto.'
+        ];
+    }
+
+    public function importarExistencia(
+        string $codigo,
+        string $sucursal,
+        int $existencia
+    ): array {
+
+        $codigo = trim($codigo);
+        $sucursal = strtoupper(trim($sucursal));
+
+        if ($codigo === '') {
+            return [
+                'success' => false,
+                'message' => 'El código de barras es obligatorio.'
+            ];
+        }
+
+        if ($sucursal === '') {
+            return [
+                'success' => false,
+                'message' => 'La sucursal es obligatoria.'
+            ];
+        }
+
+        if ($existencia < 0) {
+            $existencia = 0;
+        }
+
+        $ok = $this->productoModel->actualizarExistenciaPorCodigo(
+            $codigo,
+            $sucursal,
+            $existencia
+        );
+
+        return [
+            'success' => $ok,
+            'message' => $ok
+                ? 'Existencia actualizada correctamente.'
+                : 'No se encontró el producto en el catálogo.'
+        ];
     }
 
     public function destroy(int $id): array
@@ -152,15 +306,24 @@ $existenciaFarmacia = max(0, $existenciaActual - $existenciaBodega);
         $producto = $this->productoModel->findById($id);
 
         if (!$producto) {
-            return ['success' => false, 'message' => 'El producto no existe.'];
+            return [
+                'success' => false,
+                'message' => 'El producto no existe.'
+            ];
         }
 
         $ok = $this->productoModel->deleteLogical($id);
 
         if (!$ok) {
-            return ['success' => false, 'message' => 'No se pudo eliminar el producto.'];
+            return [
+                'success' => false,
+                'message' => 'No se pudo eliminar el producto.'
+            ];
         }
 
-        return ['success' => true, 'message' => 'Producto eliminado correctamente.'];
+        return [
+            'success' => true,
+            'message' => 'Producto eliminado correctamente.'
+        ];
     }
 }

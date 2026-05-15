@@ -8,6 +8,22 @@ requireLogin();
 
 $controller = new ProductoController();
 
+$user = currentUser();
+
+
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+$esAdmin = in_array($rolUsuario, ['ADMINISTRADOR', 'ADMIN'], true);
+
+$almacenNombre = strtoupper(trim($user['almacen_nombre'] ?? ''));
+
+if (str_contains($almacenNombre, 'HIDALGO')) {
+    $sucursalUsuario = 'CIUDAD HIDALGO';
+} elseif (str_contains($almacenNombre, 'TUXTLA')) {
+    $sucursalUsuario = 'TUXTLA';
+} else {
+    $sucursalUsuario = $almacenNombre;
+}
+
 $message = '';
 $messageType = '';
 $search = trim($_GET['search'] ?? '');
@@ -18,10 +34,6 @@ $perPage = 25;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-
-    $_POST['existencia_bodega'] = (int)($_POST['existencia_bodega'] ?? 0);
-    $_POST['existencia_farmacia'] = (int)($_POST['existencia_farmacia'] ?? 0);
-    $_POST['existencia_actual'] = $_POST['existencia_bodega'] + $_POST['existencia_farmacia'];
 
     if ($action === 'create') {
         $result = $controller->store($_POST);
@@ -45,11 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if (isset($_GET['edit'])) {
-    $editId = (int) $_GET['edit'];
+    $editId = (int)$_GET['edit'];
     $editando = $controller->find($editId);
 }
 
-$productosTodos = $controller->index($search);
+$productosTodos = $controller->index($search, $sucursalUsuario);
 $categorias = $controller->categorias();
 $proveedores = $controller->proveedores();
 
@@ -74,7 +86,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <div class="module-header">
     <div>
         <h2>Catálogo de Productos</h2>
-        <p>Alta, edición, búsqueda y control del catálogo general.</p>
+        <p>
+            Catálogo general de productos y control de existencias por almacén.
+            <?php if (!$esAdmin && $sucursalUsuario !== ''): ?>
+                <strong>Almacén actual: <?= e($sucursalUsuario) ?></strong>
+            <?php endif; ?>
+        </p>
     </div>
 </div>
 
@@ -137,19 +154,19 @@ include __DIR__ . '/../app/views/layouts/header.php';
         flex-wrap: wrap;
     }
 
-    .badge-total {
+    .badge-existencia {
         font-weight: bold;
-        color: #0f172a;
+        color: #15803d;
     }
 
-    .badge-bodega {
+    .badge-hidalgo {
         font-weight: bold;
         color: #1d4ed8;
     }
 
-    .badge-farmacia {
+    .badge-tuxtla {
         font-weight: bold;
-        color: #15803d;
+        color: #7c3aed;
     }
 </style>
 
@@ -249,40 +266,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     >
                     <datalist id="listaUbicaciones"></datalist>
                 </div>
-
-                <div class="form-group">
-                    <label>Existencia Bodega</label>
-                    <input
-                        type="number"
-                        min="0"
-                        name="existencia_bodega"
-                        id="existencia_bodega"
-                        value="<?= e($editando['existencia_bodega'] ?? '0') ?>"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label>Existencia Farmacia</label>
-                    <input
-                        type="number"
-                        min="0"
-                        name="existencia_farmacia"
-                        id="existencia_farmacia"
-                        value="<?= e($editando['existencia_farmacia'] ?? '0') ?>"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label>Total sistema</label>
-                    <input
-                        type="number"
-                        min="0"
-                        name="existencia_actual"
-                        id="existencia_actual"
-                        readonly
-                        value="<?= e($editando['existencia_actual'] ?? '0') ?>"
-                    >
-                </div>
             </div>
 
             <div class="form-actions">
@@ -339,13 +322,19 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Unidad</th>
                         <th>P. Compra</th>
                         <th>P. Venta</th>
-                        <th>Total</th>
-                        <th>Bodega</th>
-                        <th>Farmacia</th>
+
+                        <?php if ($esAdmin): ?>
+                            <th>Ciudad Hidalgo</th>
+                            <th>Tuxtla</th>
+                        <?php else: ?>
+                            <th>Existencia</th>
+                        <?php endif; ?>
+
                         <th>Ubicación</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
+
                 <tbody>
                     <?php if (count($productos) > 0): ?>
                         <?php foreach ($productos as $producto): ?>
@@ -354,24 +343,34 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 <td><?= e($producto['codigo']) ?></td>
                                 <td><?= e($producto['codigo_barras']) ?></td>
                                 <td><?= e($producto['descripcion']) ?></td>
-                                <td><?= e($producto['categoria']) ?></td>
-                                <td><?= e($producto['proveedor']) ?></td>
-                                <td><?= e($producto['laboratorio']) ?></td>
-                                <td><?= e($producto['unidad_medida']) ?></td>
-                                <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
-                                <td>$<?= number_format((float)$producto['precio_venta'], 2) ?></td>
-                                <td class="badge-total"><?= (int)$producto['existencia_actual'] ?></td>
-                                <td class="badge-bodega"><?= (int)($producto['existencia_bodega'] ?? 0) ?></td>
-                                <td class="badge-farmacia"><?= (int)($producto['existencia_farmacia'] ?? 0) ?></td>
-                                <td><?= e($producto['ubicacion']) ?></td>
+                                <td><?= e($producto['categoria'] ?? '') ?></td>
+                                <td><?= e($producto['proveedor'] ?? '') ?></td>
+                                <td><?= e($producto['laboratorio'] ?? '') ?></td>
+                                <td><?= e($producto['unidad_medida'] ?? '') ?></td>
+                                <td>$<?= number_format((float)($producto['precio_compra'] ?? 0), 2) ?></td>
+                                <td>$<?= number_format((float)($producto['precio_venta'] ?? 0), 2) ?></td>
+
+                                <?php if ($esAdmin): ?>
+                                    <td class="badge-hidalgo"><?= (int)($producto['existencia_hidalgo'] ?? 0) ?></td>
+                                    <td class="badge-tuxtla"><?= (int)($producto['existencia_tuxtla'] ?? 0) ?></td>
+                                <?php else: ?>
+                                    <td class="badge-existencia"><?= (int)($producto['existencia'] ?? 0) ?></td>
+                                <?php endif; ?>
+
+                                <td><?= e($producto['ubicacion'] ?? '') ?></td>
+
                                 <td>
                                     <div class="action-buttons">
-                                        <a href="productos.php?edit=<?= (int)$producto['id'] ?>&page=<?= $page ?>&<?= e($queryBase) ?>" class="btn-edit">Editar</a>
+                                        <a href="productos.php?edit=<?= (int)$producto['id'] ?>&page=<?= $page ?>&<?= e($queryBase) ?>" class="btn-edit">
+                                            Editar
+                                        </a>
 
                                         <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto?');">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?= (int)$producto['id'] ?>">
-                                            <button type="submit" class="btn-delete">Eliminar</button>
+                                            <button type="submit" class="btn-delete">
+                                                Eliminar
+                                            </button>
                                         </form>
                                     </div>
                                 </td>
@@ -379,7 +378,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="15" class="empty-table">No hay productos registrados.</td>
+                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
+                                No hay productos registrados.
+                            </td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
@@ -402,10 +403,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php endif; ?>
 
                     <?php
-                        $startPage = max(1, $page - 2);
-                        $endPage = min($totalPages, $page + 2);
+                    $startPage = max(1, $page - 2);
+                    $endPage = min($totalPages, $page + 2);
 
-                        for ($i = $startPage; $i <= $endPage; $i++):
+                    for ($i = $startPage; $i <= $endPage; $i++):
                     ?>
                         <?php if ($i === $page): ?>
                             <span class="active"><?= $i ?></span>
@@ -429,31 +430,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const bodega = document.getElementById('existencia_bodega');
-    const farmacia = document.getElementById('existencia_farmacia');
-    const total = document.getElementById('existencia_actual');
-
-    function calcularFarmacia() {
-    const t = parseInt(total?.value || 0);
-    const b = parseInt(bodega?.value || 0);
-
-    let farmaciaCalculada = t - b;
-
-    if (farmaciaCalculada < 0) {
-        farmaciaCalculada = 0;
-    }
-
-    if (farmacia) {
-        farmacia.value = farmaciaCalculada;
-    }
-}
-
-if (bodega) bodega.addEventListener('input', calcularFarmacia);
-if (total) total.addEventListener('input', calcularFarmacia);
-
-calcularFarmacia();
-
     const lista = document.getElementById('listaUbicaciones');
+
     if (!lista) return;
 
     const ubicaciones = [];

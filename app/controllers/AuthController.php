@@ -44,12 +44,16 @@ class AuthController
         }
 
         $_SESSION['user'] = [
-            'id' => $user['id'],
+            'id' => (int)$user['id'],
             'nombre' => $user['nombre'],
             'usuario' => $user['usuario'],
             'correo' => $user['correo'],
             'rol' => $user['rol'],
-            'almacen_id' => $user['almacen_id'] ?? null
+            'almacen_id' => isset($user['almacen_id']) ? (int)$user['almacen_id'] : null,
+
+            // NUEVO: estos campos nos servirán para separar existencias por sucursal
+            'almacen_nombre' => $user['almacen_nombre'] ?? null,
+            'almacen_codigo' => $user['almacen_codigo'] ?? null
         ];
 
         return [
@@ -61,6 +65,20 @@ class AuthController
     public function logout(): void
     {
         $_SESSION = [];
+
+        if (ini_get("session.use_cookies")) {
+            $params = session_get_cookie_params();
+            setcookie(
+                session_name(),
+                '',
+                time() - 42000,
+                $params["path"],
+                $params["domain"],
+                $params["secure"],
+                $params["httponly"]
+            );
+        }
+
         session_destroy();
     }
 }

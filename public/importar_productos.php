@@ -1,14 +1,18 @@
 <?php
 
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../app/helpers/auth.php';
 require_once __DIR__ . '/../app/config/database.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
+
+requireLogin();
 
 $db = new Database();
 $conn = $db->connect();
 
 $mensaje = "";
+$errores = 0;
 
 function limpiarTexto($valor): string
 {
@@ -29,179 +33,438 @@ function limpiarCodigo($valor): string
 
 function codigoValido(string $codigo): bool
 {
-    if ($codigo === '') {
-        return false;
-    }
-
-    if (!preg_match('/[1-9]/', $codigo)) {
-        return false;
-    }
-
-    if (strlen($codigo) < 5) {
-        return false;
-    }
-
-    return true;
+    return $codigo !== ''
+        && preg_match('/[1-9]/', $codigo)
+        && strlen($codigo) >= 3;
 }
 
-function limpiarEntero($valor): int
+function normalizarEncabezado(string $texto): string
+{
+    $texto = strtolower(trim($texto));
+
+    $texto = str_replace(
+        [' ', '_', '-', '.', '/', '\\'],
+        '',
+        $texto
+    );
+
+    $texto = str_replace(
+        ['á', 'é', 'í', 'ó', 'ú', 'ñ'],
+        ['a', 'e', 'i', 'o', 'u', 'n'],
+        $texto
+    );
+
+    return $texto;
+}
+
+function valorFila(array $fila, ?string $columna): string
+{
+    if (!$columna) {
+        return '';
+    }
+
+    return limpiarTexto($fila[$columna] ?? '');
+}
+
+function codigoFila(array $fila, ?string $columna): string
+{
+    if (!$columna) {
+        return '';
+    }
+
+    return limpiarCodigo($fila[$columna] ?? '');
+}
+
+function obtenerCategoriaId(PDO $conn, string $nombre): ?int
+{
+    $nombre = trim($nombre);
+
+    if ($nombre === '' || $nombre === '-') {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM categorias
+        WHERE nombre = ?
+        LIMIT 1
+    ");
+
+    $stmt->execute([$nombre]);
+    $categoria = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($categoria) {
+        return (int)$categoria['id'];
+    }
+
+    $stmtInsert = $conn->prepare("
+        INSERT INTO categorias (nombre, estado)
+        VALUES (?, 1)
+    ");
+
+    $stmtInsert->execute([$nombre]);
+
+    return (int)$conn->lastInsertId();
+}
+
+function totalProductos(PDO $conn): int
+{
+    $stmt = $conn->query("
+        SELECT COUNT(*) 
+        FROM productos
+        WHERE estado = 1
+    ");
+
+    return (int)$stmt->fetchColumn();
+}
+
+function buscarProductoPorCodigoBarras(PDO $conn, string $codigo): ?array
+{
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM productos
+        WHERE codigo_barras = ?
+           OR codigo = ?
+        LIMIT 1
+    ");
+
+    $stmt->execute([$codigo, $codigo]);
+
+    $producto = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $producto ?: null;
+}
+
+function campoVacio($valor): bool
 {
     $valor = trim((string)($valor ?? ''));
+    return $valor === '' || $valor === '-';
+}
 
-    if ($valor === '' || $valor === '-') {
+function numeroExcel($valor): float
+{
+    $valor = trim((string)($valor ?? '0'));
+    $valor = str_replace([',', '$'], '', $valor);
+
+    if ($valor === '' || !is_numeric($valor)) {
         return 0;
     }
 
-    $valor = str_replace(['$', ',', ' '], ['', '', ''], $valor);
+    return (float)$valor;
+}
 
-    if (!is_numeric($valor)) {
-        return 0;
-    }
+function actualizarExistencia(PDO $conn, int $productoId, string $sucursal, int $existencia): bool
+{
+    $stmt = $conn->prepare("
+        INSERT INTO producto_existencias (
+            producto_id,
+            sucursal,
+            existencia
+        ) VALUES (
+            ?, ?, ?
+        )
+        ON DUPLICATE KEY UPDATE
+            existencia = VALUES(existencia),
+            updated_at = CURRENT_TIMESTAMP
+    ");
 
-    return (int) round((float)$valor);
+    return $stmt->execute([
+        $productoId,
+        $sucursal,
+        $existencia
+    ]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
+    $tipoImportacion = limpiarTexto($_POST['tipo_importacion'] ?? '');
     $sucursal = limpiarTexto($_POST['sucursal'] ?? '');
 
-    if ($sucursal === '') {
-        $mensaje = "Debes seleccionar una sucursal.";
-    } elseif (!empty($_FILES['excel']['tmp_name'])) {
+    if ($tipoImportacion === '') {
 
-        $archivo = $_FILES['excel']['tmp_name'];
+        $mensaje = "Debes seleccionar el tipo de importación.";
+
+    } elseif ($tipoImportacion === 'existencia' && $sucursal === '') {
+
+        $mensaje = "Debes seleccionar una sucursal para importar existencias.";
+
+    } elseif (empty($_FILES['excel']['tmp_name'])) {
+
+        $mensaje = "Debes seleccionar un archivo Excel.";
+
+    } else {
 
         try {
-            $spreadsheet = IOFactory::load($archivo);
+
+            $spreadsheet = IOFactory::load($_FILES['excel']['tmp_name']);
             $hoja = $spreadsheet->getActiveSheet();
             $filas = $hoja->toArray(null, true, true, true);
 
-            if (count($filas) < 1) {
-                throw new Exception("El archivo Excel no contiene registros.");
+            if (count($filas) < 2) {
+                throw new Exception("El Excel no contiene datos suficientes.");
             }
 
-            $colCodigo = 'A';
-            $colCodigoBarras = 'B';
-            $colDescripcion = 'C';
-            $colExistencia = 'D';
+            $filaEncabezado = array_shift($filas);
+            $encabezados = [];
+
+            foreach ($filaEncabezado as $columna => $valor) {
+                $encabezados[normalizarEncabezado((string)$valor)] = $columna;
+            }
 
             $insertados = 0;
             $actualizados = 0;
             $omitidos = 0;
-            $errores = 0;
+            $noEncontrados = 0;
+            $sinCambios = 0;
+            $detalleErrores = [];
 
-            foreach ($filas as $numeroFila => $fila) {
+            if ($tipoImportacion === 'informacion') {
 
-                $codigo = limpiarCodigo($fila[$colCodigo] ?? '');
-                $codigo_barras = limpiarCodigo($fila[$colCodigoBarras] ?? '');
-                $descripcion = limpiarTexto($fila[$colDescripcion] ?? '');
-                $existenciaTotalExcel = limpiarEntero($fila[$colExistencia] ?? 0);
+                $productosActuales = totalProductos($conn);
+                $permitirInsertar = $productosActuales === 0;
 
-                if (!codigoValido($codigo) || $descripcion === '') {
-                    $omitidos++;
-                    continue;
+                $colCodigoBarras = $encabezados['codigobarras'] ?? null;
+                $colNombre = $encabezados['nombre'] ?? null;
+                $colMarca = $encabezados['descripcioncategoria'] ?? null;
+                $colCategoria = $encabezados['descripcionsubfamilia'] ?? null;
+
+                $colPrecioCompra =
+                    $encabezados['preciocompra'] ??
+                    $encabezados['costo'] ??
+                    $encabezados['ultimocosto'] ??
+                    null;
+
+                $colPrecioVenta =
+                    $encabezados['precioventa'] ??
+                    $encabezados['precio'] ??
+                    $encabezados['preciopublico'] ??
+                    null;
+
+                if (!$colCodigoBarras || !$colNombre) {
+                    throw new Exception("No se encontraron las columnas obligatorias: CodigoBarras y Nombre.");
                 }
 
-                if ($codigo_barras === '') {
-                    $codigo_barras = $codigo;
-                }
+                foreach ($filas as $numeroFila => $fila) {
 
-                try {
-                    $stmtExiste = $conn->prepare("
-                        SELECT 
-                            id,
-                            existencia_bodega
-                        FROM productos
-                        WHERE codigo = ?
-                        AND sucursal = ?
-                        LIMIT 1
-                    ");
+                    $codigo = codigoFila($fila, $colCodigoBarras);
+                    $codigoBarras = $codigo;
+                    $descripcion = valorFila($fila, $colNombre);
+                    $marca = valorFila($fila, $colMarca);
+                    $categoriaNombre = valorFila($fila, $colCategoria);
+                    $precioCompra = numeroExcel(valorFila($fila, $colPrecioCompra));
+                    $precioVenta = numeroExcel(valorFila($fila, $colPrecioVenta));
 
-                    $stmtExiste->execute([$codigo, $sucursal]);
-                    $productoExistente = $stmtExiste->fetch(PDO::FETCH_ASSOC);
-
-                    if ($productoExistente) {
-
-                        $existenciaBodegaActual = (int)($productoExistente['existencia_bodega'] ?? 0);
-                        $existenciaFarmaciaCalculada = max(0, $existenciaTotalExcel - $existenciaBodegaActual);
-
-                        $stmtUpdate = $conn->prepare("
-                            UPDATE productos
-                            SET 
-                                codigo_barras = ?,
-                                descripcion = ?,
-                                existencia_actual = ?,
-                                existencia_farmacia = ?
-                            WHERE id = ?
-                        ");
-
-                        $stmtUpdate->execute([
-                            $codigo_barras,
-                            $descripcion,
-                            $existenciaTotalExcel,
-                            $existenciaFarmaciaCalculada,
-                            $productoExistente['id']
-                        ]);
-
-                        $actualizados++;
+                    if (!codigoValido($codigo) || campoVacio($descripcion)) {
+                        $omitidos++;
                         continue;
                     }
 
-                    $existenciaBodega = 0;
-                    $existenciaFarmacia = $existenciaTotalExcel;
+                    try {
 
-                    $stmtProducto = $conn->prepare("
-                        INSERT INTO productos (
-                            codigo,
-                            codigo_barras,
-                            descripcion,
-                            categoria_id,
-                            proveedor_id,
-                            laboratorio,
-                            unidad_medida,
-                            precio_compra,
-                            precio_venta,
-                            stock_minimo,
-                            stock_maximo,
-                            ubicacion,
-                            existencia_actual,
-                            existencia_bodega,
-                            existencia_farmacia,
-                            sucursal,
-                            estado
-                        ) VALUES (
-                            ?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, ?, ?, ?, ?, 1
-                        )
-                    ");
+                        $producto = buscarProductoPorCodigoBarras($conn, $codigo);
 
-                    $stmtProducto->execute([
-                        $codigo,
-                        $codigo_barras,
-                        $descripcion,
-                        $existenciaTotalExcel,
-                        $existenciaBodega,
-                        $existenciaFarmacia,
-                        $sucursal
-                    ]);
+                        if ($producto) {
 
-                    $insertados++;
+                            $categoriaId = null;
 
-                } catch (Exception $e) {
-                    $errores++;
-                    continue;
+                            if (!campoVacio($categoriaNombre) && empty($producto['categoria_id'])) {
+                                $categoriaId = obtenerCategoriaId($conn, $categoriaNombre);
+                            }
+
+                            $nuevoCodigo = campoVacio($producto['codigo']) ? $codigo : $producto['codigo'];
+                            $nuevoCodigoBarras = campoVacio($producto['codigo_barras']) ? $codigoBarras : $producto['codigo_barras'];
+                            $nuevaDescripcion = campoVacio($producto['descripcion']) ? $descripcion : $producto['descripcion'];
+                            $nuevoLaboratorio = campoVacio($producto['laboratorio']) ? $marca : $producto['laboratorio'];
+
+                            $nuevaCategoriaId = !empty($producto['categoria_id'])
+                                ? $producto['categoria_id']
+                                : $categoriaId;
+
+                            $nuevoPrecioCompra = ((float)$producto['precio_compra'] <= 0 && $precioCompra > 0)
+                                ? $precioCompra
+                                : $producto['precio_compra'];
+
+                            $nuevoPrecioVenta = ((float)$producto['precio_venta'] <= 0 && $precioVenta > 0)
+                                ? $precioVenta
+                                : $producto['precio_venta'];
+
+                            $stmtUpdate = $conn->prepare("
+                                UPDATE productos
+                                SET
+                                    codigo = ?,
+                                    codigo_barras = ?,
+                                    descripcion = ?,
+                                    categoria_id = ?,
+                                    laboratorio = ?,
+                                    precio_compra = ?,
+                                    precio_venta = ?,
+                                    estado = 1
+                                WHERE id = ?
+                            ");
+
+                            $stmtUpdate->execute([
+                                $nuevoCodigo,
+                                $nuevoCodigoBarras,
+                                $nuevaDescripcion,
+                                $nuevaCategoriaId,
+                                campoVacio($nuevoLaboratorio) ? null : $nuevoLaboratorio,
+                                $nuevoPrecioCompra,
+                                $nuevoPrecioVenta,
+                                $producto['id']
+                            ]);
+
+                            $actualizados++;
+
+                        } else {
+
+                            if (!$permitirInsertar) {
+                                $noEncontrados++;
+                                continue;
+                            }
+
+                            $categoriaId = obtenerCategoriaId($conn, $categoriaNombre);
+
+                            $stmtInsert = $conn->prepare("
+                                INSERT INTO productos (
+                                    codigo,
+                                    codigo_barras,
+                                    descripcion,
+                                    categoria_id,
+                                    proveedor_id,
+                                    laboratorio,
+                                    unidad_medida,
+                                    precio_compra,
+                                    precio_venta,
+                                    stock_minimo,
+                                    stock_maximo,
+                                    ubicacion,
+                                    existencia_bodega,
+                                    sucursal,
+                                    estado
+                                ) VALUES (
+                                    ?, ?, ?, ?, NULL,
+                                    ?, NULL, ?, ?,
+                                    0, 0, NULL,
+                                    0, NULL, 1
+                                )
+                            ");
+
+                            $stmtInsert->execute([
+                                $codigo,
+                                $codigoBarras,
+                                $descripcion,
+                                $categoriaId,
+                                campoVacio($marca) ? null : $marca,
+                                $precioCompra,
+                                $precioVenta
+                            ]);
+
+                            $insertados++;
+                        }
+
+                    } catch (Exception $e) {
+
+                        $errores++;
+
+                        if (count($detalleErrores) < 10) {
+                            $detalleErrores[] = "Fila {$numeroFila}: " . $e->getMessage();
+                        }
+                    }
                 }
+
+                $mensaje = "
+                    Importación de <strong>INFORMACIÓN</strong> completada.<br><br>
+                    Productos antes de importar: <strong>{$productosActuales}</strong><br>
+                    Insertados: <strong>{$insertados}</strong><br>
+                    Actualizados / comparados: <strong>{$actualizados}</strong><br>
+                    No encontrados y NO insertados: <strong>{$noEncontrados}</strong><br>
+                    Omitidos: <strong>{$omitidos}</strong><br>
+                    Errores: <strong>{$errores}</strong>
+                ";
+
+                if (!$permitirInsertar) {
+                    $mensaje .= "<br><br><strong>Nota:</strong> Como ya existía catálogo, el sistema no agregó productos nuevos; solo comparó y rellenó información.";
+                }
+
+            } elseif ($tipoImportacion === 'existencia') {
+
+                $colCodigoBarras = $encabezados['codigobarras'] ?? null;
+                $colExistencia = $encabezados['existencia'] ?? null;
+
+                if (!$colCodigoBarras || !$colExistencia) {
+                    throw new Exception("No se encontraron las columnas obligatorias: CodigoBarras y Existencia.");
+                }
+
+                foreach ($filas as $numeroFila => $fila) {
+
+                    $codigo = codigoFila($fila, $colCodigoBarras);
+                    $existenciaRaw = valorFila($fila, $colExistencia);
+
+                    if (!codigoValido($codigo)) {
+                        $omitidos++;
+                        continue;
+                    }
+
+                    $existencia = (int)str_replace(',', '', $existenciaRaw);
+
+                    if ($existencia < 0) {
+                        $existencia = 0;
+                    }
+
+                    try {
+
+                        $producto = buscarProductoPorCodigoBarras($conn, $codigo);
+
+                        if (!$producto) {
+                            $noEncontrados++;
+                            continue;
+                        }
+
+                        actualizarExistencia(
+                            $conn,
+                            (int)$producto['id'],
+                            $sucursal,
+                            $existencia
+                        );
+
+                        $actualizados++;
+
+                    } catch (Exception $e) {
+
+                        $errores++;
+
+                        if (count($detalleErrores) < 10) {
+                            $detalleErrores[] = "Fila {$numeroFila}: " . $e->getMessage();
+                        }
+                    }
+                }
+
+                $mensaje = "
+                    Importación de <strong>EXISTENCIAS</strong> completada para <strong>{$sucursal}</strong>.<br><br>
+                    Existencias actualizadas: <strong>{$actualizados}</strong><br>
+                    Productos no encontrados en catálogo: <strong>{$noEncontrados}</strong><br>
+                    Omitidos: <strong>{$omitidos}</strong><br>
+                    Errores: <strong>{$errores}</strong>
+                ";
+
+            } else {
+
+                throw new Exception("Tipo de importación no válido.");
             }
 
-            $mensaje = "Importación completada para $sucursal. Insertados: $insertados | Actualizados: $actualizados | Filas omitidas: $omitidos | Errores: $errores";
+            if (!empty($detalleErrores)) {
+                $mensaje .= "<br><br><strong>Primeros errores:</strong><br>";
+                $mensaje .= implode("<br>", $detalleErrores);
+            }
 
         } catch (Exception $e) {
-            $mensaje = "Error: " . $e->getMessage();
-        }
 
-    } else {
-        $mensaje = "Debes seleccionar un archivo Excel.";
+            $mensaje = "Error: " . $e->getMessage();
+            $errores++;
+        }
     }
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -210,124 +473,146 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <title>Importar Productos</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f5f6fa;
-            padding: 40px;
-        }
-
-        .card {
-            background: white;
-            max-width: 650px;
-            margin: auto;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 0 12px rgba(0,0,0,.12);
-        }
-
-        h2 {
-            margin-bottom: 10px;
-            color: #0f3b66;
-        }
-
-        p {
-            color: #555;
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 8px;
-            color: #334155;
-        }
-
-        select,
-        input[type=file] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 18px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-        }
-
-        button {
-            background: #00529b;
-            color: white;
-            border: none;
-            padding: 12px 22px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        button:hover {
-            background: #003f78;
-        }
-
-        .mensaje {
-            margin-top: 20px;
-            padding: 15px;
-            background: #d1e7dd;
-            border-radius: 6px;
-            color: #0f5132;
-            font-weight: bold;
-        }
-
-        .volver {
-            display: inline-block;
-            margin-top: 18px;
-            text-decoration: none;
-            color: #00529b;
-            font-weight: bold;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/css/importar_productos.css">
 </head>
+
 <body>
 
-<div class="card">
+<div class="import-container">
 
-    <h2>Importar Productos desde Excel</h2>
+    <div class="import-card">
 
-    <p>
-        El Excel debe venir sin encabezados y con este orden:
-        <br>
-        <strong>A:</strong> Articulo / Código,
-        <strong>B:</strong> Código de barras,
-        <strong>C:</strong> Nombre,
-        <strong>D:</strong> Existencia total.
-    </p>
+        <h1 class="import-title">
+            Importar Productos
+        </h1>
 
-    <form method="POST" enctype="multipart/form-data">
+        <p class="import-subtitle">
+            Importación masiva desde Excel
+        </p>
 
-        <label>Sucursal / Almacén</label>
-        <select name="sucursal" required>
-            <option value="">Seleccione una opción</option>
-            <option value="TUXTLA">TUXTLA</option>
-            <option value="CIUDAD HIDALGO">CIUDAD HIDALGO</option>
-        </select>
+        <form method="POST" enctype="multipart/form-data">
 
-        <label>Archivo Excel</label>
-        <input type="file" name="excel" accept=".xlsx,.xls" required>
+            <div class="form-group">
+                <label>
+                    Tipo de importación
+                </label>
 
-        <button type="submit">
-            Importar Excel
-        </button>
+                <select name="tipo_importacion" id="tipo_importacion" class="form-control" required>
+                    <option value="">
+                        Seleccione una opción
+                    </option>
 
-    </form>
+                    <option value="informacion">
+                        Información de productos
+                    </option>
 
-    <?php if ($mensaje): ?>
-        <div class="mensaje">
-            <?= htmlspecialchars($mensaje) ?>
-        </div>
-    <?php endif; ?>
+                    <option value="existencia">
+                        Existencias por almacén
+                    </option>
+                </select>
+            </div>
 
-    <a class="volver" href="productos.php">
-        ← Volver a productos
-    </a>
+            <div class="form-group">
+                <label>
+                    Sucursal / Almacén
+                </label>
+
+                <select name="sucursal" id="sucursal" class="form-control" required>
+                    <option value="">
+                        Seleccione una opción
+                    </option>
+                </select>
+
+                <small id="ayudaSucursal" style="display:block; margin-top:6px; color:#64748b;">
+                    Selecciona primero el tipo de importación.
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    Archivo Excel
+                </label>
+
+                <input
+                    type="file"
+                    name="excel"
+                    class="form-control"
+                    accept=".xlsx,.xls"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="btn-importar">
+                Importar Excel
+            </button>
+
+        </form>
+
+        <?php if (!empty($mensaje)): ?>
+
+            <div class="alert <?= $errores > 0 ? 'alert-error' : 'alert-success' ?>">
+                <?= $mensaje ?>
+            </div>
+
+        <?php endif; ?>
+
+        <a href="productos.php" class="btn-volver">
+            ← Volver a productos
+        </a>
+
+    </div>
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const tipo = document.getElementById('tipo_importacion');
+    const sucursal = document.getElementById('sucursal');
+    const ayuda = document.getElementById('ayudaSucursal');
+
+    function limpiarOpciones() {
+        sucursal.innerHTML = '';
+    }
+
+    function agregarOpcion(valor, texto, selected = false) {
+        const option = document.createElement('option');
+        option.value = valor;
+        option.textContent = texto;
+
+        if (selected) {
+            option.selected = true;
+        }
+
+        sucursal.appendChild(option);
+    }
+
+    function actualizarSucursal() {
+        limpiarOpciones();
+
+        if (tipo.value === 'informacion') {
+            agregarOpcion('ADMINISTRADOR', 'ADMINISTRADOR', true);
+            sucursal.disabled = false;
+            ayuda.textContent = 'La información de productos se carga como catálogo general del administrador.';
+            return;
+        }
+
+        if (tipo.value === 'existencia') {
+            agregarOpcion('', 'Seleccione una opción');
+            agregarOpcion('CIUDAD HIDALGO', 'CIUDAD HIDALGO');
+            agregarOpcion('TUXTLA', 'TUXTLA');
+            sucursal.disabled = false;
+            ayuda.textContent = 'Las existencias sí se cargan por almacén.';
+            return;
+        }
+
+        agregarOpcion('', 'Seleccione una opción');
+        ayuda.textContent = 'Selecciona primero el tipo de importación.';
+    }
+
+    tipo.addEventListener('change', actualizarSucursal);
+    actualizarSucursal();
+});
+</script>
 
 </body>
 </html>

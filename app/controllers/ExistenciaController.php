@@ -15,6 +15,27 @@ class ExistenciaController
         $this->productoModel = new Producto();
     }
 
+    private function esAdministrador(): bool
+    {
+        $usuario = $_SESSION['user'] ?? [];
+        $rol = strtoupper(trim($usuario['rol'] ?? ''));
+
+        return in_array($rol, ['ADMINISTRADOR', 'ADMIN'], true);
+    }
+
+    private function sucursalPorAlmacenId(int $almacenId): string
+    {
+        if ($almacenId === 1) {
+            return 'CIUDAD HIDALGO';
+        }
+
+        if ($almacenId === 2 || $almacenId === 3) {
+            return 'TUXTLA';
+        }
+
+        return '';
+    }
+
     public function almacenes(): array
     {
         return $this->productoModel->getAlmacenes();
@@ -24,17 +45,31 @@ class ExistenciaController
     {
         $usuario = $_SESSION['user'] ?? [];
 
-        $rol = $usuario['rol'] ?? '';
+        $esAdmin = $this->esAdministrador();
         $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
 
-        if ($rol !== 'ADMINISTRADOR') {
+        if (!$esAdmin) {
             $almacenId = $almacenSesion;
         }
+
+        if ($esAdmin && $almacenId === 0) {
+            return $this->productoModel->getExistencias(
+                trim($buscar),
+                0,
+                trim($estadoStock),
+                '',
+                true
+            );
+        }
+
+        $sucursal = $this->sucursalPorAlmacenId($almacenId);
 
         return $this->productoModel->getExistencias(
             trim($buscar),
             $almacenId,
-            trim($estadoStock)
+            trim($estadoStock),
+            $sucursal,
+            false
         );
     }
 
@@ -48,7 +83,15 @@ class ExistenciaController
         $totalUnidades = 0;
 
         foreach ($productos as $producto) {
-            $existencia = (int)($producto['existencia_consultada'] ?? 0);
+            $existenciaHidalgo = (int)($producto['existencia_hidalgo'] ?? 0);
+            $existenciaTuxtla = (int)($producto['existencia_tuxtla'] ?? 0);
+
+            if (isset($producto['existencia_hidalgo']) || isset($producto['existencia_tuxtla'])) {
+                $existencia = $existenciaHidalgo + $existenciaTuxtla;
+            } else {
+                $existencia = (int)($producto['existencia_consultada'] ?? $producto['existencia'] ?? 0);
+            }
+
             $stockMinimo = (int)($producto['stock_minimo'] ?? 0);
             $precioCompra = (float)($producto['precio_compra'] ?? 0);
 
@@ -57,7 +100,7 @@ class ExistenciaController
 
             if ($existencia <= 0) {
                 $sinExistencia++;
-            } elseif ($existencia <= $stockMinimo) {
+            } elseif ($stockMinimo > 0 && $existencia <= $stockMinimo) {
                 $stockBajo++;
             } else {
                 $stockNormal++;

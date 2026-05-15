@@ -58,11 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button type="submit" class="btn-primary">Entrar</button>
             </form>
 
-            <div class="login-demo">
-                <strong>Acceso inicial:</strong><br>
-                Usuario: <code>admin</code><br>
-                Contraseña: <code>admin123</code>
-            </div>
+            
         </div>
     </div>
 </body>

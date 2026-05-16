@@ -8,8 +8,12 @@ $moduleCss = $moduleCss ?? null;
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 $almacenId = (int)($user['almacen_id'] ?? 0);
 
-$puedeVerInventarioVirtual =
-    $rolUsuario === 'ADMINISTRADOR'
+$esAdmin = $rolUsuario === 'ADMINISTRADOR';
+$esGerente = $rolUsuario === 'GERENTE';
+
+$puedeVerInventarios =
+    $esAdmin
+    || $esGerente
     || $almacenId === 1
     || $almacenId === 2
     || $almacenId === 3;
@@ -27,21 +31,17 @@ $puedeVerInventarioVirtual =
     <?php if (!empty($moduleCss)): ?>
         <link rel="stylesheet" href="assets/css/<?= $moduleCss ?>.css?v=<?= time() ?>">
     <?php endif; ?>
-
 </head>
 
 <body>
 
 <header class="topbar">
-
     <div class="topbar-left">
         <h1>SISTEMA DE ALMACÉN - FARMACIA</h1>
     </div>
 
     <div class="topbar-right">
-
         <?php if ($user): ?>
-
             <span>
                 <?= e($user['nombre']) ?>
                 |
@@ -51,11 +51,8 @@ $puedeVerInventarioVirtual =
             <a href="logout.php" class="btn-top">
                 Cerrar sesión
             </a>
-
         <?php endif; ?>
-
     </div>
-
 </header>
 
 <?php if ($user): ?>
@@ -64,31 +61,31 @@ $puedeVerInventarioVirtual =
 
         <a href="dashboard.php">Inicio</a>
 
-        <a href="productos.php">Productos</a>
-
-        <a href="entradas.php">Entradas</a>
-
-        <a href="salidas.php">Salidas</a>
+        <?php if (!$esGerente): ?>
+            <a href="productos.php">Productos</a>
+            <a href="entradas.php">Entradas</a>
+            <a href="salidas.php">Salidas</a>
+        <?php endif; ?>
 
         <a href="existencias.php">Existencias</a>
 
-        <a href="kardex.php">Kardex</a>
+        <?php if (!$esGerente): ?>
+            <a href="kardex.php">Kardex</a>
+            <a href="reportes.php">Reportes</a>
 
-        <a href="reportes.php">Reportes</a>
+            <a href="historial_entradas.php">
+                Historial de Entradas
+            </a>
 
-        <a href="historial_entradas.php">
-            Historial de Entradas
-        </a>
+            <a href="historial_salidas.php">
+                Historial Salidas
+            </a>
+        <?php endif; ?>
 
-        <a href="historial_salidas.php">
-            Historial Salidas
-        </a>
-
-        <a href="inventario_fisico.php">
-            Inventario Físico
-        </a>
-
-        <?php if ($puedeVerInventarioVirtual): ?>
+        <?php if ($puedeVerInventarios): ?>
+            <a href="inventario_fisico.php">
+                Inventario Físico
+            </a>
 
             <a href="inventario_virtual.php">
                 Inventario Virtual
@@ -97,15 +94,12 @@ $puedeVerInventarioVirtual =
             <a href="inventario_virtual_historial.php">
                 Historial Virtual
             </a>
-
         <?php endif; ?>
 
-        <?php if ($rolUsuario === 'ADMINISTRADOR'): ?>
-
+        <?php if ($esAdmin): ?>
             <a href="usuario.php">
                 Usuarios
             </a>
-
         <?php endif; ?>
 
     </nav>

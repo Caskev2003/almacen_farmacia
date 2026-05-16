@@ -6,10 +6,24 @@ require_once __DIR__ . '/../app/controllers/InventarioFisicoVirtualController.ph
 
 requireLogin();
 
-$controller = new InventarioFisicoVirtualController();
-$controller->verificarAcceso();
-
 $user = currentUser();
+
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+
+$puedeEntrar =
+    $rolUsuario === 'ADMINISTRADOR'
+    || $rolUsuario === 'ENCARGADO'
+    || $rolUsuario === 'ALMACEN'
+    || $rolUsuario === 'GERENTE'
+    || in_array($almacenSesion, [1, 2, 3], true);
+
+if (!$puedeEntrar) {
+    header('Location: dashboard.php');
+    exit;
+}
+
+$controller = new InventarioFisicoVirtualController();
 
 $mensaje = '';
 $error = '';
@@ -35,9 +49,6 @@ if (isset($_GET['success'])) {
 $folio = $controller->generarFolio();
 $almacenes = $controller->almacenes();
 
-$rol = $user['rol'] ?? '';
-$almacenSesion = (int)($user['almacen_id'] ?? 0);
-
 $moduleCss = 'inventario_virtual';
 
 include __DIR__ . '/../app/views/layouts/header.php';
@@ -47,7 +58,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
     <div class="inventario-header">
         <div>
-            <h2>Inventario Virtual - Tuxtla Gutiérrez</h2>
+            <h2>Inventario Virtual</h2>
             <p>Escanea productos y captura cantidades físicas.</p>
         </div>
 
@@ -91,9 +102,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <select
                         name="almacen_id"
                         required
-                        <?= $rol !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
+                        <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
                     >
-                        <?php if ($rol === 'ADMINISTRADOR'): ?>
+                        <?php if ($rolUsuario === 'ADMINISTRADOR'): ?>
                             <option value="">Seleccione</option>
                         <?php endif; ?>
 
@@ -102,11 +113,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 $idAlmacen = (int)$almacen['id'];
                                 $selected = false;
 
-                                if ($rol !== 'ADMINISTRADOR' && $idAlmacen === $almacenSesion) {
+                                if ($rolUsuario !== 'ADMINISTRADOR' && $idAlmacen === $almacenSesion) {
                                     $selected = true;
                                 }
 
-                                if ($rol === 'ADMINISTRADOR' && $idAlmacen === 3) {
+                                if ($rolUsuario === 'ADMINISTRADOR' && $idAlmacen === 3) {
                                     $selected = true;
                                 }
                             ?>
@@ -120,7 +131,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php endforeach; ?>
                     </select>
 
-                    <?php if ($rol !== 'ADMINISTRADOR'): ?>
+                    <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
                         <input
                             type="hidden"
                             name="almacen_id"

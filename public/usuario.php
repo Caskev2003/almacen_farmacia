@@ -263,10 +263,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <div class="usuario-field">
                 <label>Rol</label>
                 <select name="rol" required>
-                    <option value="CONSULTA">CONSULTA</option>
-                    <option value="ENCARGADO">ENCARGADO</option>
-                    <option value="ADMINISTRADOR">ADMINISTRADOR</option>
-                </select>
+    <option value="CONSULTA">CONSULTA</option>
+    <option value="ENCARGADO">ENCARGADO</option>
+    <option value="GERENTE">GERENTE</option>
+    <option value="ADMINISTRADOR">ADMINISTRADOR</option>
+</select>
             </div>
 
             <div class="usuario-field">
@@ -409,6 +410,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <option value="CONSULTA">CONSULTA</option>
                         <option value="ENCARGADO">ENCARGADO</option>
                         <option value="ADMINISTRADOR">ADMINISTRADOR</option>
+                        <option value="GERENTE">GERENTE</option>
                     </select>
                 </div>
 

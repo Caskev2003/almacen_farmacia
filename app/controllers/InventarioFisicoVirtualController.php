@@ -27,15 +27,17 @@ class InventarioFisicoVirtualController
             exit;
         }
 
-        $rol = $user['rol'] ?? '';
+        $rol = strtoupper(trim($user['rol'] ?? ''));
         $almacenId = (int)($user['almacen_id'] ?? 0);
 
-        // SOLO ADMIN O TUXTLA
-        if (
-            $rol !== 'ADMINISTRADOR'
-            &&
-            $almacenId !== 3
-        ) {
+        $puedeEntrar =
+            $rol === 'ADMINISTRADOR'
+            || $rol === 'ENCARGADO'
+            || $rol === 'ALMACEN'
+            || $rol === 'GERENTE'
+            || in_array($almacenId, [1, 2, 3], true);
+
+        if (!$puedeEntrar) {
             header('Location: dashboard.php');
             exit;
         }
@@ -65,7 +67,6 @@ class InventarioFisicoVirtualController
     public function guardar(array $postData, int $usuarioId): array
     {
         try {
-
             $folio = trim($postData['folio'] ?? '');
             $almacenId = (int)($postData['almacen_id'] ?? 0);
             $observaciones = trim($postData['observaciones'] ?? '');
@@ -117,7 +118,6 @@ class InventarioFisicoVirtualController
             $detalle = [];
 
             foreach ($codigos as $i => $codigo) {
-
                 $codigo = trim($codigo);
 
                 if ($codigo === '') {
@@ -135,7 +135,6 @@ class InventarioFisicoVirtualController
                         : null,
 
                     'codigo_barras' => $codigo,
-
                     'descripcion' => trim($descripciones[$i] ?? ''),
 
                     'mostrador' => $mostrador,
@@ -180,7 +179,6 @@ class InventarioFisicoVirtualController
             ];
 
         } catch (Throwable $e) {
-
             return [
                 'success' => false,
                 'message' => 'Error interno: ' . $e->getMessage()
@@ -206,8 +204,9 @@ class InventarioFisicoVirtualController
     public function eliminar(int $id): array
     {
         $user = $_SESSION['user'] ?? null;
+        $rol = strtoupper(trim($user['rol'] ?? ''));
 
-        if (($user['rol'] ?? '') !== 'ADMINISTRADOR') {
+        if ($rol !== 'ADMINISTRADOR') {
             return [
                 'success' => false,
                 'message' => 'No tienes permiso para eliminar inventarios.'

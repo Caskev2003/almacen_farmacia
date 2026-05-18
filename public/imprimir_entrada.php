@@ -149,7 +149,7 @@ $observaciones = $entrada['observaciones'] ?? '';
 
         .movement-number {
             color: #c0392b;
-            font-size: 16px;
+            font-size: 13px;
             font-weight: bold;
             word-break: break-word;
         }

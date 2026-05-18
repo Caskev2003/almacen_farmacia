@@ -501,6 +501,115 @@ class Movimiento
         }
     }
 
+    public function obtenerEntradaPorId(int $movimientoId): ?array
+    {
+        $sql = "SELECT 
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.tipo_movimiento,
+                    m.referencia,
+                    m.observaciones,
+                    a.nombre AS almacen_nombre,
+                    p.nombre AS proveedor_nombre,
+                    u.nombre AS usuario_nombre
+                FROM movimientos m
+                LEFT JOIN almacenes a ON m.almacen_id = a.id
+                LEFT JOIN proveedores p ON m.proveedor_id = p.id
+                INNER JOIN usuarios u ON m.usuario_id = u.id
+                WHERE m.id = :id
+                AND m.tipo_movimiento = 'ENTRADA'
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':id' => $movimientoId
+        ]);
+
+        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$movimiento) {
+            return null;
+        }
+
+        $sqlDetalle = "SELECT 
+                            md.cantidad,
+                            md.costo_unitario,
+                            md.ubicacion,
+                            p.codigo,
+                            p.descripcion,
+                            p.unidad_medida,
+                            l.numero_lote,
+                            l.fecha_caducidad
+                       FROM movimiento_detalle md
+                       INNER JOIN productos p ON md.producto_id = p.id
+                       LEFT JOIN lotes l ON md.lote_id = l.id
+                       WHERE md.movimiento_id = :movimiento_id
+                       ORDER BY md.id ASC";
+
+        $stmtDetalle = $this->conn->prepare($sqlDetalle);
+        $stmtDetalle->execute([
+            ':movimiento_id' => $movimientoId
+        ]);
+
+        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+        return $movimiento;
+    }
+
+    public function obtenerSalidaPorId(int $movimientoId): ?array
+    {
+        $sql = "SELECT 
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.tipo_movimiento,
+                    m.referencia,
+                    m.tipo_operacion,
+                    m.observaciones,
+                    a.nombre AS almacen_nombre,
+                    u.nombre AS usuario_nombre
+                FROM movimientos m
+                LEFT JOIN almacenes a ON m.almacen_id = a.id
+                INNER JOIN usuarios u ON m.usuario_id = u.id
+                WHERE m.id = :id
+                AND m.tipo_movimiento = 'SALIDA'
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':id' => $movimientoId
+        ]);
+
+        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$movimiento) {
+            return null;
+        }
+
+        $sqlDetalle = "SELECT 
+                            md.cantidad,
+                            md.costo_unitario,
+                            md.precio_unitario,
+                            md.ubicacion,
+                            p.codigo,
+                            p.descripcion,
+                            p.unidad_medida
+                       FROM movimiento_detalle md
+                       INNER JOIN productos p ON md.producto_id = p.id
+                       WHERE md.movimiento_id = :movimiento_id
+                       ORDER BY md.id ASC";
+
+        $stmtDetalle = $this->conn->prepare($sqlDetalle);
+        $stmtDetalle->execute([
+            ':movimiento_id' => $movimientoId
+        ]);
+
+        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+        return $movimiento;
+    }
+
     public function historialSalidas(
         string $buscar = '',
         int $almacenId = 0,
@@ -518,7 +627,7 @@ class Movimiento
                     u.nombre AS usuario_nombre,
                     COUNT(md.id) AS total_productos,
                     COALESCE(SUM(md.cantidad), 0) AS total_unidades,
-                    COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
+                    COALESCE(SUM(md.cantidad * md.precio_unitario), 0) AS total
                 FROM movimientos m
                 LEFT JOIN almacenes a ON m.almacen_id = a.id
                 INNER JOIN usuarios u ON m.usuario_id = u.id

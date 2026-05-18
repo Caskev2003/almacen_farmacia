@@ -143,7 +143,7 @@ if (!empty($salida['fecha'])) {
 
         .movement-number {
             color: #c0392b;
-            font-size: 18px;
+            font-size: 14px;
             font-weight: bold;
         }
 

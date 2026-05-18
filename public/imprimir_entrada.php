@@ -33,13 +33,19 @@ $fechaImpresa = '';
 if (!empty($entrada['fecha'])) {
     $fechaImpresa = date('d/m/Y', strtotime($entrada['fecha']));
 }
+
+$folioEntrada = $entrada['folio'] ?? '';
+$almacenNombre = $entrada['almacen_nombre'] ?? '';
+$usuarioNombre = $entrada['usuario_nombre'] ?? '';
+$proveedorNombre = $entrada['proveedor_nombre'] ?? '';
+$observaciones = $entrada['observaciones'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Imprimir entrada</title>
+    <title>Imprimir entrada <?= e($folioEntrada) ?></title>
 
     <style>
         @page {
@@ -98,7 +104,7 @@ if (!empty($entrada['fecha'])) {
 
         .header {
             display: grid;
-            grid-template-columns: 78px 1fr 170px;
+            grid-template-columns: 78px 1fr 220px;
             gap: 10px;
             align-items: start;
             margin-bottom: 8px;
@@ -143,8 +149,9 @@ if (!empty($entrada['fecha'])) {
 
         .movement-number {
             color: #c0392b;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
+            word-break: break-word;
         }
 
         .line {
@@ -254,6 +261,8 @@ if (!empty($entrada['fecha'])) {
     </style>
 </head>
 
+<body>
+
 <script>
 function imprimirYLimpiar() {
     localStorage.removeItem('borradorEntrada');
@@ -261,120 +270,121 @@ function imprimirYLimpiar() {
 }
 </script>
 
-<body>
+<div class="no-print">
+    <button class="btn btn-primary" onclick="imprimirYLimpiar()">Imprimir</button>
+    <a class="btn btn-secondary" href="javascript:history.back()">Regresar</a>
+    <a class="btn btn-primary" href="entradas.php">Nueva entrada</a>
+</div>
 
-    <div class="no-print">
-        <button class="btn btn-primary" onclick="imprimirYLimpiar()">Imprimir</button>
-        <a class="btn btn-secondary" href="javascript:history.back()">Regresar</a>
-        <a class="btn btn-primary" href="entradas.php">Nueva entrada</a>
+<div class="sheet">
+
+    <div class="header">
+        <div class="logo-box">
+            <img src="assets/img/logo.jpeg" alt="Logo G&D">
+        </div>
+
+        <div class="company-box">
+            <div class="company-name">DISTRIBUCIÓN G&D, S.A. DE C.V.</div>
+            <div>CP:</div>
+            <div>RFC: DGD151211PP5</div>
+        </div>
+
+        <div class="movement-box">
+            <h2>Movimientos al Inventario</h2>
+            <div>
+                Folio:
+                <span class="movement-number"><?= e($folioEntrada) ?></span>
+            </div>
+        </div>
     </div>
 
-    <div class="sheet">
+    <div class="line"></div>
 
-        <div class="header">
-            <div class="logo-box">
-                <img src="assets/img/logo.jpeg" alt="Logo G&D">
-            </div>
+    <div class="tipo-row">Tipo: Entrada</div>
 
-            <div class="company-box">
-                <div class="company-name">DISTRIBUCIÓN G&D, S.A. DE C.V.</div>
-                <div>CP:</div>
-                <div>RFC: DGD151211PP5</div>
-            </div>
+    <div class="line"></div>
 
-            <div class="movement-box">
-                <h2>Movimientos al Inventario</h2>
-                <div>No. <span class="movement-number"><?= e((string)$entrada['id']) ?></span></div>
-            </div>
-        </div>
+    <div class="info-grid">
+        <div class="label">Movimiento:</div>
+        <div><?= e($movimientoTexto) ?></div>
 
-        <div class="line"></div>
+        <div class="label">No. interno:</div>
+        <div><?= (int)$entrada['id'] ?></div>
+    </div>
 
-        <div class="tipo-row">Tipo : Entrada</div>
+    <div class="info-grid">
+        <div class="label">Fecha:</div>
+        <div><?= e($fechaImpresa) ?></div>
 
-        <div class="line"></div>
+        <div class="label">Proveedor:</div>
+        <div><?= e($proveedorNombre) ?></div>
+    </div>
 
-        <div class="info-grid">
-            <div class="label">Movimiento:</div>
-            <div><?= e($movimientoTexto) ?></div>
+    <div class="info-grid">
+        <div class="label">Almacén:</div>
+        <div><?= e($almacenNombre) ?></div>
 
-            <div class="label">Folio:</div>
-            <div><?= e($entrada['folio']) ?></div>
-        </div>
+        <div class="label">Usuario:</div>
+        <div><?= e($usuarioNombre) ?></div>
+    </div>
 
-        <div class="info-grid">
-            <div class="label">Fecha:</div>
-            <div><?= e($fechaImpresa) ?></div>
+    <div class="info-grid">
+        <div class="label">Observaciones:</div>
+        <div class="observaciones-box"><?= e($observaciones) ?></div>
+    </div>
 
-            <div class="label">Proveedor:</div>
-            <div><?= e($entrada['proveedor_nombre'] ?? '') ?></div>
-        </div>
+    <div class="line"></div>
 
-        <div class="info-grid">
-            <div class="label">Almacén:</div>
-            <div><?= e($entrada['almacen_nombre'] ?? '') ?></div>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 55px;">Cantidad</th>
+                <th style="width: 85px;">Clave</th>
+                <th>Descripción</th>
+                <th style="width: 70px;">Lote</th>
+                <th style="width: 70px;">Caducidad</th>
+                <th style="width: 75px;">Ubicación</th>
+                <th style="width: 65px;">Costo U.</th>
+                <th style="width: 75px;">Importe</th>
+            </tr>
+        </thead>
 
-            <div class="label">Usuario:</div>
-            <div><?= e($entrada['usuario_nombre'] ?? '') ?></div>
-        </div>
+        <tbody>
+            <?php foreach ($entrada['detalles'] as $detalle): ?>
+                <?php
+                    $cantidad = (int)$detalle['cantidad'];
+                    $costo = (float)$detalle['costo_unitario'];
+                    $importe = $cantidad * $costo;
 
-        <div class="info-grid">
-            <div class="label">Observaciones:</div>
-            <div class="observaciones-box"><?= e($entrada['observaciones'] ?? '') ?></div>
-        </div>
-
-        <div class="line"></div>
-
-        <table>
-            <thead>
+                    $caducidadImpresa = '';
+                    if (!empty($detalle['fecha_caducidad'])) {
+                        $caducidadImpresa = date('d/m/Y', strtotime($detalle['fecha_caducidad']));
+                    }
+                ?>
                 <tr>
-                    <th style="width: 55px;">Cantidad</th>
-                    <th style="width: 85px;">Clave</th>
-                    <th>Descripción</th>
-                    <th style="width: 70px;">Lote</th>
-                    <th style="width: 70px;">Caducidad</th>
-                    <th style="width: 75px;">Ubicación</th>
-                    <th style="width: 65px;">Costo U.</th>
-                    <th style="width: 75px;">Importe</th>
+                    <td><?= $cantidad ?></td>
+                    <td><?= e($detalle['codigo'] ?? '') ?></td>
+                    <td><?= e($detalle['descripcion'] ?? '') ?></td>
+                    <td><?= e($detalle['numero_lote'] ?? '') ?></td>
+                    <td><?= e($caducidadImpresa) ?></td>
+                    <td><?= e($detalle['ubicacion'] ?? '') ?></td>
+                    <td class="text-right"><?= number_format($costo, 2) ?></td>
+                    <td class="text-right"><?= number_format($importe, 2) ?></td>
                 </tr>
-            </thead>
+            <?php endforeach; ?>
 
-            <tbody>
-                <?php foreach ($entrada['detalles'] as $detalle): ?>
-                    <?php
-                        $cantidad = (int)$detalle['cantidad'];
-                        $costo = (float)$detalle['costo_unitario'];
-                        $importe = $cantidad * $costo;
+            <tr class="total-row">
+                <td colspan="7" class="text-right">Total</td>
+                <td class="text-right"><?= number_format($total, 2) ?></td>
+            </tr>
+        </tbody>
+    </table>
 
-                        $caducidadImpresa = '';
-                        if (!empty($detalle['fecha_caducidad'])) {
-                            $caducidadImpresa = date('d/m/Y', strtotime($detalle['fecha_caducidad']));
-                        }
-                    ?>
-                    <tr>
-                        <td><?= $cantidad ?></td>
-                        <td><?= e($detalle['codigo'] ?? '') ?></td>
-                        <td><?= e($detalle['descripcion'] ?? '') ?></td>
-                        <td><?= e($detalle['numero_lote'] ?? '') ?></td>
-                        <td><?= e($caducidadImpresa) ?></td>
-                        <td><?= e($detalle['ubicacion'] ?? '') ?></td>
-                        <td class="text-right"><?= number_format($costo, 2) ?></td>
-                        <td class="text-right"><?= number_format($importe, 2) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-
-                <tr class="total-row">
-                    <td colspan="7" class="text-right">Total</td>
-                    <td class="text-right"><?= number_format($total, 2) ?></td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div class="footer-note">
-            Movimiento Realizado !!!
-        </div>
-
+    <div class="footer-note">
+        Movimiento Realizado !!!
     </div>
+
+</div>
 
 </body>
 </html>

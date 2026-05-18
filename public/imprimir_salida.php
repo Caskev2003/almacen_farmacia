@@ -253,12 +253,14 @@ if (!empty($salida['fecha'])) {
         }
     </style>
 </head>
+
 <script>
 function imprimirYLimpiar() {
     localStorage.removeItem('borradorSalida');
     window.print();
 }
 </script>
+
 <body>
 
     <div class="no-print">
@@ -282,7 +284,12 @@ function imprimirYLimpiar() {
 
             <div class="movement-box">
                 <h2>Movimientos al Inventario</h2>
-                <div>No. <span class="movement-number"><?= e((string)$salida['id']) ?></span></div>
+                <div>
+                    Folio:
+                    <span class="movement-number">
+                        <?= e($salida['folio']) ?>
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -296,8 +303,8 @@ function imprimirYLimpiar() {
             <div class="label">Movimiento:</div>
             <div><?= e($movimientoTexto) ?></div>
 
-            <div class="label">Folio:</div>
-            <div><?= e($salida['folio']) ?></div>
+            <div class="label">No. interno:</div>
+            <div><?= (int)$salida['id'] ?></div>
         </div>
 
         <div class="info-grid">
@@ -342,9 +349,14 @@ function imprimirYLimpiar() {
                         <td><?= e($detalle['codigo']) ?></td>
                         <td><?= e($detalle['descripcion']) ?></td>
                         <td><?= e($detalle['ubicacion']) ?></td>
-                        <td class="text-right"><?= number_format((float)$detalle['precio_unitario'], 2) ?></td>
                         <td class="text-right">
-                            <?= number_format(((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']), 2) ?>
+                            <?= number_format((float)$detalle['precio_unitario'], 2) ?>
+                        </td>
+                        <td class="text-right">
+                            <?= number_format(
+                                ((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']),
+                                2
+                            ) ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

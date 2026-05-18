@@ -34,8 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $almacenes = $controller->almacenes();
 $productos = $controller->productos();
 $tiposSalida = $controller->tiposSalida();
-$folio = $controller->generarFolio();
-$folioAnterior = $controller->ultimoFolioSalida();
+
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+
+$folio = $controller->generarFolio($almacenSesion);
+$folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
+
 $fechaActual = date('Y-m-d\TH:i');
 
 $moduleCss = 'salidas';
@@ -114,14 +119,30 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field almacen-field">
                 <label>Almacén *</label>
-                <select name="almacen_id" required>
+                <select 
+                    name="almacen_id" 
+                    required
+                    <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
+                >
                     <option value="">Seleccione un almacén</option>
+
                     <?php foreach ($almacenes as $almacen): ?>
-                        <option value="<?= (int)$almacen['id'] ?>">
+                        <option 
+                            value="<?= (int)$almacen['id'] ?>"
+                            <?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>
+                        >
                             <?= e($almacen['nombre']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
+
+                <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
+                    <input 
+                        type="hidden" 
+                        name="almacen_id" 
+                        value="<?= (int)$almacenSesion ?>"
+                    >
+                <?php endif; ?>
             </div>
 
             <div class="salida-field observaciones-field">
@@ -209,7 +230,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <thead>
                     <tr>
                         <th>Cantidad</th>
-                        <th>Codigo</th>
+                        <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
                         <th>Existencia</th>
@@ -519,6 +540,8 @@ document.getElementById('formSalida').addEventListener('submit', function (e) {
     if (document.querySelectorAll('input[name="producto_id[]"]').length === 0) {
         e.preventDefault();
         alert('Debes agregar al menos un producto.');
+    } else {
+        localStorage.removeItem('borradorSalida');
     }
 });
 

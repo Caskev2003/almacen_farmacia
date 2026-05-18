@@ -15,6 +15,12 @@ class EntradaController
         $this->movimientoModel = new Movimiento();
     }
 
+    private function obtenerAlmacenSesion(): int
+    {
+        $usuario = $_SESSION['user'] ?? [];
+        return (int)($usuario['almacen_id'] ?? 0);
+    }
+
     public function almacenes(): array
     {
         return $this->movimientoModel->getAlmacenes();
@@ -30,9 +36,13 @@ class EntradaController
         return $this->movimientoModel->getProductosActivos();
     }
 
-    public function generarFolio(): string
+    public function generarFolio(?int $almacenId = null): string
     {
-        return $this->movimientoModel->generarFolioEntrada();
+        $almacenId = $almacenId !== null
+            ? (int)$almacenId
+            : $this->obtenerAlmacenSesion();
+
+        return $this->movimientoModel->generarFolioEntrada($almacenId);
     }
 
     public function obtenerEntrada(int $id): ?array
@@ -60,7 +70,6 @@ class EntradaController
 
     public function guardar(array $postData, int $usuarioId): array
     {
-        $folio = trim($postData['folio'] ?? '');
         $fecha = trim($postData['fecha'] ?? '');
         $folioAnterior = trim($postData['folio_anterior'] ?? '');
         $tipoEntrada = trim($postData['tipo_entrada'] ?? '');
@@ -69,13 +78,26 @@ class EntradaController
         $observaciones = trim($postData['observaciones'] ?? '');
 
         $usuario = $_SESSION['user'] ?? [];
-        $rol = $usuario['rol'] ?? '';
-        $almacenSesionId = $usuario['almacen_id'] ?? null;
+        $rol = strtoupper(trim($usuario['rol'] ?? ''));
+        $almacenSesionId = (int)($usuario['almacen_id'] ?? 0);
 
         if ($rol === 'ADMINISTRADOR') {
-            $almacenId = trim($postData['almacen_id'] ?? '');
+            $almacenId = (int)($postData['almacen_id'] ?? 0);
         } else {
             $almacenId = $almacenSesionId;
+        }
+
+        if ($almacenId <= 0) {
+            return [
+                'success' => false,
+                'message' => 'No tienes un almacén asignado.'
+            ];
+        }
+
+        $folio = trim($postData['folio'] ?? '');
+
+        if ($folio === '') {
+            $folio = $this->movimientoModel->generarFolioEntrada($almacenId);
         }
 
         $productoIds = $postData['producto_id'] ?? [];
@@ -85,30 +107,25 @@ class EntradaController
         $caducidades = $postData['fecha_caducidad'] ?? [];
         $ubicaciones = $postData['ubicacion'] ?? [];
 
-        if ($folio === '') {
-            return ['success' => false, 'message' => 'El folio es obligatorio.'];
-        }
-
         if ($fecha === '') {
-            return ['success' => false, 'message' => 'La fecha es obligatoria.'];
+            return [
+                'success' => false,
+                'message' => 'La fecha es obligatoria.'
+            ];
         }
 
         if ($tipoEntrada === '') {
-            return ['success' => false, 'message' => 'Debes seleccionar el tipo de entrada.'];
-        }
-
-        if (empty($almacenId)) {
-            return ['success' => false, 'message' => 'No tienes un almacén asignado.'];
-        }
-
-        $almacenId = (int)$almacenId;
-
-        if ($almacenId <= 0) {
-            return ['success' => false, 'message' => 'El almacén asignado no es válido.'];
+            return [
+                'success' => false,
+                'message' => 'Debes seleccionar el tipo de entrada.'
+            ];
         }
 
         if (empty($productoIds)) {
-            return ['success' => false, 'message' => 'Debes agregar al menos un producto.'];
+            return [
+                'success' => false,
+                'message' => 'Debes agregar al menos un producto.'
+            ];
         }
 
         $detalle = [];
@@ -126,11 +143,17 @@ class EntradaController
             }
 
             if ($cantidad <= 0) {
-                return ['success' => false, 'message' => 'La cantidad debe ser mayor a 0 en todos los productos.'];
+                return [
+                    'success' => false,
+                    'message' => 'La cantidad debe ser mayor a 0 en todos los productos.'
+                ];
             }
 
             if ($costo < 0) {
-                return ['success' => false, 'message' => 'El costo unitario no puede ser negativo.'];
+                return [
+                    'success' => false,
+                    'message' => 'El costo unitario no puede ser negativo.'
+                ];
             }
 
             $detalle[] = [
@@ -145,7 +168,10 @@ class EntradaController
         }
 
         if (count($detalle) === 0) {
-            return ['success' => false, 'message' => 'No hay productos válidos para guardar.'];
+            return [
+                'success' => false,
+                'message' => 'No hay productos válidos para guardar.'
+            ];
         }
 
         $referenciaFinal = $tipoEntrada;

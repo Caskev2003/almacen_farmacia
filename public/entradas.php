@@ -41,7 +41,11 @@ $almacenes = $controller->almacenes();
 $proveedores = $controller->proveedores();
 $productos = $controller->productos();
 $tiposEntrada = $controller->tiposEntrada();
-$folio = $controller->generarFolio();
+
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+
+$folio = $controller->generarFolio($almacenSesion);
+
 $fechaActual = date('Y-m-d\TH:i');
 
 $moduleCss = 'entradas';
@@ -98,10 +102,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field almacen-field">
                 <label>Almacén *</label>
-                <select name="almacen_id" required>
+                <select name="almacen_id" required <?= strtoupper($user['rol'] ?? '') !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
                     <option value="">Seleccione un almacén</option>
                     <?php foreach ($almacenes as $almacen): ?>
-                        <option value="<?= (int)$almacen['id'] ?>">
+                        <option value="<?= (int)$almacen['id'] ?>"<?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>>
                             <?= e($almacen['nombre']) ?>
                         </option>
                     <?php endforeach; ?>

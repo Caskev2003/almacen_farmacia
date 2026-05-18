@@ -129,52 +129,69 @@ class Movimiento
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function generarFolioEntrada(): string
+    private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
     {
-        $prefijo = 'ENT';
+        $tipoMovimiento = strtoupper(trim($tipoMovimiento));
+        $almacenId = (int)$almacenId;
+
+        if ($almacenId <= 0) {
+            $sesion = $this->obtenerAlmacenSesion();
+            $almacenId = (int)$sesion['almacen_id'];
+        }
+
+        if ($almacenId <= 0) {
+            $almacenId = 0;
+        }
+
+        $prefijo = $tipoMovimiento === 'SALIDA' ? 'SAL' : 'ENT';
         $fecha = date('Ymd');
 
         $sql = "SELECT COUNT(*) AS total 
                 FROM movimientos 
-                WHERE tipo_movimiento = 'ENTRADA' 
+                WHERE tipo_movimiento = :tipo_movimiento
+                AND almacen_id = :almacen_id
                 AND DATE(fecha) = CURDATE()";
-
-        $stmt = $this->conn->query($sql);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $numero = ((int)($row['total'] ?? 0)) + 1;
-
-        return $prefijo . '-' . $fecha . '-' . str_pad((string)$numero, 4, '0', STR_PAD_LEFT);
-    }
-
-    public function generarFolioSalida(): string
-    {
-        $prefijo = 'SAL';
-        $fecha = date('Ymd');
-
-        $sql = "SELECT COUNT(*) AS total 
-                FROM movimientos 
-                WHERE tipo_movimiento = 'SALIDA' 
-                AND DATE(fecha) = CURDATE()";
-
-        $stmt = $this->conn->query($sql);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $numero = ((int)($row['total'] ?? 0)) + 1;
-
-        return $prefijo . '-' . $fecha . '-' . str_pad((string)$numero, 4, '0', STR_PAD_LEFT);
-    }
-
-    public function ultimoFolioSalida(): string
-    {
-        $sql = "SELECT folio 
-                FROM movimientos 
-                WHERE tipo_movimiento = 'SALIDA'
-                ORDER BY id DESC 
-                LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute();
+        $stmt->execute([
+            ':tipo_movimiento' => $tipoMovimiento,
+            ':almacen_id' => $almacenId
+        ]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $numero = ((int)($row['total'] ?? 0)) + 1;
+
+        return $prefijo . '-' . $almacenId . '-' . $fecha . '-' . str_pad((string)$numero, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function generarFolioEntrada(?int $almacenId = null): string
+    {
+        return $this->generarFolioPorAlmacen('ENTRADA', (int)$almacenId);
+    }
+
+    public function generarFolioSalida(?int $almacenId = null): string
+    {
+        return $this->generarFolioPorAlmacen('SALIDA', (int)$almacenId);
+    }
+
+    public function ultimoFolioSalida(?int $almacenId = null): string
+    {
+        $params = [];
+
+        $sql = "SELECT folio 
+                FROM movimientos 
+                WHERE tipo_movimiento = 'SALIDA'";
+
+        if ($almacenId !== null && (int)$almacenId > 0) {
+            $sql .= " AND almacen_id = :almacen_id";
+            $params[':almacen_id'] = (int)$almacenId;
+        }
+
+        $sql .= " ORDER BY id DESC 
+                  LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -245,10 +262,15 @@ class Movimiento
         try {
             $this->conn->beginTransaction();
 
-            $sucursal = $this->obtenerSucursalPorAlmacenId((int)($data['almacen_id'] ?? 0));
+            $almacenId = (int)($data['almacen_id'] ?? 0);
+            $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
 
             if ($sucursal === '') {
                 throw new Exception('No se pudo identificar la sucursal del almacén.');
+            }
+
+            if (empty($data['folio'])) {
+                $data['folio'] = $this->generarFolioEntrada($almacenId);
             }
 
             $sqlMovimiento = "INSERT INTO movimientos (
@@ -265,7 +287,7 @@ class Movimiento
                 ':folio' => $data['folio'],
                 ':tipo_movimiento' => $data['tipo_movimiento'],
                 ':fecha' => $data['fecha'],
-                ':almacen_id' => $data['almacen_id'] ?: null,
+                ':almacen_id' => $almacenId ?: null,
                 ':usuario_id' => $data['usuario_id'],
                 ':proveedor_id' => $data['proveedor_id'] ?: null,
                 ':referencia' => $data['referencia'] ?: null,
@@ -314,7 +336,7 @@ class Movimiento
                         ':fecha_caducidad' => $item['fecha_caducidad'] ?: null,
                         ':existencia' => $cantidad,
                         ':costo_unitario' => $item['costo_unitario'],
-                        ':almacen_id' => $data['almacen_id'] ?: null,
+                        ':almacen_id' => $almacenId ?: null,
                         ':ubicacion' => $item['ubicacion'] ?: null,
                     ]);
 
@@ -368,10 +390,15 @@ class Movimiento
         try {
             $this->conn->beginTransaction();
 
-            $sucursal = $this->obtenerSucursalPorAlmacenId((int)($data['almacen_id'] ?? 0));
+            $almacenId = (int)($data['almacen_id'] ?? 0);
+            $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
 
             if ($sucursal === '') {
                 throw new Exception('No se pudo identificar la sucursal del almacén.');
+            }
+
+            if (empty($data['folio'])) {
+                $data['folio'] = $this->generarFolioSalida($almacenId);
             }
 
             $sqlMovimiento = "INSERT INTO movimientos (
@@ -387,7 +414,7 @@ class Movimiento
             $stmtMovimiento->execute([
                 ':folio' => $data['folio'],
                 ':fecha' => $data['fecha'],
-                ':almacen_id' => $data['almacen_id'] ?: null,
+                ':almacen_id' => $almacenId ?: null,
                 ':usuario_id' => $data['usuario_id'],
                 ':referencia' => $data['referencia'] ?: null,
                 ':tipo_operacion' => $data['tipo_operacion'] ?: null,
@@ -553,223 +580,6 @@ class Movimiento
         $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    public function obtenerSalidaPorId(int $movimientoId): ?array
-    {
-        $sql = "SELECT 
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.tipo_movimiento,
-                    m.referencia,
-                    m.tipo_operacion,
-                    m.observaciones,
-                    a.nombre AS almacen_nombre,
-                    u.nombre AS usuario_nombre
-                FROM movimientos m
-                LEFT JOIN almacenes a ON m.almacen_id = a.id
-                INNER JOIN usuarios u ON m.usuario_id = u.id
-                WHERE m.id = :id
-                AND m.tipo_movimiento = 'SALIDA'
-                LIMIT 1";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':id' => $movimientoId
-        ]);
-
-        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$movimiento) {
-            return null;
-        }
-
-        $sqlDetalle = "SELECT 
-                            md.cantidad,
-                            md.costo_unitario,
-                            md.precio_unitario,
-                            md.ubicacion,
-                            p.codigo,
-                            p.descripcion,
-                            p.unidad_medida
-                       FROM movimiento_detalle md
-                       INNER JOIN productos p ON md.producto_id = p.id
-                       WHERE md.movimiento_id = :movimiento_id
-                       ORDER BY md.id ASC";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([
-            ':movimiento_id' => $movimientoId
-        ]);
-
-        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
-
-        return $movimiento;
-    }
-
-    public function generarKardex(
-        int $productoId,
-        int $almacenId,
-        string $fechaInicio,
-        string $fechaFinal
-    ): array {
-        $fechaInicioSql = $fechaInicio . ' 00:00:00';
-        $fechaFinalSql = $fechaFinal . ' 23:59:59';
-
-        $sqlSaldoAnterior = "SELECT 
-                                COALESCE(SUM(
-                                    CASE 
-                                        WHEN m.tipo_movimiento = 'ENTRADA' THEN md.cantidad
-                                        WHEN m.tipo_movimiento = 'SALIDA' THEN -md.cantidad
-                                        ELSE 0
-                                    END
-                                ), 0) AS saldo
-                             FROM movimiento_detalle md
-                             INNER JOIN movimientos m ON md.movimiento_id = m.id
-                             WHERE md.producto_id = :producto_id
-                             AND m.fecha < :fecha_inicio";
-
-        $paramsSaldo = [
-            ':producto_id' => $productoId,
-            ':fecha_inicio' => $fechaInicioSql,
-        ];
-
-        if ($almacenId > 0) {
-            $sqlSaldoAnterior .= " AND m.almacen_id = :almacen_id";
-            $paramsSaldo[':almacen_id'] = $almacenId;
-        }
-
-        $stmtSaldo = $this->conn->prepare($sqlSaldoAnterior);
-        $stmtSaldo->execute($paramsSaldo);
-
-        $saldoActual = (int)($stmtSaldo->fetch(PDO::FETCH_ASSOC)['saldo'] ?? 0);
-
-        $sql = "SELECT 
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.tipo_movimiento,
-                    m.referencia,
-                    m.tipo_operacion,
-                    m.observaciones,
-                    md.cantidad,
-                    a.nombre AS almacen_nombre,
-                    u.nombre AS usuario_nombre
-                FROM movimiento_detalle md
-                INNER JOIN movimientos m ON md.movimiento_id = m.id
-                LEFT JOIN almacenes a ON m.almacen_id = a.id
-                LEFT JOIN usuarios u ON m.usuario_id = u.id
-                WHERE md.producto_id = :producto_id
-                AND m.fecha BETWEEN :fecha_inicio AND :fecha_final";
-
-        $params = [
-            ':producto_id' => $productoId,
-            ':fecha_inicio' => $fechaInicioSql,
-            ':fecha_final' => $fechaFinalSql,
-        ];
-
-        if ($almacenId > 0) {
-            $sql .= " AND m.almacen_id = :almacen_id";
-            $params[':almacen_id'] = $almacenId;
-        }
-
-        $sql .= " ORDER BY m.fecha ASC, m.id ASC";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-
-        $movimientos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $kardex = [];
-
-        foreach ($movimientos as $mov) {
-            $inventarioInicial = $saldoActual;
-            $cantidad = (int)$mov['cantidad'];
-            $efecto = '';
-
-            if ($mov['tipo_movimiento'] === 'ENTRADA') {
-                $saldoActual += $cantidad;
-                $efecto = 'AUMENTA';
-            } elseif ($mov['tipo_movimiento'] === 'SALIDA') {
-                $saldoActual -= $cantidad;
-                $efecto = 'DISMINUYE';
-            } else {
-                $efecto = 'SIN EFECTO';
-            }
-
-            $kardex[] = [
-                'tipo_movimiento' => $mov['tipo_movimiento'],
-                'folio' => $mov['folio'],
-                'fecha' => $mov['fecha'],
-                'almacen_afectado' => $mov['almacen_nombre'] ?? '',
-                'almacen_destino' => $mov['referencia'] ?? '',
-                'inventario_inicial' => $inventarioInicial,
-                'cantidad' => $cantidad,
-                'inventario_final' => $saldoActual,
-                'efecto' => $efecto,
-                'notas' => $mov['observaciones'] ?? '',
-                'usuario' => $mov['usuario_nombre'] ?? '',
-            ];
-        }
-
-        return $kardex;
-    }
-
-    public function obtenerEntradaPorId(int $movimientoId): ?array
-    {
-        $sql = "SELECT 
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.tipo_movimiento,
-                    m.referencia,
-                    m.observaciones,
-                    a.nombre AS almacen_nombre,
-                    p.nombre AS proveedor_nombre,
-                    u.nombre AS usuario_nombre
-                FROM movimientos m
-                LEFT JOIN almacenes a ON m.almacen_id = a.id
-                LEFT JOIN proveedores p ON m.proveedor_id = p.id
-                INNER JOIN usuarios u ON m.usuario_id = u.id
-                WHERE m.id = :id
-                AND m.tipo_movimiento = 'ENTRADA'
-                LIMIT 1";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':id' => $movimientoId
-        ]);
-
-        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$movimiento) {
-            return null;
-        }
-
-        $sqlDetalle = "SELECT 
-                            md.cantidad,
-                            md.costo_unitario,
-                            md.ubicacion,
-                            p.codigo,
-                            p.descripcion,
-                            p.unidad_medida,
-                            l.numero_lote,
-                            l.fecha_caducidad
-                       FROM movimiento_detalle md
-                       INNER JOIN productos p ON md.producto_id = p.id
-                       LEFT JOIN lotes l ON md.lote_id = l.id
-                       WHERE md.movimiento_id = :movimiento_id
-                       ORDER BY md.id ASC";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([
-            ':movimiento_id' => $movimientoId
-        ]);
-
-        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
-
-        return $movimiento;
     }
 
     public function historialEntradas(

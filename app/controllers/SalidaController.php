@@ -15,6 +15,12 @@ class SalidaController
         $this->movimientoModel = new Movimiento();
     }
 
+    private function obtenerAlmacenSesion(): int
+    {
+        $usuario = $_SESSION['user'] ?? [];
+        return (int)($usuario['almacen_id'] ?? 0);
+    }
+
     public function almacenes(): array
     {
         return $this->movimientoModel->getAlmacenes();
@@ -25,14 +31,22 @@ class SalidaController
         return $this->movimientoModel->getProductosActivos();
     }
 
-    public function generarFolio(): string
+    public function generarFolio(?int $almacenId = null): string
     {
-        return $this->movimientoModel->generarFolioSalida();
+        $almacenId = $almacenId !== null
+            ? (int)$almacenId
+            : $this->obtenerAlmacenSesion();
+
+        return $this->movimientoModel->generarFolioSalida($almacenId);
     }
 
-    public function ultimoFolioSalida(): string
+    public function ultimoFolioSalida(?int $almacenId = null): string
     {
-        return $this->movimientoModel->ultimoFolioSalida();
+        $almacenId = $almacenId !== null
+            ? (int)$almacenId
+            : $this->obtenerAlmacenSesion();
+
+        return $this->movimientoModel->ultimoFolioSalida($almacenId);
     }
 
     public function tiposSalida(): array
@@ -43,14 +57,13 @@ class SalidaController
             ['clave' => 'S0003', 'descripcion' => 'Ajuste de Salida de Inventario'],
             ['clave' => 'S0004', 'descripcion' => 'Salida a Tienda Ciudad Hidalgo'],
             ['clave' => 'S0005', 'descripcion' => 'Salida a Tienda Tapachula'],
-            ['clave' => 'S0006', 'descripcion' => 'Salida a Toscana'],
-            ['clave' => 'S0007', 'descripcion' => 'Salida a Tuxtla Gutierrez'],
+            ['clave' => 'S0006', 'descripcion' => 'Salida a Tienda Toscana'],
+            ['clave' => 'S0007', 'descripcion' => 'Salida a Tienda Tuxtla Gutierrez'],
         ];
     }
 
     public function guardar(array $postData, int $usuarioId): array
     {
-        $folio = trim($postData['folio'] ?? '');
         $fecha = trim($postData['fecha'] ?? '');
         $tipoSalida = trim($postData['tipo_salida'] ?? '');
         $tipoOperacion = trim($postData['tipo_operacion'] ?? '');
@@ -58,14 +71,26 @@ class SalidaController
         $observaciones = trim($postData['observaciones'] ?? '');
 
         $usuario = $_SESSION['user'] ?? [];
-
-        $rol = $usuario['rol'] ?? '';
-        $almacenSesion = $usuario['almacen_id'] ?? null;
+        $rol = strtoupper(trim($usuario['rol'] ?? ''));
+        $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
 
         if ($rol === 'ADMINISTRADOR') {
-            $almacenId = trim($postData['almacen_id'] ?? '');
+            $almacenId = (int)($postData['almacen_id'] ?? 0);
         } else {
             $almacenId = $almacenSesion;
+        }
+
+        if ($almacenId <= 0) {
+            return [
+                'success' => false,
+                'message' => 'No tienes un almacén asignado.'
+            ];
+        }
+
+        $folio = trim($postData['folio'] ?? '');
+
+        if ($folio === '') {
+            $folio = $this->movimientoModel->generarFolioSalida($almacenId);
         }
 
         $productoIds = $postData['producto_id'] ?? [];
@@ -74,20 +99,25 @@ class SalidaController
         $precios = $postData['precio_unitario'] ?? [];
         $ubicaciones = $postData['ubicacion'] ?? [];
 
-        if ($folio === '') {
-            return ['success' => false, 'message' => 'El folio es obligatorio.'];
-        }
-
         if ($fecha === '') {
-            return ['success' => false, 'message' => 'La fecha es obligatoria.'];
+            return [
+                'success' => false,
+                'message' => 'La fecha es obligatoria.'
+            ];
         }
 
         if ($tipoSalida === '') {
-            return ['success' => false, 'message' => 'Debes seleccionar el tipo de salida.'];
+            return [
+                'success' => false,
+                'message' => 'Debes seleccionar el tipo de salida.'
+            ];
         }
 
         if ($tipoOperacion === '') {
-            return ['success' => false, 'message' => 'Debes seleccionar el tipo de documento.'];
+            return [
+                'success' => false,
+                'message' => 'Debes seleccionar el tipo de documento.'
+            ];
         }
 
         if (($tipoOperacion === 'TICKET' || $tipoOperacion === 'RESURTIDO') && $folioOperacion === '') {
@@ -97,24 +127,16 @@ class SalidaController
             ];
         }
 
-        if (empty($almacenId)) {
-            return ['success' => false, 'message' => 'No tienes un almacén asignado.'];
-        }
-
-        $almacenId = (int)$almacenId;
-
-        if ($almacenId <= 0) {
-            return ['success' => false, 'message' => 'El almacén asignado no es válido.'];
-        }
-
         if (empty($productoIds)) {
-            return ['success' => false, 'message' => 'Debes agregar al menos un producto.'];
+            return [
+                'success' => false,
+                'message' => 'Debes agregar al menos un producto.'
+            ];
         }
 
         $detalle = [];
 
         foreach ($productoIds as $i => $productoId) {
-
             $productoId = (int)$productoId;
             $cantidad = isset($cantidades[$i]) ? (int)$cantidades[$i] : 0;
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
@@ -159,7 +181,6 @@ class SalidaController
         $observacionesFinales = $observaciones;
 
         if ($folioOperacion !== '') {
-
             $textoFolio = 'Folio ' . strtolower($tipoOperacion) . ': ' . $folioOperacion;
 
             if ($observacionesFinales !== '') {
@@ -191,10 +212,9 @@ class SalidaController
         string $fechaInicio = '',
         string $fechaFinal = ''
     ): array {
-
         $usuario = $_SESSION['user'] ?? [];
 
-        $rol = $usuario['rol'] ?? '';
+        $rol = strtoupper(trim($usuario['rol'] ?? ''));
         $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
 
         if ($rol !== 'ADMINISTRADOR') {

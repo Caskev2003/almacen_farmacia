@@ -6,10 +6,23 @@ require_once __DIR__ . '/../app/controllers/SalidaController.php';
 
 requireLogin();
 
+$user = currentUser();
+
 $controller = new SalidaController();
 
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+
 $buscar = trim($_GET['buscar'] ?? '');
-$almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
+
+if ($rolUsuario === 'ADMINISTRADOR') {
+    $almacenId = isset($_GET['almacen_id'])
+        ? (int)$_GET['almacen_id']
+        : 0;
+} else {
+    $almacenId = $almacenSesion;
+}
+
 $fechaInicio = trim($_GET['fecha_inicio'] ?? '');
 $fechaFinal = trim($_GET['fecha_final'] ?? '');
 
@@ -34,6 +47,7 @@ foreach ($salidas as $salida) {
 }
 
 $moduleCss = 'historial_entradas';
+
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
@@ -45,6 +59,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 </div>
 
 <div class="historial-resumen-grid">
+
     <div class="historial-card">
         <span>Total salidas</span>
         <strong><?= number_format($totalSalidas) ?></strong>
@@ -60,15 +75,16 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <strong><?= number_format($totalUnidades) ?></strong>
     </div>
 
-    
 </div>
 
 <div class="historial-filter-card">
+
     <form method="GET" action="historial_salidas.php" class="historial-filter-form">
 
         <div class="historial-field search-field">
             <label>Buscar</label>
-            <input 
+
+            <input
                 type="text"
                 name="buscar"
                 value="<?= e($buscar) ?>"
@@ -79,31 +95,60 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <div class="historial-field">
             <label>Almacén</label>
 
-            <select name="almacen_id">
-                <option value="0">Todos los almacenes</option>
+            <select
+                name="almacen_id"
+                <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
+            >
+
+                <?php if ($rolUsuario === 'ADMINISTRADOR'): ?>
+                    <option value="0">Todos los almacenes</option>
+                <?php endif; ?>
 
                 <?php foreach ($almacenes as $almacen): ?>
-                    <option 
+
+                    <option
                         value="<?= (int)$almacen['id'] ?>"
                         <?= $almacenId === (int)$almacen['id'] ? 'selected' : '' ?>
                     >
                         <?= e($almacen['nombre']) ?>
                     </option>
+
                 <?php endforeach; ?>
+
             </select>
+
+            <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
+                <input
+                    type="hidden"
+                    name="almacen_id"
+                    value="<?= (int)$almacenSesion ?>"
+                >
+            <?php endif; ?>
+
         </div>
 
         <div class="historial-field">
             <label>Fecha inicio</label>
-            <input type="date" name="fecha_inicio" value="<?= e($fechaInicio) ?>">
+
+            <input
+                type="date"
+                name="fecha_inicio"
+                value="<?= e($fechaInicio) ?>"
+            >
         </div>
 
         <div class="historial-field">
             <label>Fecha final</label>
-            <input type="date" name="fecha_final" value="<?= e($fechaFinal) ?>">
+
+            <input
+                type="date"
+                name="fecha_final"
+                value="<?= e($fechaFinal) ?>"
+            >
         </div>
 
         <div class="historial-actions">
+
             <button type="submit" class="btn-primary-action">
                 Filtrar
             </button>
@@ -111,8 +156,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <a href="historial_salidas.php" class="btn-secondary-action">
                 Limpiar
             </a>
+
         </div>
+
     </form>
+
 </div>
 
 <div class="erp-table-card">
@@ -157,7 +205,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php
                             $detalleId = 'detalleSalida' . (int)$salida['id'];
 
-                            $detalle = $controller->obtenerSalida((int)$salida['id']);
+                            $detalle = $controller->obtenerSalida(
+                                (int)$salida['id']
+                            );
                         ?>
 
                         <tr>
@@ -199,9 +249,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             </td>
 
                             <td>
+
                                 <div class="table-actions">
 
-                                    <button 
+                                    <button
                                         type="button"
                                         class="btn-small btn-detail"
                                         onclick="toggleDetalle('<?= e($detalleId) ?>')"
@@ -209,7 +260,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                         Ver detalle
                                     </button>
 
-                                    <a 
+                                    <a
                                         href="imprimir_salida.php?id=<?= (int)$salida['id'] ?>&preview=1"
                                         class="btn-small btn-print"
                                         target="_blank"
@@ -218,11 +269,16 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </a>
 
                                 </div>
+
                             </td>
 
                         </tr>
 
-                        <tr id="<?= e($detalleId) ?>" class="detalle-row" style="display:none;">
+                        <tr
+                            id="<?= e($detalleId) ?>"
+                            class="detalle-row"
+                            style="display:none;"
+                        >
 
                             <td colspan="10">
 

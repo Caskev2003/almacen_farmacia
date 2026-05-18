@@ -6,10 +6,21 @@ require_once __DIR__ . '/../app/controllers/HistorialEntradaController.php';
 
 requireLogin();
 
+$user = currentUser();
+
 $controller = new HistorialEntradaController();
 
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+
 $buscar = trim($_GET['buscar'] ?? '');
-$almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
+
+if ($rolUsuario === 'ADMINISTRADOR') {
+    $almacenId = isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0;
+} else {
+    $almacenId = $almacenSesion;
+}
+
 $fechaInicio = trim($_GET['fecha_inicio'] ?? '');
 $fechaFinal = trim($_GET['fecha_final'] ?? '');
 
@@ -43,8 +54,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <span>Unidades ingresadas</span>
         <strong><?= number_format((int)$resumen['total_unidades']) ?></strong>
     </div>
-
-    
 </div>
 
 <div class="historial-filter-card">
@@ -61,8 +70,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
         <div class="historial-field">
             <label>Almacén</label>
-            <select name="almacen_id">
-                <option value="0">Todos los almacenes</option>
+
+            <select
+                name="almacen_id"
+                <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
+            >
+                <?php if ($rolUsuario === 'ADMINISTRADOR'): ?>
+                    <option value="0">Todos los almacenes</option>
+                <?php endif; ?>
+
                 <?php foreach ($almacenes as $almacen): ?>
                     <option 
                         value="<?= (int)$almacen['id'] ?>"
@@ -72,6 +88,14 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     </option>
                 <?php endforeach; ?>
             </select>
+
+            <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
+                <input 
+                    type="hidden" 
+                    name="almacen_id" 
+                    value="<?= (int)$almacenSesion ?>"
+                >
+            <?php endif; ?>
         </div>
 
         <div class="historial-field">

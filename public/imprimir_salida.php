@@ -303,7 +303,7 @@ function imprimirYLimpiar() {
             <div class="label">Movimiento:</div>
             <div><?= e($movimientoTexto) ?></div>
 
-            <div class="label">No. interno:</div>
+            
             <div><?= (int)$salida['id'] ?></div>
         </div>
 

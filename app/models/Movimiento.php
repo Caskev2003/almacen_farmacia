@@ -192,40 +192,56 @@ class Movimiento
     return $productos;
 }
 
-    private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
-    {
-        $tipoMovimiento = strtoupper(trim($tipoMovimiento));
-        $almacenId = (int)$almacenId;
+  private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
+{
+    $tipoMovimiento = strtoupper(trim($tipoMovimiento));
+    $almacenId = (int)$almacenId;
 
-        if ($almacenId <= 0) {
-            $sesion = $this->obtenerAlmacenSesion();
-            $almacenId = (int)$sesion['almacen_id'];
-        }
-
-        if ($almacenId <= 0) {
-            $almacenId = 0;
-        }
-
-        $prefijo = $tipoMovimiento === 'SALIDA' ? 'SAL' : 'ENT';
-        $fecha = date('Ymd');
-
-        $sql = "SELECT COUNT(*) AS total 
-                FROM movimientos 
-                WHERE tipo_movimiento = :tipo_movimiento
-                AND almacen_id = :almacen_id
-                AND DATE(fecha) = CURDATE()";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':tipo_movimiento' => $tipoMovimiento,
-            ':almacen_id' => $almacenId
-        ]);
-
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $numero = ((int)($row['total'] ?? 0)) + 1;
-
-        return $prefijo . '-' . $almacenId . '-' . $fecha . '-' . str_pad((string)$numero, 4, '0', STR_PAD_LEFT);
+    if ($almacenId <= 0) {
+        $sesion = $this->obtenerAlmacenSesion();
+        $almacenId = (int)$sesion['almacen_id'];
     }
+
+    if ($almacenId <= 0) {
+        $almacenId = 0;
+    }
+
+    $prefijo = $tipoMovimiento === 'SALIDA' ? 'SAL' : 'ENT';
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONTAR MOVIMIENTOS SOLO DEL ALMACEN
+    |--------------------------------------------------------------------------
+    */
+    $sql = "SELECT COUNT(*) AS total
+            FROM movimientos
+            WHERE tipo_movimiento = :tipo_movimiento
+            AND almacen_id = :almacen_id";
+
+    $stmt = $this->conn->prepare($sql);
+
+    $stmt->execute([
+        ':tipo_movimiento' => $tipoMovimiento,
+        ':almacen_id' => $almacenId
+    ]);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $numero = ((int)($row['total'] ?? 0)) + 1;
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMATO:
+    | SAL-1-0001
+    | ENT-2-0001
+    |--------------------------------------------------------------------------
+    */
+    return $prefijo .
+        '-' .
+        $almacenId .
+        '-' .
+        str_pad((string)$numero, 4, '0', STR_PAD_LEFT);
+}
 
     public function generarFolioEntrada(?int $almacenId = null): string
     {

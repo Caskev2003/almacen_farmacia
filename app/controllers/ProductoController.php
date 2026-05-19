@@ -301,6 +301,52 @@ class ProductoController
         ];
     }
 
+    public function guardarUbicacionExistencia(array $postData): array
+{
+    $codigo = trim($postData['codigo'] ?? '');
+
+    $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+
+    $ubicacion = strtoupper(trim($postData['ubicacion'] ?? ''));
+
+    $existencia = (int)($postData['existencia'] ?? 0);
+
+    if ($codigo === '') {
+        return [
+            'success' => false,
+            'message' => 'Código vacío.'
+        ];
+    }
+
+    if ($sucursal === '') {
+        return [
+            'success' => false,
+            'message' => 'Sucursal vacía.'
+        ];
+    }
+
+    if ($ubicacion === '') {
+        $ubicacion = 'SIN UBICACION';
+    }
+
+    if ($existencia < 0) {
+        $existencia = 0;
+    }
+
+    $ok = $this->productoModel->actualizarExistenciaPorCodigo(
+        $codigo,
+        $sucursal,
+        $existencia,
+        $ubicacion
+    );
+
+    return [
+        'success' => $ok,
+        'message' => $ok
+            ? 'Ubicación guardada correctamente.'
+            : 'No se pudo guardar.'
+    ];
+}
     public function destroy(int $id): array
     {
         $producto = $this->productoModel->findById($id);

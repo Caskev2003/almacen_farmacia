@@ -156,12 +156,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <option value="">Seleccione un producto</option>
                     <?php foreach ($productos as $producto): ?>
                         <option
-                            value="<?= (int)$producto['id'] ?>"
-                            data-codigo="<?= e($producto['codigo']) ?>"
-                            data-descripcion="<?= e($producto['descripcion']) ?>"
-                            data-costo="<?= e((string)$producto['precio_compra']) ?>"
-                            data-ubicacion="<?= e($producto['ubicacion']) ?>"
-                        >
+    value="<?= (int)$producto['id'] ?>"
+    data-codigo="<?= e($producto['codigo']) ?>"
+    data-descripcion="<?= e($producto['descripcion']) ?>"
+    data-costo="<?= e((string)$producto['precio_compra']) ?>"
+    data-ubicacion="<?= e($producto['ubicacion']) ?>"
+    data-ubicaciones='<?= e(json_encode($producto["ubicaciones"] ?? [], JSON_UNESCAPED_UNICODE)) ?>'
+>
+    <?= e($producto['codigo']) ?>
+</option>
                             <?= e($producto['codigo']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -194,7 +197,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field">
                 <label>Ubicación</label>
-                <input type="text" id="ubicacion_input">
+                <input
+    type="text"
+    id="ubicacion_input"
+    list="lista_ubicaciones_entrada"
+    autocomplete="off"
+    placeholder="Seleccione o escriba ubicación"
+>
+
+<datalist id="lista_ubicaciones_entrada"></datalist>
             </div>
 
             <div class="salida-actions">
@@ -329,18 +340,68 @@ productoSelect.addEventListener('change', function () {
 });
 
 function cargarDatosProductoSeleccionado() {
+
     const option = productoSelect.options[productoSelect.selectedIndex];
 
     if (!option || !productoSelect.value) {
+
         descripcionInput.value = '';
         costoInput.value = '0.00';
         ubicacionInput.value = '';
+
         return;
     }
 
     descripcionInput.value = option.dataset.descripcion || '';
     costoInput.value = option.dataset.costo || '0.00';
-    ubicacionInput.value = option.dataset.ubicacion || '';
+
+    let ubicaciones = [];
+
+    try {
+        ubicaciones = JSON.parse(option.dataset.ubicaciones || '[]');
+    } catch (e) {
+        ubicaciones = [];
+    }
+
+    const lista = document.getElementById('lista_ubicaciones_entrada');
+
+    if (lista) {
+        lista.innerHTML = '';
+    }
+
+    if (Array.isArray(ubicaciones) && ubicaciones.length > 0) {
+
+        ubicaciones.sort((a, b) => {
+            return (parseInt(a.existencia_actual || 0))
+                -
+                (parseInt(b.existencia_actual || 0));
+        });
+
+        ubicaciones.forEach(item => {
+
+            if (!lista) return;
+
+            const opt = document.createElement('option');
+
+            opt.value = item.ubicacion || '';
+
+            lista.appendChild(opt);
+        });
+
+        ubicacionInput.value =
+            ubicaciones[0]?.ubicacion
+            ||
+            option.dataset.ubicacion
+            ||
+            '';
+
+    } else {
+
+        ubicacionInput.value =
+            option.dataset.ubicacion
+            ||
+            '';
+    }
 }
 
 function abrirModalProductos() {
@@ -411,6 +472,10 @@ function agregarProductoDetalle() {
         alert('El costo unitario no es válido.');
         return;
     }
+    if (!ubicacion) {
+    alert('Debes ingresar una ubicación.');
+    return;
+}
 
     const filaVacia = document.getElementById('filaVaciaDetalle');
     if (filaVacia) {

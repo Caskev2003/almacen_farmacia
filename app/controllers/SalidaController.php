@@ -28,7 +28,29 @@ class SalidaController
 
     public function productos(): array
     {
-        return $this->movimientoModel->getProductosActivos();
+        $productos = $this->movimientoModel->getProductosActivos();
+
+        foreach ($productos as &$producto) {
+            $producto['ubicaciones'] = [];
+
+            $ubicacion = trim((string)($producto['ubicacion'] ?? ''));
+            $existencia = (int)($producto['existencia_actual'] ?? 0);
+
+            if ($ubicacion !== '') {
+                $producto['ubicaciones'][] = [
+                    'ubicacion' => $ubicacion,
+                    'existencia_actual' => $existencia,
+                ];
+            }
+
+            usort($producto['ubicaciones'], function ($a, $b) {
+                return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
+            });
+        }
+
+        unset($producto);
+
+        return $productos;
     }
 
     public function generarFolio(?int $almacenId = null): string
@@ -142,6 +164,10 @@ class SalidaController
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
             $precio = isset($precios[$i]) ? (float)$precios[$i] : 0;
             $ubicacion = trim($ubicaciones[$i] ?? '');
+
+            if ($ubicacion === '') {
+                $ubicacion = 'SIN UBICACION';
+            }
 
             if ($productoId <= 0) {
                 continue;

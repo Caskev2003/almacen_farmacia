@@ -17,6 +17,12 @@ class Movimiento
         return $this->conn;
     }
 
+    private function limpiarUbicacion(?string $ubicacion): string
+    {
+        $ubicacion = strtoupper(trim((string)$ubicacion));
+        return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
+    }
+
     private function obtenerSucursalPorAlmacenId(?int $almacenId): string
     {
         $almacenId = (int)$almacenId;
@@ -108,17 +114,26 @@ class Movimiento
                     p.codigo,
                     p.codigo_barras,
                     p.descripcion,
-                    COALESCE(pe.existencia, 0) AS existencia_actual,
-                    COALESCE(pe.existencia, 0) AS existencia_bodega,
                     p.precio_compra,
                     p.precio_venta,
                     p.unidad_medida,
-                    p.ubicacion
+                    p.ubicacion,
+                    COALESCE(SUM(pe.existencia), 0) AS existencia_actual,
+                    COALESCE(SUM(pe.existencia), 0) AS existencia_bodega
                 FROM productos p
                 LEFT JOIN producto_existencias pe
                     ON pe.producto_id = p.id
                     AND pe.sucursal = :sucursal
                 WHERE p.estado = 1
+                GROUP BY 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida,
+                    p.ubicacion
                 ORDER BY p.descripcion ASC";
 
         $stmt = $this->conn->prepare($sql);
@@ -126,7 +141,73 @@ class Movimiento
             ':sucursal' => $sucursal
         ]);
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $sqlUbicaciones = "SELECT 
+                                producto_id,
+                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                                existencia AS existencia_actual
+                           FROM producto_existencias
+                           WHERE sucursal = :sucursal
+                           ORDER BY existencia ASC, ubicacion ASC";
+
+        $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
+        $stmtUbicaciones->execute([
+            ':sucursal' => $sucursal
+        ]);
+
+        $ubicacionesPorProducto = [];
+
+        foreach ($stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $productoId = (int)$row['producto_id'];
+            $ubicacion = $this->limpiarUbicacion($row['ubicacion'] ?? '');
+            $existencia = (int)($row['existencia_actual'] ?? 0);
+
+            if (!isset($ubicacionesPorProducto[$productoId])) {
+                $ubicacionesPorProducto[$productoId] = [];
+            }
+
+            $ubicacionesPorProducto[$productoId][] = [
+                'ubicacion' => $ubicacion,
+                'existencia_actual' => $existencia
+            ];
+        }
+
+        foreach ($productos as &$producto) {
+            $productoId = (int)$producto['id'];
+            $producto['ubicaciones'] = $ubicacionesPorProducto[$productoId] ?? [];
+
+            if (!empty($producto['ubicaciones'])) {
+                $ubicacionesConExistencia = array_filter($producto['ubicaciones'], function ($item) {
+                    return (int)$item['existencia_actual'] > 0;
+                });
+
+                usort($ubicacionesConExistencia, function ($a, $b) {
+                    return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
+                });
+
+                $sugerida = $ubicacionesConExistencia[0] ?? $producto['ubicaciones'][0];
+
+                $producto['ubicacion'] = $sugerida['ubicacion'];
+                $producto['existencia_actual'] = (int)$producto['existencia_actual'];
+                $producto['existencia_bodega'] = (int)$producto['existencia_bodega'];
+            } else {
+                $ubicacion = $this->limpiarUbicacion($producto['ubicacion'] ?? '');
+
+                $producto['ubicaciones'] = [
+                    [
+                        'ubicacion' => $ubicacion,
+                        'existencia_actual' => (int)($producto['existencia_actual'] ?? 0)
+                    ]
+                ];
+
+                $producto['ubicacion'] = $ubicacion;
+            }
+        }
+
+        unset($producto);
+
+        return $productos;
     }
 
     private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
@@ -198,15 +279,23 @@ class Movimiento
         return $row ? $row['folio'] : '';
     }
 
-    private function aumentarExistencia(int $productoId, string $sucursal, int $cantidad): void
-    {
+    private function aumentarExistencia(
+        int $productoId,
+        string $sucursal,
+        int $cantidad,
+        string $ubicacion = ''
+    ): void {
+        $ubicacion = $this->limpiarUbicacion($ubicacion);
+
         $sql = "INSERT INTO producto_existencias (
                     producto_id,
                     sucursal,
+                    ubicacion,
                     existencia
                 ) VALUES (
                     :producto_id,
                     :sucursal,
+                    :ubicacion,
                     :cantidad
                 )
                 ON DUPLICATE KEY UPDATE
@@ -218,40 +307,56 @@ class Movimiento
         $stmt->execute([
             ':producto_id' => $productoId,
             ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion,
             ':cantidad' => $cantidad
         ]);
     }
 
-    private function disminuirExistencia(int $productoId, string $sucursal, int $cantidad): void
-    {
+    private function disminuirExistencia(
+        int $productoId,
+        string $sucursal,
+        int $cantidad,
+        string $ubicacion = ''
+    ): void {
+        $ubicacion = $this->limpiarUbicacion($ubicacion);
+
         $sql = "UPDATE producto_existencias
                 SET existencia = existencia - :cantidad,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE producto_id = :producto_id
-                AND sucursal = :sucursal";
+                AND sucursal = :sucursal
+                AND ubicacion = :ubicacion";
 
         $stmt = $this->conn->prepare($sql);
 
         $stmt->execute([
             ':cantidad' => $cantidad,
             ':producto_id' => $productoId,
-            ':sucursal' => $sucursal
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion
         ]);
     }
 
-    private function obtenerExistenciaProducto(int $productoId, string $sucursal): int
-    {
+    private function obtenerExistenciaProducto(
+        int $productoId,
+        string $sucursal,
+        string $ubicacion = ''
+    ): int {
+        $ubicacion = $this->limpiarUbicacion($ubicacion);
+
         $sql = "SELECT existencia
                 FROM producto_existencias
                 WHERE producto_id = :producto_id
                 AND sucursal = :sucursal
+                AND ubicacion = :ubicacion
                 LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
 
         $stmt->execute([
             ':producto_id' => $productoId,
-            ':sucursal' => $sucursal
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion
         ]);
 
         return (int)($stmt->fetchColumn() ?: 0);
@@ -328,6 +433,7 @@ class Movimiento
 
                 $productoId = (int)$item['producto_id'];
                 $cantidad = (int)$item['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
 
                 if (!empty($item['numero_lote'])) {
                     $stmtLote->execute([
@@ -337,7 +443,7 @@ class Movimiento
                         ':existencia' => $cantidad,
                         ':costo_unitario' => $item['costo_unitario'],
                         ':almacen_id' => $almacenId ?: null,
-                        ':ubicacion' => $item['ubicacion'] ?: null,
+                        ':ubicacion' => $ubicacion,
                     ]);
 
                     $loteId = (int)$this->conn->lastInsertId();
@@ -350,15 +456,15 @@ class Movimiento
                     ':cantidad' => $cantidad,
                     ':costo_unitario' => $item['costo_unitario'],
                     ':precio_unitario' => $item['precio_unitario'] ?? 0,
-                    ':ubicacion' => $item['ubicacion'] ?: null,
+                    ':ubicacion' => $ubicacion,
                 ]);
 
                 if ($data['tipo_movimiento'] === 'ENTRADA') {
-                    $this->aumentarExistencia($productoId, $sucursal, $cantidad);
+                    $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
 
                     $stmtActualizarProducto->execute([
                         ':precio_compra' => $item['costo_unitario'],
-                        ':ubicacion' => $item['ubicacion'] ?: null,
+                        ':ubicacion' => $ubicacion,
                         ':producto_id' => $productoId,
                     ]);
                 }
@@ -449,6 +555,7 @@ class Movimiento
             foreach ($detalle as $item) {
                 $productoId = (int)$item['producto_id'];
                 $cantidad = (int)$item['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
 
                 $stmtProducto->execute([
                     ':id' => $productoId
@@ -460,11 +567,14 @@ class Movimiento
                     throw new Exception('Producto no encontrado.');
                 }
 
-                $existenciaDisponible = $this->obtenerExistenciaProducto($productoId, $sucursal);
+                $existenciaDisponible = $this->obtenerExistenciaProducto($productoId, $sucursal, $ubicacion);
 
                 if ($existenciaDisponible < $cantidad) {
                     throw new Exception(
-                        'Stock insuficiente en ' . $sucursal . ' para el producto: ' . $producto['descripcion']
+                        'Stock insuficiente en ' . $sucursal .
+                        ' para el producto: ' . $producto['descripcion'] .
+                        ' en ubicación: ' . $ubicacion .
+                        '. Disponible: ' . $existenciaDisponible
                     );
                 }
 
@@ -474,10 +584,10 @@ class Movimiento
                     ':cantidad' => $cantidad,
                     ':costo_unitario' => $item['costo_unitario'],
                     ':precio_unitario' => $item['precio_unitario'],
-                    ':ubicacion' => $item['ubicacion'] ?: null,
+                    ':ubicacion' => $ubicacion,
                 ]);
 
-                $this->disminuirExistencia($productoId, $sucursal, $cantidad);
+                $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
             }
 
             $this->conn->commit();

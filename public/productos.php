@@ -47,7 +47,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = $result['message'];
         $messageType = $result['success'] ? 'success' : 'danger';
     }
+if ($action === 'guardar_ubicacion_existencia') {
 
+    $result = $controller->guardarUbicacionExistencia($_POST);
+
+    $message = $result['message'];
+
+    $messageType = $result['success']
+        ? 'success'
+        : 'danger';
+}
     if ($action === 'delete') {
         $id = (int)($_POST['id'] ?? 0);
         $result = $controller->destroy($id);
@@ -168,6 +177,42 @@ include __DIR__ . '/../app/views/layouts/header.php';
         font-weight: bold;
         color: #7c3aed;
     }
+
+    .ubicaciones-badge-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ubicacion-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.low-stock {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+
+.medium-stock {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
+.high-stock {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
 </style>
 
 <div class="erp-container">
@@ -357,10 +402,59 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     <td class="badge-existencia"><?= (int)($producto['existencia'] ?? 0) ?></td>
                                 <?php endif; ?>
 
-                                <td><?= e($producto['ubicacion'] ?? '') ?></td>
+                                <td>
+
+<?php
+$ubicaciones = $producto['ubicaciones'] ?? [];
+
+if (!empty($ubicaciones) && is_array($ubicaciones)):
+?>
+
+    <div class="ubicaciones-badge-wrap">
+
+        <?php foreach ($ubicaciones as $ubicacionItem): ?>
+
+            <?php
+            $ubi = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
+            $exist = (int)($ubicacionItem['existencia_actual'] ?? 0);
+
+            $classStock = 'high-stock';
+
+            if ($exist <= 10) {
+                $classStock = 'low-stock';
+            } elseif ($exist <= 50) {
+                $classStock = 'medium-stock';
+            }
+            ?>
+
+            <span class="ubicacion-badge <?= $classStock ?>">
+                <?= e($ubi) ?> (<?= $exist ?>)
+            </span>
+
+        <?php endforeach; ?>
+
+    </div>
+
+<?php else: ?>
+
+    <?= e($producto['ubicacion'] ?? '') ?>
+
+<?php endif; ?>
+
+</td>
 
                                 <td>
                                     <div class="action-buttons">
+                                        <button
+    type="button"
+    class="btn-search"
+    onclick="abrirModalUbicacion(
+        '<?= e($producto['codigo']) ?>',
+        '<?= e($producto['descripcion']) ?>'
+    )"
+>
+    Ubicaciones
+</button>
                                         <a href="productos.php?edit=<?= (int)$producto['id'] ?>&page=<?= $page ?>&<?= e($queryBase) ?>" class="btn-edit">
                                             Editar
                                         </a>
@@ -466,6 +560,131 @@ document.addEventListener('DOMContentLoaded', function () {
         lista.appendChild(option);
     });
 });
-</script>
+function abrirModalUbicacion(codigo, descripcion) {
 
+    document.getElementById('modalUbicacion').style.display = 'flex';
+
+    document.getElementById('codigoUbicacion').value = codigo;
+
+    document.getElementById('tituloProductoUbicacion').innerText =
+        descripcion;
+}
+
+function cerrarModalUbicacion() {
+
+    document.getElementById('modalUbicacion').style.display = 'none';
+}
+</script>
+<div id="modalUbicacion" style="
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.45);
+    z-index:9999;
+    align-items:center;
+    justify-content:center;
+">
+
+    <div style="
+        width:95%;
+        max-width:520px;
+        background:white;
+        border-radius:18px;
+        padding:24px;
+    ">
+
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:20px;
+        ">
+            <div>
+                <h3 id="tituloProductoUbicacion">Ubicaciones</h3>
+                <p style="margin:0;color:#64748b;">
+                    Agrega existencia por ubicación.
+                </p>
+            </div>
+
+            <button
+                onclick="cerrarModalUbicacion()"
+                style="
+                    border:none;
+                    background:none;
+                    font-size:28px;
+                    cursor:pointer;
+                "
+            >
+                &times;
+            </button>
+        </div>
+
+        <form method="POST">
+
+            <input type="hidden" name="action" value="guardar_ubicacion_existencia">
+
+            <input type="hidden" name="codigo" id="codigoUbicacion">
+
+            <div class="form-group">
+                <label>Sucursal</label>
+
+                <select name="sucursal" required>
+
+                    <?php if ($esAdmin): ?>
+
+                        <option value="CIUDAD HIDALGO">
+                            Ciudad Hidalgo
+                        </option>
+
+                        <option value="TUXTLA">
+                            Tuxtla
+                        </option>
+
+                    <?php else: ?>
+
+                        <option value="<?= e($sucursalUsuario) ?>">
+                            <?= e($sucursalUsuario) ?>
+                        </option>
+
+                    <?php endif; ?>
+
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Ubicación</label>
+
+                <input
+                    type="text"
+                    name="ubicacion"
+                    list="listaUbicaciones"
+                    required
+                    autocomplete="off"
+                    placeholder="Ejemplo: R1N1Z01"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Existencia</label>
+
+                <input
+                    type="number"
+                    name="existencia"
+                    min="0"
+                    required
+                    value="0"
+                >
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary-action">
+                    Guardar ubicación
+                </button>
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
 <?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>

@@ -492,4 +492,112 @@ body {
     font-weight: 700;
     cursor: pointer;
 }
+/* =========================================================
+   UBICACIONES MULTIPLES
+========================================================= */
+
+.ubicaciones-badge-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ubicacion-badge {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border: 1px solid #93c5fd;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ubicacion-badge.low-stock {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+
+.ubicacion-badge.medium-stock {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
+.ubicacion-badge.high-stock {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
+
+/* ===== INPUT UBICACION ===== */
+
+#ubicacion_input {
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* ===== UBICACION SUGERIDA ===== */
+
+.ubicacion-sugerida {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* ===== EXISTENCIA BAJA ===== */
+
+.stock-bajo {
+    color: #dc2626;
+    font-weight: 800;
+}
+
+.stock-medio {
+    color: #d97706;
+    font-weight: 800;
+}
+
+.stock-alto {
+    color: #16a34a;
+    font-weight: 800;
+}
+
+/* ===== TABLA UBICACIONES ===== */
+
+.col-ubicaciones {
+    min-width: 220px;
+}
+
+.col-ubicacion-sugerida {
+    min-width: 140px;
+}
+
+/* ===== SELECT/INPUT UBICACION ===== */
+
+.salida-field input[list] {
+    background: #ffffff;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 768px) {
+
+    .ubicaciones-badge-wrap {
+        gap: 4px;
+    }
+
+    .ubicacion-badge {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+}
 }

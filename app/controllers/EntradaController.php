@@ -53,18 +53,9 @@ class EntradaController
     public function tiposEntrada(): array
     {
         return [
-            [
-                'clave' => 'E0001',
-                'descripcion' => 'Inventario Inicial'
-            ],
-            [
-                'clave' => 'E0002',
-                'descripcion' => 'Entrada de Producto'
-            ],
-            [
-                'clave' => 'E0003',
-                'descripcion' => 'Ajuste de Entrada de Inventario'
-            ],
+            ['clave' => 'E0001', 'descripcion' => 'Inventario Inicial'],
+            ['clave' => 'E0002', 'descripcion' => 'Entrada de Producto'],
+            ['clave' => 'E0003', 'descripcion' => 'Ajuste de Entrada de Inventario'],
         ];
     }
 
@@ -136,7 +127,11 @@ class EntradaController
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
             $lote = trim($lotes[$i] ?? '');
             $caducidad = trim($caducidades[$i] ?? '');
-            $ubicacion = trim($ubicaciones[$i] ?? '');
+            $ubicacion = strtoupper(trim($ubicaciones[$i] ?? ''));
+
+            if ($ubicacion === '') {
+                $ubicacion = 'SIN UBICACION';
+            }
 
             if ($productoId <= 0) {
                 continue;
@@ -160,6 +155,7 @@ class EntradaController
                 'producto_id' => $productoId,
                 'cantidad' => $cantidad,
                 'costo_unitario' => $costo,
+                'precio_unitario' => 0,
                 'numero_lote' => $lote,
                 'fecha_caducidad' => $caducidad,
                 'ubicacion' => $ubicacion,

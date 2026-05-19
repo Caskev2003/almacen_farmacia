@@ -347,6 +347,52 @@ class ProductoController
             : 'No se pudo guardar.'
     ];
 }
+
+public function editarUbicacionExistencia(array $postData): array
+{
+    $productoId = (int)($postData['producto_id'] ?? 0);
+    $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+    $ubicacionAnterior = strtoupper(trim($postData['ubicacion_anterior'] ?? ''));
+    $ubicacionNueva = strtoupper(trim($postData['ubicacion_nueva'] ?? ''));
+    $existencia = (int)($postData['existencia'] ?? 0);
+
+    if ($productoId <= 0) {
+        return [
+            'success' => false,
+            'message' => 'Producto inválido.'
+        ];
+    }
+
+    if ($sucursal === '') {
+        return [
+            'success' => false,
+            'message' => 'Sucursal inválida.'
+        ];
+    }
+
+    if ($ubicacionAnterior === '') {
+        $ubicacionAnterior = 'SIN UBICACION';
+    }
+
+    if ($ubicacionNueva === '') {
+        $ubicacionNueva = 'SIN UBICACION';
+    }
+
+    $ok = $this->productoModel->actualizarUbicacionExistencia(
+        $productoId,
+        $sucursal,
+        $ubicacionAnterior,
+        $ubicacionNueva,
+        $existencia
+    );
+
+    return [
+        'success' => $ok,
+        'message' => $ok
+            ? 'Ubicación actualizada correctamente.'
+            : 'No se pudo actualizar la ubicación.'
+    ];
+}
     public function destroy(int $id): array
     {
         $producto = $this->productoModel->findById($id);

@@ -28,29 +28,7 @@ class SalidaController
 
     public function productos(): array
     {
-        $productos = $this->movimientoModel->getProductosActivos();
-
-        foreach ($productos as &$producto) {
-            $producto['ubicaciones'] = [];
-
-            $ubicacion = trim((string)($producto['ubicacion'] ?? ''));
-            $existencia = (int)($producto['existencia_actual'] ?? 0);
-
-            if ($ubicacion !== '') {
-                $producto['ubicaciones'][] = [
-                    'ubicacion' => $ubicacion,
-                    'existencia_actual' => $existencia,
-                ];
-            }
-
-            usort($producto['ubicaciones'], function ($a, $b) {
-                return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
-            });
-        }
-
-        unset($producto);
-
-        return $productos;
+        return $this->movimientoModel->getProductosActivos();
     }
 
     public function generarFolio(?int $almacenId = null): string
@@ -96,11 +74,9 @@ class SalidaController
         $rol = strtoupper(trim($usuario['rol'] ?? ''));
         $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
 
-        if ($rol === 'ADMINISTRADOR') {
-            $almacenId = (int)($postData['almacen_id'] ?? 0);
-        } else {
-            $almacenId = $almacenSesion;
-        }
+        $almacenId = $rol === 'ADMINISTRADOR'
+            ? (int)($postData['almacen_id'] ?? 0)
+            : $almacenSesion;
 
         if ($almacenId <= 0) {
             return [
@@ -142,7 +118,10 @@ class SalidaController
             ];
         }
 
-        if (($tipoOperacion === 'TICKET' || $tipoOperacion === 'RESURTIDO') && $folioOperacion === '') {
+        if (
+            ($tipoOperacion === 'TICKET' || $tipoOperacion === 'RESURTIDO')
+            && $folioOperacion === ''
+        ) {
             return [
                 'success' => false,
                 'message' => 'Debes ingresar el folio de ' . strtolower($tipoOperacion) . '.'
@@ -163,7 +142,7 @@ class SalidaController
             $cantidad = isset($cantidades[$i]) ? (int)$cantidades[$i] : 0;
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
             $precio = isset($precios[$i]) ? (float)$precios[$i] : 0;
-            $ubicacion = trim($ubicaciones[$i] ?? '');
+            $ubicacion = strtoupper(trim($ubicaciones[$i] ?? ''));
 
             if ($ubicacion === '') {
                 $ubicacion = 'SIN UBICACION';
@@ -208,12 +187,9 @@ class SalidaController
 
         if ($folioOperacion !== '') {
             $textoFolio = 'Folio ' . strtolower($tipoOperacion) . ': ' . $folioOperacion;
-
-            if ($observacionesFinales !== '') {
-                $observacionesFinales = $textoFolio . ' | ' . $observacionesFinales;
-            } else {
-                $observacionesFinales = $textoFolio;
-            }
+            $observacionesFinales = $observacionesFinales !== ''
+                ? $textoFolio . ' | ' . $observacionesFinales
+                : $textoFolio;
         }
 
         return $this->movimientoModel->crearSalida([

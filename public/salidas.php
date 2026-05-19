@@ -491,6 +491,44 @@ function escaparHtml(valor) {
         .replaceAll("'", '&#039;');
 }
 
+function cargarCatalogoUbicacionesSalida() {
+    const datalist = document.getElementById('lista_ubicaciones_salida');
+    if (!datalist) return;
+
+    const ubicaciones = [];
+
+    function add(rack, nivel, zona) {
+        const z = String(zona).padStart(2, '0');
+        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    }
+
+    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(1, n, z);
+    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(2, n, z);
+    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(3, n, z);
+    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 16; z++) add(4, n, z);
+    for (let z = 10; z <= 16; z++) add(4, 3, z);
+    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 15; z++) add(5, n, z);
+    for (let z = 10; z <= 15; z++) add(5, 3, z);
+    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
+
+    ubicaciones.push('R7N1Z01 - PASILLO 1');
+    ubicaciones.push('R8N1Z01 - PASILLO 2');
+    ubicaciones.push('R9N1Z01 - PASILLO 3');
+    ubicaciones.push('BODEGA PEDYALITE');
+
+    datalist.innerHTML = '';
+
+    ubicaciones.forEach(ubicacion => {
+        const option = document.createElement('option');
+        option.value = ubicacion;
+        datalist.appendChild(option);
+    });
+}
+
+function obtenerOptionProductoActual() {
+    return productoSelect.options[productoSelect.selectedIndex];
+}
+
 function obtenerUbicacionesProducto(option) {
     if (!option) return [];
 
@@ -506,21 +544,38 @@ function obtenerUbicacionesProducto(option) {
         ubicaciones = [];
     }
 
-    ubicaciones = ubicaciones
+    return ubicaciones
         .map(item => ({
-            ubicacion: String(item.ubicacion || '').trim(),
+            ubicacion: String(item.ubicacion || '').trim().toUpperCase(),
             existencia_actual: parseInt(item.existencia_actual || item.existencia || '0', 10)
         }))
         .filter(item => item.ubicacion !== '');
+}
 
-    if (ubicaciones.length === 0 && (option.dataset.ubicacion || '').trim() !== '') {
-        ubicaciones.push({
-            ubicacion: option.dataset.ubicacion.trim(),
-            existencia_actual: parseInt(option.dataset.existencia || '0', 10)
-        });
+function cargarUbicacionesDelProducto(option) {
+    const datalist = document.getElementById('lista_ubicaciones_salida');
+
+    if (!datalist || !option) return;
+
+    datalist.innerHTML = '';
+
+    const ubicaciones = obtenerUbicacionesProducto(option);
+
+    ubicaciones.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.ubicacion;
+        datalist.appendChild(opt);
+    });
+
+    if (
+        ubicaciones.length === 0 ||
+        (
+            ubicaciones.length === 1 &&
+            ubicaciones[0].ubicacion === 'SIN UBICACION'
+        )
+    ) {
+        cargarCatalogoUbicacionesSalida();
     }
-
-    return ubicaciones;
 }
 
 function obtenerUbicacionConMenorExistencia(option) {
@@ -530,31 +585,34 @@ function obtenerUbicacionConMenorExistencia(option) {
 
     if (ubicaciones.length === 0) {
         return {
-            ubicacion: option?.dataset?.ubicacion || '',
-            existencia_actual: parseInt(option?.dataset?.existencia || '0', 10)
+            ubicacion: 'SIN UBICACION',
+            existencia_actual: 0
         };
     }
 
     return ubicaciones[0];
 }
 
-function actualizarListaUbicacionesProducto(option) {
-    const datalist = document.getElementById('lista_ubicaciones_salida');
-    if (!datalist || !option) return;
+function actualizarExistenciaPorUbicacion() {
+    const option = obtenerOptionProductoActual();
 
-    const actuales = new Set(
-        Array.from(datalist.querySelectorAll('option')).map(opt => opt.value)
-    );
+    if (!option || !productoSelect.value) return;
 
-    obtenerUbicacionesProducto(option).forEach(item => {
-        if (!actuales.has(item.ubicacion)) {
-            const opt = document.createElement('option');
-            opt.value = item.ubicacion;
-            datalist.appendChild(opt);
-            actuales.add(item.ubicacion);
-        }
-    });
+    existenciaInput.value = option.dataset.existencia || '0';
 }
+
+function limpiarSinUbicacionAlClick() {
+    const valor = ubicacionInput.value.trim().toUpperCase();
+
+    if (valor === 'SIN UBICACION') {
+        ubicacionInput.value = '';
+    }
+}
+
+ubicacionInput.addEventListener('focus', limpiarSinUbicacionAlClick);
+ubicacionInput.addEventListener('click', limpiarSinUbicacionAlClick);
+ubicacionInput.addEventListener('input', actualizarExistenciaPorUbicacion);
+ubicacionInput.addEventListener('change', actualizarExistenciaPorUbicacion);
 
 function controlarFolioOperacion() {
     const valor = tipoOperacionSelect.value;
@@ -580,12 +638,10 @@ function controlarFolioOperacion() {
 
 tipoOperacionSelect.addEventListener('change', controlarFolioOperacion);
 
-productoSelect.addEventListener('change', function () {
-    cargarDatosProductoSeleccionado();
-});
+productoSelect.addEventListener('change', cargarDatosProductoSeleccionado);
 
 function cargarDatosProductoSeleccionado() {
-    const option = productoSelect.options[productoSelect.selectedIndex];
+    const option = obtenerOptionProductoActual();
 
     if (!option || !productoSelect.value) {
         descripcionInput.value = '';
@@ -593,6 +649,7 @@ function cargarDatosProductoSeleccionado() {
         existenciaInput.value = '0';
         precioInput.value = '0.00';
         ubicacionInput.value = '';
+        cargarCatalogoUbicacionesSalida();
         return;
     }
 
@@ -600,11 +657,15 @@ function cargarDatosProductoSeleccionado() {
 
     descripcionInput.value = option.dataset.descripcion || '';
     unidadInput.value = option.dataset.unidad || '';
-    existenciaInput.value = String(ubicacionMenor.existencia_actual || option.dataset.existencia || '0');
     precioInput.value = option.dataset.precio || '0.00';
-    ubicacionInput.value = ubicacionMenor.ubicacion || option.dataset.ubicacion || '';
 
-    actualizarListaUbicacionesProducto(option);
+    ubicacionInput.value = ubicacionMenor.ubicacion || 'SIN UBICACION';
+
+    // EXISTENCIA TOTAL DEL PRODUCTO
+    existenciaInput.value = option.dataset.existencia || '0';
+
+    // CARGA TODAS LAS UBICACIONES REALES DEL PRODUCTO
+    cargarUbicacionesDelProducto(option);
 }
 
 function abrirModalProductos() {
@@ -650,22 +711,24 @@ modalProductos.addEventListener('click', function (e) {
 });
 
 function agregarProductoSalida() {
-    const option = productoSelect.options[productoSelect.selectedIndex];
+    const option = obtenerOptionProductoActual();
 
     if (!productoSelect.value) {
         alert('Selecciona un producto.');
         return;
     }
 
+    actualizarExistenciaPorUbicacion();
+
     const productoId = productoSelect.value;
     const codigo = option.dataset.codigo || '';
     const descripcion = option.dataset.descripcion || '';
     const unidad = option.dataset.unidad || '';
-    const existencia = parseInt(existenciaInput.value || option.dataset.existencia || '0', 10);
+    const existenciaTotal = parseInt(option.dataset.existencia || '0', 10);
     const cantidad = parseInt(cantidadInput.value || '0', 10);
     const costo = parseFloat(option.dataset.costo || '0');
     const precio = parseFloat(precioInput.value || '0');
-    const ubicacion = ubicacionInput.value.trim();
+    const ubicacion = ubicacionInput.value.trim().toUpperCase();
 
     if (cantidad <= 0) {
         alert('La cantidad debe ser mayor a 0.');
@@ -678,18 +741,23 @@ function agregarProductoSalida() {
         return;
     }
 
-    if (cantidad > existencia) {
-        alert('No hay existencia suficiente en la ubicación seleccionada.');
+    if (existenciaTotal <= 0) {
+        alert('Este producto no tiene existencia disponible.');
+        return;
+    }
+
+    if (cantidad > existenciaTotal) {
+        alert('La cantidad supera la existencia total del producto.');
         return;
     }
 
     const filaVacia = document.getElementById('filaVaciaDetalle');
+
     if (filaVacia) {
         filaVacia.remove();
     }
 
     const importe = cantidad * precio;
-
     const tr = document.createElement('tr');
 
     tr.innerHTML = `
@@ -704,12 +772,14 @@ function agregarProductoSalida() {
         <td>${escaparHtml(codigo)}</td>
         <td>${escaparHtml(descripcion)}</td>
         <td>${escaparHtml(unidad)}</td>
-        <td>${escaparHtml(existencia)}</td>
+        <td>${escaparHtml(existenciaTotal)}</td>
         <td>$${precio.toFixed(2)}</td>
         <td>${escaparHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
         <td>
-            <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">Eliminar</button>
+            <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
+                Eliminar
+            </button>
         </td>
     `;
 
@@ -723,6 +793,7 @@ function agregarProductoSalida() {
     existenciaInput.value = '0';
     precioInput.value = '0.00';
     ubicacionInput.value = '';
+    cargarCatalogoUbicacionesSalida();
 
     guardarBorradorSalida();
 }
@@ -733,7 +804,9 @@ function eliminarFilaSalida(btn) {
     if (detalleBody.children.length === 0) {
         detalleBody.innerHTML = `
             <tr id="filaVaciaDetalle">
-                <td colspan="9" class="empty-table">No has agregado productos.</td>
+                <td colspan="9" class="empty-table">
+                    No has agregado productos.
+                </td>
             </tr>
         `;
     }
@@ -777,6 +850,7 @@ function guardarBorradorSalida() {
 
 function cargarBorradorSalida() {
     const guardado = localStorage.getItem('borradorSalida');
+
     if (!guardado) return;
 
     const datos = JSON.parse(guardado);
@@ -790,14 +864,16 @@ function cargarBorradorSalida() {
     controlarFolioOperacion();
 }
 
-document.addEventListener('DOMContentLoaded', cargarBorradorSalida);
+document.addEventListener('DOMContentLoaded', function () {
+    cargarCatalogoUbicacionesSalida();
+    cargarBorradorSalida();
+});
 
 document.querySelectorAll('input, select, textarea').forEach(campo => {
     campo.addEventListener('change', guardarBorradorSalida);
     campo.addEventListener('keyup', guardarBorradorSalida);
 });
 </script>
-
 <?php
 if (file_exists(__DIR__ . '/../app/views/layouts/footer.php')) {
     include __DIR__ . '/../app/views/layouts/footer.php';

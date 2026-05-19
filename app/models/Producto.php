@@ -608,6 +608,131 @@ class Producto
     ]);
 }
 
+public function actualizarUbicacionExistencia(
+    int $productoId,
+    string $sucursal,
+    string $ubicacionAnterior,
+    string $ubicacionNueva,
+    int $existencia
+): bool {
+
+    $ubicacionAnterior = strtoupper(trim($ubicacionAnterior));
+    $ubicacionNueva = strtoupper(trim($ubicacionNueva));
+
+    if ($ubicacionAnterior === '') {
+        $ubicacionAnterior = 'SIN UBICACION';
+    }
+
+    if ($ubicacionNueva === '') {
+        $ubicacionNueva = 'SIN UBICACION';
+    }
+
+    if ($existencia < 0) {
+        $existencia = 0;
+    }
+
+    try {
+
+        $this->conn->beginTransaction();
+
+        /*
+        ==========================
+        VERIFICAR SI YA EXISTE
+        LA UBICACION NUEVA
+        ==========================
+        */
+
+        $sqlExiste = "SELECT id, existencia
+                      FROM producto_existencias
+                      WHERE producto_id = :producto_id
+                      AND sucursal = :sucursal
+                      AND ubicacion = :ubicacion";
+
+        $stmtExiste = $this->conn->prepare($sqlExiste);
+
+        $stmtExiste->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacionNueva
+        ]);
+
+        $registroNuevo = $stmtExiste->fetch(PDO::FETCH_ASSOC);
+
+        /*
+        ==========================
+        SI LA UBICACION NUEVA
+        YA EXISTE
+        ==========================
+        */
+
+        if ($registroNuevo && $ubicacionAnterior !== $ubicacionNueva) {
+
+            $sqlActualizarNueva = "UPDATE producto_existencias
+                                   SET existencia = :existencia
+                                   WHERE id = :id";
+
+            $stmtActualizarNueva = $this->conn->prepare($sqlActualizarNueva);
+
+            $stmtActualizarNueva->execute([
+                ':existencia' => $existencia,
+                ':id' => $registroNuevo['id']
+            ]);
+
+            /*
+            ELIMINAR UBICACION ANTERIOR
+            */
+
+            $sqlEliminarAnterior = "DELETE FROM producto_existencias
+                                    WHERE producto_id = :producto_id
+                                    AND sucursal = :sucursal
+                                    AND ubicacion = :ubicacion";
+
+            $stmtEliminarAnterior = $this->conn->prepare($sqlEliminarAnterior);
+
+            $stmtEliminarAnterior->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal,
+                ':ubicacion' => $ubicacionAnterior
+            ]);
+
+        } else {
+
+            /*
+            ==========================
+            SOLO ACTUALIZAR
+            ==========================
+            */
+
+            $sql = "UPDATE producto_existencias
+                    SET ubicacion = :ubicacion_nueva,
+                        existencia = :existencia,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE producto_id = :producto_id
+                    AND sucursal = :sucursal
+                    AND ubicacion = :ubicacion_anterior";
+
+            $stmt = $this->conn->prepare($sql);
+
+            $stmt->execute([
+                ':ubicacion_nueva' => $ubicacionNueva,
+                ':existencia' => $existencia,
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal,
+                ':ubicacion_anterior' => $ubicacionAnterior
+            ]);
+        }
+
+        $this->conn->commit();
+
+        return true;
+
+    } catch (Throwable $e) {
+
+        $this->conn->rollBack();
+
+        return false;
+    }
+}
     public function deleteLogical(int $id): bool
     {
         $sql = "UPDATE productos SET estado = 0 WHERE id = :id";

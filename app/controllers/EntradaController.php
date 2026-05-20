@@ -44,14 +44,15 @@ class EntradaController
 
         return $this->movimientoModel->generarFolioEntrada($almacenId);
     }
-    public function ultimoFolioEntrada(?int $almacenId = null): string
-{
-    $almacenId = $almacenId !== null
-        ? (int)$almacenId
-        : $this->obtenerAlmacenSesion();
 
-    return $this->movimientoModel->ultimoFolioEntrada($almacenId);
-}
+    public function ultimoFolioEntrada(?int $almacenId = null): string
+    {
+        $almacenId = $almacenId !== null
+            ? (int)$almacenId
+            : $this->obtenerAlmacenSesion();
+
+        return $this->movimientoModel->ultimoFolioEntrada($almacenId);
+    }
 
     public function obtenerEntrada(int $id): ?array
     {
@@ -72,7 +73,10 @@ class EntradaController
         $fecha = trim($postData['fecha'] ?? '');
         $folioAnterior = trim($postData['folio_anterior'] ?? '');
         $tipoEntrada = trim($postData['tipo_entrada'] ?? '');
+
         $proveedorId = trim($postData['proveedor_id'] ?? '');
+        $proveedorNombre = trim($postData['proveedor_nombre'] ?? '');
+
         $referencia = trim($postData['referencia'] ?? '');
         $observaciones = trim($postData['observaciones'] ?? '');
 
@@ -182,6 +186,10 @@ class EntradaController
 
         if ($folioAnterior !== '') {
             $referenciaFinal .= ' | Folio anterior: ' . $folioAnterior;
+        }
+
+        if ($proveedorNombre !== '') {
+            $referenciaFinal .= ' | Proveedor: ' . $proveedorNombre;
         }
 
         if ($referencia !== '') {

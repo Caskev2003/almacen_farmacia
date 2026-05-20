@@ -31,7 +31,7 @@ class Producto
         return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function getAll(string $search = '', string $sucursal = '', bool $isAdmin = false): array
+public function getAll(string $search = '', string $sucursal = '', bool $isAdmin = false): array
 {
     $params = [];
 
@@ -56,7 +56,9 @@ class Producto
                 FROM productos p
                 LEFT JOIN categorias c ON p.categoria_id = c.id
                 LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
-                LEFT JOIN producto_existencias pe ON pe.producto_id = p.id
+                LEFT JOIN producto_existencias pe 
+                    ON pe.producto_id = p.id
+                    AND pe.existencia > 0
                 WHERE p.estado = 1";
     } else {
         $sql = "SELECT 
@@ -81,6 +83,7 @@ class Producto
                 LEFT JOIN producto_existencias pe 
                     ON pe.producto_id = p.id 
                     AND pe.sucursal = :sucursal
+                    AND pe.existencia > 0
                 WHERE p.estado = 1";
 
         $params[':sucursal'] = $sucursal;
@@ -95,6 +98,7 @@ class Producto
                     OR p.ubicacion LIKE :search
                     OR pe.ubicacion LIKE :search
                 )";
+
         $params[':search'] = "%{$search}%";
     }
 
@@ -130,8 +134,11 @@ class Producto
                             existencia AS existencia_actual
                        FROM producto_existencias
                        WHERE producto_id = :producto_id
+                       AND existencia > 0
                        ORDER BY sucursal ASC, ubicacion ASC";
+
             $stmtUbi = $this->conn->prepare($sqlUbi);
+
             $stmtUbi->execute([
                 ':producto_id' => $productoId
             ]);
@@ -143,8 +150,11 @@ class Producto
                        FROM producto_existencias
                        WHERE producto_id = :producto_id
                        AND sucursal = :sucursal
+                       AND existencia > 0
                        ORDER BY existencia ASC, ubicacion ASC";
+
             $stmtUbi = $this->conn->prepare($sqlUbi);
+
             $stmtUbi->execute([
                 ':producto_id' => $productoId,
                 ':sucursal' => $sucursal
@@ -152,6 +162,10 @@ class Producto
         }
 
         $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($producto['ubicaciones'])) {
+            $producto['ubicacion'] = '';
+        }
     }
 
     unset($producto);
@@ -743,4 +757,55 @@ public function actualizarUbicacionExistencia(
             ':id' => $id
         ]);
     }
+    public function eliminarUbicacionExistencia(
+    int $productoId,
+    string $sucursal,
+    string $ubicacion
+): bool {
+    $ubicacion = strtoupper(trim($ubicacion));
+
+    if ($ubicacion === '') {
+        $ubicacion = 'SIN UBICACION';
+    }
+
+    try {
+        $this->conn->beginTransaction();
+
+        $sqlDelete = "DELETE FROM producto_existencias
+                      WHERE producto_id = :producto_id
+                      AND sucursal = :sucursal
+                      AND ubicacion = :ubicacion";
+
+        $stmtDelete = $this->conn->prepare($sqlDelete);
+
+        $stmtDelete->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion
+        ]);
+
+        $sqlProducto = "UPDATE productos
+                        SET ubicacion = NULL
+                        WHERE id = :producto_id
+                        AND ubicacion = :ubicacion";
+
+        $stmtProducto = $this->conn->prepare($sqlProducto);
+
+        $stmtProducto->execute([
+            ':producto_id' => $productoId,
+            ':ubicacion' => $ubicacion
+        ]);
+
+        $this->conn->commit();
+
+        return true;
+
+    } catch (Throwable $e) {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
+
+        return false;
+    }
+}
 }

@@ -351,9 +351,13 @@ class ProductoController
 public function editarUbicacionExistencia(array $postData): array
 {
     $productoId = (int)($postData['producto_id'] ?? 0);
+
     $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+
     $ubicacionAnterior = strtoupper(trim($postData['ubicacion_anterior'] ?? ''));
+
     $ubicacionNueva = strtoupper(trim($postData['ubicacion_nueva'] ?? ''));
+
     $existencia = (int)($postData['existencia'] ?? 0);
 
     if ($productoId <= 0) {
@@ -378,6 +382,33 @@ public function editarUbicacionExistencia(array $postData): array
         $ubicacionNueva = 'SIN UBICACION';
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | SI LA EXISTENCIA ES 0
+    | ELIMINAMOS LA UBICACION
+    |--------------------------------------------------------------------------
+    */
+    if ($existencia <= 0) {
+
+        $ok = $this->productoModel->eliminarUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacionAnterior
+        );
+
+        return [
+            'success' => $ok,
+            'message' => $ok
+                ? 'Ubicación eliminada correctamente.'
+                : 'No se pudo eliminar la ubicación.'
+        ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SI EXISTE STOCK
+    |--------------------------------------------------------------------------
+    */
     $ok = $this->productoModel->actualizarUbicacionExistencia(
         $productoId,
         $sucursal,

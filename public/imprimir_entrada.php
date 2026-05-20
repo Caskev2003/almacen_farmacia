@@ -25,20 +25,49 @@ foreach ($entrada['detalles'] as $detalle) {
     $total += ((float)$detalle['costo_unitario'] * (int)$detalle['cantidad']);
 }
 
+/*
+|--------------------------------------------------------------------------
+| REFERENCIA COMPLETA
+|--------------------------------------------------------------------------
+*/
 $referenciaCompleta = trim($entrada['referencia'] ?? '');
+
 $partesReferencia = explode('|', $referenciaCompleta);
 
 $movimientoTexto = trim($partesReferencia[0] ?? 'Entrada de almacén');
+
 $documentoTexto = '';
+$proveedorManual = '';
 
 foreach ($partesReferencia as $parte) {
+
     $parte = trim($parte);
 
     if (str_starts_with($parte, 'Ref:')) {
         $documentoTexto = trim(str_replace('Ref:', '', $parte));
     }
+
+    if (str_starts_with($parte, 'Proveedor:')) {
+        $proveedorManual = trim(str_replace('Proveedor:', '', $parte));
+    }
 }
 
+/*
+|--------------------------------------------------------------------------
+| PROVEEDOR
+|--------------------------------------------------------------------------
+*/
+if ($proveedorManual !== '') {
+    $proveedorNombre = $proveedorManual;
+} else {
+    $proveedorNombre = $entrada['proveedor_nombre'] ?? '';
+}
+
+/*
+|--------------------------------------------------------------------------
+| DATOS GENERALES
+|--------------------------------------------------------------------------
+*/
 $fechaImpresa = '';
 
 if (!empty($entrada['fecha'])) {
@@ -48,8 +77,8 @@ if (!empty($entrada['fecha'])) {
 $folioEntrada = $entrada['folio'] ?? '';
 $almacenNombre = $entrada['almacen_nombre'] ?? '';
 $usuarioNombre = $entrada['usuario_nombre'] ?? '';
-$proveedorNombre = $entrada['proveedor_nombre'] ?? '';
 $observaciones = $entrada['observaciones'] ?? '';
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -59,6 +88,7 @@ $observaciones = $entrada['observaciones'] ?? '';
     <title>Imprimir entrada <?= e($folioEntrada) ?></title>
 
     <style>
+
         @page {
             size: A4 portrait;
             margin: 12mm 14mm;
@@ -188,10 +218,10 @@ $observaciones = $entrada['observaciones'] ?? '';
 
         .info-grid-full {
             display: grid;
-            grid-template-columns: 82px 1fr;
+            grid-template-columns: 90px minmax(0, 1fr);
             gap: 4px 10px;
             font-size: 10px;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
             align-items: start;
         }
 
@@ -204,6 +234,20 @@ $observaciones = $entrada['observaciones'] ?? '';
             word-break: break-word;
         }
 
+        .documento-row {
+            margin-bottom: 10px;
+        }
+
+        .documento-box {
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            line-height: 1.5;
+            max-width: 100%;
+            font-size: 10px;
+            padding-right: 10px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -212,7 +256,8 @@ $observaciones = $entrada['observaciones'] ?? '';
             table-layout: fixed;
         }
 
-        th, td {
+        th,
+        td {
             border: 1px solid #d6d6d6;
             padding: 5px 5px;
             vertical-align: top;
@@ -247,6 +292,7 @@ $observaciones = $entrada['observaciones'] ?? '';
         }
 
         @media print {
+
             .no-print {
                 display: none !important;
             }
@@ -281,16 +327,19 @@ $observaciones = $entrada['observaciones'] ?? '';
                 display: table-footer-group;
             }
         }
+
     </style>
 </head>
 
 <body>
 
 <script>
+
 function imprimirYLimpiar() {
     localStorage.removeItem('borradorEntrada');
     window.print();
 }
+
 </script>
 
 <div class="no-print">
@@ -302,28 +351,38 @@ function imprimirYLimpiar() {
 <div class="sheet">
 
     <div class="header">
+
         <div class="logo-box">
             <img src="assets/img/logo.jpeg" alt="Logo G&D">
         </div>
 
         <div class="company-box">
-            <div class="company-name">DISTRIBUCIÓN G&D, S.A. DE C.V.</div>
+            <div class="company-name">
+                DISTRIBUCIÓN G&D, S.A. DE C.V.
+            </div>
+
             <div>CP:</div>
             <div>RFC: DGD151211PP5</div>
         </div>
 
         <div class="movement-box">
             <h2>Movimientos al Inventario</h2>
+
             <div>
                 Folio:
-                <span class="movement-number"><?= e($folioEntrada) ?></span>
+                <span class="movement-number">
+                    <?= e($folioEntrada) ?>
+                </span>
             </div>
         </div>
+
     </div>
 
     <div class="line"></div>
 
-    <div class="tipo-row">Tipo: Entrada</div>
+    <div class="tipo-row">
+        Tipo: Entrada
+    </div>
 
     <div class="line"></div>
 
@@ -333,37 +392,57 @@ function imprimirYLimpiar() {
     </div>
 
     <?php if ($documentoTexto !== ''): ?>
-        <div class="info-grid-full">
-            <div class="label">Documento:</div>
-            <div><?= e($documentoTexto) ?></div>
+
+        <div class="info-grid-full documento-row">
+
+            <div class="label">
+                Documento:
+            </div>
+
+            <div class="documento-box">
+                <?= e($documentoTexto) ?>
+            </div>
+
         </div>
+
     <?php endif; ?>
 
     <div class="info-grid">
+
         <div class="label">Fecha:</div>
         <div><?= e($fechaImpresa) ?></div>
 
         <div class="label">Proveedor:</div>
         <div><?= e($proveedorNombre) ?></div>
+
     </div>
 
     <div class="info-grid">
+
         <div class="label">Almacén:</div>
         <div><?= e($almacenNombre) ?></div>
 
         <div class="label">Usuario:</div>
         <div><?= e($usuarioNombre) ?></div>
+
     </div>
 
     <div class="info-grid-full">
+
         <div class="label">Observaciones:</div>
-        <div class="observaciones-box"><?= e($observaciones) ?></div>
+
+        <div class="observaciones-box">
+            <?= e($observaciones) ?>
+        </div>
+
     </div>
 
     <div class="line"></div>
 
     <table>
+
         <thead>
+
             <tr>
                 <th style="width: 55px;">Cantidad</th>
                 <th style="width: 85px;">Clave</th>
@@ -373,31 +452,69 @@ function imprimirYLimpiar() {
                 <th style="width: 65px;">Precio U.</th>
                 <th style="width: 75px;">Importe</th>
             </tr>
+
         </thead>
 
         <tbody>
+
             <?php foreach ($entrada['detalles'] as $detalle): ?>
+
                 <?php
+
                     $cantidad = (int)$detalle['cantidad'];
                     $costo = (float)$detalle['costo_unitario'];
                     $importe = $cantidad * $costo;
+
                 ?>
+
                 <tr>
-                    <td class="text-center"><?= $cantidad ?></td>
-                    <td><?= e($detalle['codigo'] ?? '') ?></td>
-                    <td><?= e($detalle['descripcion'] ?? '') ?></td>
-                    <td><?= e($detalle['numero_lote'] ?? '') ?></td>
-                    <td><?= e($detalle['ubicacion'] ?? '') ?></td>
-                    <td class="text-right"><?= number_format($costo, 2) ?></td>
-                    <td class="text-right"><?= number_format($importe, 2) ?></td>
+
+                    <td class="text-center">
+                        <?= $cantidad ?>
+                    </td>
+
+                    <td>
+                        <?= e($detalle['codigo'] ?? '') ?>
+                    </td>
+
+                    <td>
+                        <?= e($detalle['descripcion'] ?? '') ?>
+                    </td>
+
+                    <td>
+                        <?= e($detalle['numero_lote'] ?? '') ?>
+                    </td>
+
+                    <td>
+                        <?= e($detalle['ubicacion'] ?? '') ?>
+                    </td>
+
+                    <td class="text-right">
+                        <?= number_format($costo, 2) ?>
+                    </td>
+
+                    <td class="text-right">
+                        <?= number_format($importe, 2) ?>
+                    </td>
+
                 </tr>
+
             <?php endforeach; ?>
 
             <tr class="total-row">
-                <td colspan="6" class="text-right">Total</td>
-                <td class="text-right"><?= number_format($total, 2) ?></td>
+
+                <td colspan="6" class="text-right">
+                    Total
+                </td>
+
+                <td class="text-right">
+                    <?= number_format($total, 2) ?>
+                </td>
+
             </tr>
+
         </tbody>
+
     </table>
 
     <div class="footer-note">

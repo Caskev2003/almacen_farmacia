@@ -44,6 +44,14 @@ class EntradaController
 
         return $this->movimientoModel->generarFolioEntrada($almacenId);
     }
+    public function ultimoFolioEntrada(?int $almacenId = null): string
+{
+    $almacenId = $almacenId !== null
+        ? (int)$almacenId
+        : $this->obtenerAlmacenSesion();
+
+    return $this->movimientoModel->ultimoFolioEntrada($almacenId);
+}
 
     public function obtenerEntrada(int $id): ?array
     {

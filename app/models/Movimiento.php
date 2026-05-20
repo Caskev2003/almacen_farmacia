@@ -253,6 +253,7 @@ class Movimiento
         return $this->generarFolioPorAlmacen('SALIDA', (int)$almacenId);
     }
 
+    
     public function ultimoFolioSalida(?int $almacenId = null): string
     {
         $params = [];
@@ -309,7 +310,28 @@ class Movimiento
             ':cantidad' => $cantidad
         ]);
     }
+public function ultimoFolioEntrada(?int $almacenId = null): string
+{
+    $params = [];
 
+    $sql = "SELECT folio 
+            FROM movimientos 
+            WHERE tipo_movimiento = 'ENTRADA'";
+
+    if ($almacenId !== null && (int)$almacenId > 0) {
+        $sql .= " AND almacen_id = :almacen_id";
+        $params[':almacen_id'] = (int)$almacenId;
+    }
+
+    $sql .= " ORDER BY id DESC LIMIT 1";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row ? $row['folio'] : '';
+}
     private function disminuirExistencia(
         int $productoId,
         string $sucursal,

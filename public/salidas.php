@@ -110,7 +110,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field">
                 <label>Fecha</label>
-                <input type="datetime-local" name="fecha" value="<?= e($fechaActual) ?>" required>
+                <input type="datetime-local" name="fecha" id="fecha_salida" required>
             </div>
 
             <div class="salida-field folio-anterior-field">
@@ -933,6 +933,26 @@ document.addEventListener('DOMContentLoaded', function () {
 document.querySelectorAll('input, select, textarea').forEach(campo => {
     campo.addEventListener('change', guardarBorradorSalida);
     campo.addEventListener('keyup', guardarBorradorSalida);
+});
+
+function ponerFechaActualSalida() {
+    const inputFecha = document.getElementById('fecha_salida');
+    if (!inputFecha) return;
+
+    const ahora = new Date();
+
+    const year = ahora.getFullYear();
+    const month = String(ahora.getMonth() + 1).padStart(2, '0');
+    const day = String(ahora.getDate()).padStart(2, '0');
+    const hours = String(ahora.getHours()).padStart(2, '0');
+    const minutes = String(ahora.getMinutes()).padStart(2, '0');
+
+    inputFecha.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    localStorage.removeItem('borradorSalida');
+    ponerFechaActualSalida();
 });
 </script>
 <?php

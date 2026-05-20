@@ -44,7 +44,6 @@ $folioAnterior = method_exists($controller, 'ultimoFolioEntrada')
     : '';
 
 date_default_timezone_set('America/Mexico_City');
-$fechaActual = date('Y-m-d\TH:i');
 
 $ubicacionesGenerales = [];
 
@@ -86,6 +85,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <?php endif; ?>
 
 <form method="POST" action="" id="formEntrada">
+    <input type="hidden" name="referencia" id="referencia_final">
+
     <div class="salida-encabezado-card">
         <div class="salida-encabezado-grid">
 
@@ -159,11 +160,25 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <div class="salida-field">
-                <label>Referencia</label>
+                <label>Tipo de documento</label>
+                <select name="tipo_documento" id="tipo_documento">
+                    <option value="">Seleccione...</option>
+                    <option value="FACTURA">Factura</option>
+                    <option value="NOTA">Nota</option>
+                    <option value="REMISION">Remisión</option>
+                    <option value="TICKET">Ticket</option>
+                    <option value="AJUSTE">Ajuste</option>
+                    <option value="OTRO">Otro</option>
+                </select>
+            </div>
+
+            <div class="salida-field">
+                <label>Folio del documento</label>
                 <input 
                     type="text" 
-                    name="referencia" 
-                    placeholder="Factura, remisión, nota, etc."
+                    name="folio_documento" 
+                    id="folio_documento"
+                    placeholder="Ingrese folio"
                 >
             </div>
 
@@ -260,11 +275,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <input type="text" id="lote_input">
             </div>
 
-            <div class="salida-field mini-field">
-                <label>Caducidad</label>
-                <input type="date" id="caducidad_input">
-            </div>
-
             <div class="salida-field">
                 <label>Ubicación</label>
                 <input
@@ -280,6 +290,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <option value="<?= e($ubicacionGeneral) ?>"></option>
                     <?php endforeach; ?>
                 </datalist>
+
+                <small style="display:block; margin-top:4px; color:#64748b; font-size:11px;">
+                    Puedes seleccionar una ubicación existente o escribir una nueva.
+                </small>
             </div>
 
             <div class="salida-actions">
@@ -304,7 +318,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Descripción</th>
                         <th>Precio U.</th>
                         <th>Lote</th>
-                        <th>Caducidad</th>
                         <th>Ubicación</th>
                         <th>Importe</th>
                         <th>Acción</th>
@@ -313,13 +326,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                 <tbody id="detalleBody">
                     <tr id="filaVaciaDetalle">
-                        <td colspan="9" class="empty-table">No has agregado productos.</td>
+                        <td colspan="8" class="empty-table">No has agregado productos.</td>
                     </tr>
                 </tbody>
 
                 <tfoot>
                     <tr>
-                        <th colspan="7" style="text-align:right;">Total:</th>
+                        <th colspan="6" style="text-align:right;">Total:</th>
                         <th id="totalEntrada">$0.00</th>
                         <th></th>
                     </tr>
@@ -451,10 +464,13 @@ const cantidadInput = document.getElementById('cantidad_input');
 const descripcionInput = document.getElementById('descripcion_input');
 const costoInput = document.getElementById('costo_input');
 const loteInput = document.getElementById('lote_input');
-const caducidadInput = document.getElementById('caducidad_input');
 const ubicacionInput = document.getElementById('ubicacion_input');
 const detalleBody = document.getElementById('detalleBody');
 const totalEntrada = document.getElementById('totalEntrada');
+
+const tipoDocumentoInput = document.getElementById('tipo_documento');
+const folioDocumentoInput = document.getElementById('folio_documento');
+const referenciaFinalInput = document.getElementById('referencia_final');
 
 const modalProductos = document.getElementById('modalProductos');
 const buscarProductoInput = document.getElementById('buscarProductoInput');
@@ -636,7 +652,6 @@ function agregarProductoDetalle() {
     const cantidad = parseInt(cantidadInput.value || '0', 10);
     const costo = parseFloat(costoInput.value || '0');
     const lote = loteInput.value.trim();
-    const caducidad = caducidadInput.value;
     const ubicacion = ubicacionInput.value.trim().toUpperCase();
 
     if (cantidad <= 0) {
@@ -679,14 +694,13 @@ function agregarProductoDetalle() {
             <input type="hidden" name="producto_id[]" value="${escapeHtml(productoId)}">
             <input type="hidden" name="costo_unitario[]" value="${escapeHtml(costo.toFixed(2))}">
             <input type="hidden" name="numero_lote[]" value="${escapeHtml(lote)}">
-            <input type="hidden" name="fecha_caducidad[]" value="${escapeHtml(caducidad)}">
+            <input type="hidden" name="fecha_caducidad[]" value="">
             <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
         </td>
         <td>${escapeHtml(codigo)}</td>
         <td>${escapeHtml(descripcion)}</td>
         <td>$${costo.toFixed(2)}</td>
         <td>${escapeHtml(lote)}</td>
-        <td>${escapeHtml(caducidad || '')}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
         <td>
@@ -751,7 +765,7 @@ function eliminarFilaEntrada(btn) {
     if (detalleBody.children.length === 0) {
         detalleBody.innerHTML = `
             <tr id="filaVaciaDetalle">
-                <td colspan="9" class="empty-table">No has agregado productos.</td>
+                <td colspan="8" class="empty-table">No has agregado productos.</td>
             </tr>
         `;
     }
@@ -776,13 +790,29 @@ function limpiarCapturaProducto() {
     descripcionInput.value = '';
     costoInput.value = '0.00';
     loteInput.value = '';
-    caducidadInput.value = '';
     ubicacionInput.value = '';
 
     cargarCatalogoUbicacionesEntrada();
 }
 
+function construirReferenciaDocumento() {
+    const tipoDocumento = tipoDocumentoInput.value.trim();
+    const folioDocumento = folioDocumentoInput.value.trim();
+
+    if (tipoDocumento && folioDocumento) {
+        referenciaFinalInput.value = `${tipoDocumento}: ${folioDocumento}`;
+    } else if (tipoDocumento) {
+        referenciaFinalInput.value = tipoDocumento;
+    } else if (folioDocumento) {
+        referenciaFinalInput.value = folioDocumento;
+    } else {
+        referenciaFinalInput.value = '';
+    }
+}
+
 document.getElementById('formEntrada').addEventListener('submit', function (e) {
+    construirReferenciaDocumento();
+
     if (document.querySelectorAll('input[name="producto_id[]"]').length === 0) {
         e.preventDefault();
         alert('Debes agregar al menos un producto.');
@@ -792,12 +822,16 @@ document.getElementById('formEntrada').addEventListener('submit', function (e) {
 });
 
 function guardarBorradorEntrada() {
+    construirReferenciaDocumento();
+
     const datos = {
         folio: document.querySelector('[name="folio"]')?.value || '',
         fecha: document.querySelector('[name="fecha"]')?.value || '',
         tipo_entrada: document.querySelector('[name="tipo_entrada"]')?.value || '',
         almacen_id: document.querySelector('[name="almacen_id"]')?.value || '',
         proveedor_nombre: document.querySelector('[name="proveedor_nombre"]')?.value || '',
+        tipo_documento: document.querySelector('[name="tipo_documento"]')?.value || '',
+        folio_documento: document.querySelector('[name="folio_documento"]')?.value || '',
         referencia: document.querySelector('[name="referencia"]')?.value || '',
         observaciones: document.querySelector('[name="observaciones"]')?.value || ''
     };
@@ -815,8 +849,11 @@ function cargarBorradorEntrada() {
     if (datos.tipo_entrada) document.querySelector('[name="tipo_entrada"]').value = datos.tipo_entrada;
     if (datos.almacen_id) document.querySelector('[name="almacen_id"]').value = datos.almacen_id;
     if (datos.proveedor_nombre) document.querySelector('[name="proveedor_nombre"]').value = datos.proveedor_nombre;
-    if (datos.referencia) document.querySelector('[name="referencia"]').value = datos.referencia;
+    if (datos.tipo_documento) document.querySelector('[name="tipo_documento"]').value = datos.tipo_documento;
+    if (datos.folio_documento) document.querySelector('[name="folio_documento"]').value = datos.folio_documento;
     if (datos.observaciones) document.querySelector('[name="observaciones"]').value = datos.observaciones;
+
+    construirReferenciaDocumento();
 }
 
 document.querySelectorAll('input, select, textarea').forEach(campo => {

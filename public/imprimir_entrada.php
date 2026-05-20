@@ -27,9 +27,20 @@ foreach ($entrada['detalles'] as $detalle) {
 
 $referenciaCompleta = trim($entrada['referencia'] ?? '');
 $partesReferencia = explode('|', $referenciaCompleta);
+
 $movimientoTexto = trim($partesReferencia[0] ?? 'Entrada de almacén');
+$documentoTexto = '';
+
+foreach ($partesReferencia as $parte) {
+    $parte = trim($parte);
+
+    if (str_starts_with($parte, 'Ref:')) {
+        $documentoTexto = trim(str_replace('Ref:', '', $parte));
+    }
+}
 
 $fechaImpresa = '';
+
 if (!empty($entrada['fecha'])) {
     $fechaImpresa = date('d/m/Y', strtotime($entrada['fecha']));
 }
@@ -175,12 +186,20 @@ $observaciones = $entrada['observaciones'] ?? '';
             align-items: start;
         }
 
+        .info-grid-full {
+            display: grid;
+            grid-template-columns: 82px 1fr;
+            gap: 4px 10px;
+            font-size: 10px;
+            margin-bottom: 5px;
+            align-items: start;
+        }
+
         .label {
             font-weight: bold;
         }
 
         .observaciones-box {
-            grid-column: span 3;
             white-space: pre-wrap;
             word-break: break-word;
         }
@@ -209,6 +228,10 @@ $observaciones = $entrada['observaciones'] ?? '';
 
         .text-right {
             text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
         }
 
         .total-row td {
@@ -304,12 +327,17 @@ function imprimirYLimpiar() {
 
     <div class="line"></div>
 
-    <div class="info-grid">
+    <div class="info-grid-full">
         <div class="label">Movimiento:</div>
         <div><?= e($movimientoTexto) ?></div>
-
-
     </div>
+
+    <?php if ($documentoTexto !== ''): ?>
+        <div class="info-grid-full">
+            <div class="label">Documento:</div>
+            <div><?= e($documentoTexto) ?></div>
+        </div>
+    <?php endif; ?>
 
     <div class="info-grid">
         <div class="label">Fecha:</div>
@@ -327,7 +355,7 @@ function imprimirYLimpiar() {
         <div><?= e($usuarioNombre) ?></div>
     </div>
 
-    <div class="info-grid">
+    <div class="info-grid-full">
         <div class="label">Observaciones:</div>
         <div class="observaciones-box"><?= e($observaciones) ?></div>
     </div>
@@ -341,8 +369,8 @@ function imprimirYLimpiar() {
                 <th style="width: 85px;">Clave</th>
                 <th>Descripción</th>
                 <th style="width: 70px;">Lote</th>
-                <th style="width: 75px;">Ubicación</th>
-                <th style="width: 65px;">Costo U.</th>
+                <th style="width: 85px;">Ubicación</th>
+                <th style="width: 65px;">Precio U.</th>
                 <th style="width: 75px;">Importe</th>
             </tr>
         </thead>
@@ -353,10 +381,9 @@ function imprimirYLimpiar() {
                     $cantidad = (int)$detalle['cantidad'];
                     $costo = (float)$detalle['costo_unitario'];
                     $importe = $cantidad * $costo;
-
                 ?>
                 <tr>
-                    <td><?= $cantidad ?></td>
+                    <td class="text-center"><?= $cantidad ?></td>
                     <td><?= e($detalle['codigo'] ?? '') ?></td>
                     <td><?= e($detalle['descripcion'] ?? '') ?></td>
                     <td><?= e($detalle['numero_lote'] ?? '') ?></td>
@@ -367,7 +394,7 @@ function imprimirYLimpiar() {
             <?php endforeach; ?>
 
             <tr class="total-row">
-                <td colspan="7" class="text-right">Total</td>
+                <td colspan="6" class="text-right">Total</td>
                 <td class="text-right"><?= number_format($total, 2) ?></td>
             </tr>
         </tbody>

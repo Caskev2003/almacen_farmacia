@@ -247,7 +247,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             data-codigo="<?= e($producto['codigo']) ?>"
                             data-descripcion="<?= e($producto['descripcion']) ?>"
                             data-costo="<?= e((string)$producto['precio_compra']) ?>"
-                            data-precio="<?= e((string)$producto['precio_venta']) ?>"
+                            data-precio="<?= e((string)$producto['precio_compra']) ?>"
                             data-existencia="<?= e((string)$producto['existencia_actual']) ?>"
                             data-unidad="<?= e($producto['unidad_medida']) ?>"
                             data-ubicacion="<?= e($producto['ubicacion'] ?? '') ?>"
@@ -380,7 +380,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Descripción</th>
                         <th>Unidad</th>
                         <th>Existencia</th>
-                        <th>Precio</th>
+                        <th>Precio Unitario</th>
                         <th>Ubicación sugerida</th>
                         <th>Ubicaciones</th>
                         <th>Acción</th>
@@ -437,7 +437,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             <td><?= e($producto['descripcion']) ?></td>
                             <td><?= e($producto['unidad_medida']) ?></td>
                             <td><?= e((string)$producto['existencia_actual']) ?></td>
-                            <td>$<?= number_format((float)$producto['precio_venta'], 2) ?></td>
+                            <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
                             <td><?= e($ubicacionSugerida) ?></td>
                             <td><?= e($textoUbicacionesPlano ?: ($producto['ubicacion'] ?? '')) ?></td>
                             <td>

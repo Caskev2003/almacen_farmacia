@@ -7,7 +7,6 @@ require_once __DIR__ . '/../app/controllers/ProductoController.php';
 requireLogin();
 
 $controller = new ProductoController();
-
 $user = currentUser();
 
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
@@ -314,13 +313,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 </div>
 
                 <div class="form-group">
-                    <label>Precio de compra</label>
+                    <label>Precio Unitario</label>
                     <input type="number" step="0.01" min="0" name="precio_compra" value="<?= e($editando['precio_compra'] ?? '0.00') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label>Precio de venta</label>
-                    <input type="number" step="0.01" min="0" name="precio_venta" value="<?= e($editando['precio_venta'] ?? '0.00') ?>">
                 </div>
 
                 <div class="form-group">
@@ -400,8 +394,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Proveedor</th>
                         <th>Marca</th>
                         <th>Unidad</th>
-                        <th>P. Compra</th>
-                        <th>P. Venta</th>
+                        <th>Precio Unitario</th>
 
                         <?php if ($esAdmin): ?>
                             <th>Ciudad Hidalgo</th>
@@ -428,7 +421,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 <td><?= e($producto['laboratorio'] ?? '') ?></td>
                                 <td><?= e($producto['unidad_medida'] ?? '') ?></td>
                                 <td>$<?= number_format((float)($producto['precio_compra'] ?? 0), 2) ?></td>
-                                <td>$<?= number_format((float)($producto['precio_venta'] ?? 0), 2) ?></td>
 
                                 <?php if ($esAdmin): ?>
                                     <td class="badge-hidalgo"><?= (int)($producto['existencia_hidalgo'] ?? 0) ?></td>
@@ -513,7 +505,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
+                            <td colspan="<?= $esAdmin ? '13' : '12' ?>" class="empty-table">
                                 No hay productos registrados.
                             </td>
                         </tr>

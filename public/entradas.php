@@ -564,27 +564,24 @@ function cargarUbicacionesDelProducto(option) {
 
     datalist.innerHTML = '';
 
+    cargarCatalogoUbicacionesEntrada();
+
     const ubicaciones = obtenerUbicacionesProducto(option);
 
-    const soloSinUbicacion =
-        ubicaciones.length === 0 ||
-        (
-            ubicaciones.length === 1 &&
-            ubicaciones[0].ubicacion === 'SIN UBICACION'
-        );
-
-    if (soloSinUbicacion) {
-        cargarCatalogoUbicacionesEntrada();
-        return;
-    }
-
     ubicaciones.forEach(item => {
-        const opt = document.createElement('option');
-        opt.value = item.ubicacion;
-        datalist.appendChild(opt);
+        if (item.ubicacion && item.ubicacion !== 'SIN UBICACION') {
+            const existe = Array.from(datalist.options).some(
+                opt => opt.value === item.ubicacion
+            );
+
+            if (!existe) {
+                const opt = document.createElement('option');
+                opt.value = item.ubicacion;
+                datalist.appendChild(opt);
+            }
+        }
     });
 }
-
 function obtenerUbicacionSugerida(option) {
     const ubicaciones = obtenerUbicacionesProducto(option)
         .sort((a, b) => a.existencia_actual - b.existencia_actual);
@@ -611,7 +608,8 @@ function cargarDatosProductoSeleccionado() {
 
     descripcionInput.value = option.dataset.descripcion || '';
     costoInput.value = option.dataset.costo || '0.00';
-    ubicacionInput.value = obtenerUbicacionSugerida(option);
+    ubicacionInput.value = '';
+ubicacionInput.placeholder = 'Escribe nueva ubicación';
 
     cargarUbicacionesDelProducto(option);
 }

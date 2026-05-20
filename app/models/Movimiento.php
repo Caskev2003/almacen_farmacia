@@ -480,14 +480,30 @@ public function ultimoFolioEntrada(?int $almacenId = null): string
                 ]);
 
                 if ($data['tipo_movimiento'] === 'ENTRADA') {
-                    $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
 
-                    $stmtActualizarProducto->execute([
-                        ':precio_compra' => $item['costo_unitario'],
-                        ':ubicacion' => $ubicacion,
-                        ':producto_id' => $productoId,
-                    ]);
-                }
+    if ($ubicacion !== 'SIN UBICACION') {
+        $sqlEliminarSinUbicacion = "DELETE FROM producto_existencias
+                                    WHERE producto_id = :producto_id
+                                    AND sucursal = :sucursal
+                                    AND ubicacion = 'SIN UBICACION'
+                                    AND existencia <= 0";
+
+        $stmtEliminarSinUbicacion = $this->conn->prepare($sqlEliminarSinUbicacion);
+
+        $stmtEliminarSinUbicacion->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+    }
+
+    $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+
+    $stmtActualizarProducto->execute([
+        ':precio_compra' => $item['costo_unitario'],
+        ':ubicacion' => $ubicacion,
+        ':producto_id' => $productoId,
+    ]);
+}
             }
 
             $this->conn->commit();

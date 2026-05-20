@@ -357,6 +357,28 @@ public function ultimoFolioEntrada(?int $almacenId = null): string
         ]);
     }
 
+    private function eliminarUbicacionSiEstaVacia(
+    int $productoId,
+    string $sucursal,
+    string $ubicacion = ''
+): void {
+
+    $ubicacion = $this->limpiarUbicacion($ubicacion);
+
+    $sql = "DELETE FROM producto_existencias
+            WHERE producto_id = :producto_id
+            AND sucursal = :sucursal
+            AND ubicacion = :ubicacion
+            AND existencia <= 0";
+
+    $stmt = $this->conn->prepare($sql);
+
+    $stmt->execute([
+        ':producto_id' => $productoId,
+        ':sucursal' => $sucursal,
+        ':ubicacion' => $ubicacion
+    ]);
+}
     private function obtenerExistenciaProducto(
         int $productoId,
         string $sucursal,
@@ -681,6 +703,11 @@ public function crearSalida(array $data, array $detalle): array
                 $cantidad,
                 $ubicacion
             );
+            $this->eliminarUbicacionSiEstaVacia(
+    $productoId,
+    $sucursal,
+    $ubicacion
+);
         }
 
         $this->conn->commit();

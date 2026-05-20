@@ -41,6 +41,7 @@ $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 $folio = $controller->generarFolio($almacenSesion);
 $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
+date_default_timezone_set('America/Mexico_City');
 $fechaActual = date('Y-m-d\TH:i');
 
 /*
@@ -637,7 +638,6 @@ function controlarFolioOperacion() {
 }
 
 tipoOperacionSelect.addEventListener('change', controlarFolioOperacion);
-
 productoSelect.addEventListener('change', cargarDatosProductoSeleccionado);
 
 function cargarDatosProductoSeleccionado() {
@@ -658,13 +658,9 @@ function cargarDatosProductoSeleccionado() {
     descripcionInput.value = option.dataset.descripcion || '';
     unidadInput.value = option.dataset.unidad || '';
     precioInput.value = option.dataset.precio || '0.00';
-
     ubicacionInput.value = ubicacionMenor.ubicacion || 'SIN UBICACION';
-
-    // EXISTENCIA TOTAL DEL PRODUCTO
     existenciaInput.value = option.dataset.existencia || '0';
 
-    // CARGA TODAS LAS UBICACIONES REALES DEL PRODUCTO
     cargarUbicacionesDelProducto(option);
 }
 
@@ -762,7 +758,16 @@ function agregarProductoSalida() {
 
     tr.innerHTML = `
         <td>
-            ${escaparHtml(cantidad)}
+            <input
+                type="number"
+                min="1"
+                max="${escaparHtml(existenciaTotal)}"
+                value="${escaparHtml(cantidad)}"
+                class="input-cantidad-detalle"
+                style="width:70px;"
+                oninput="actualizarCantidadFila(this)"
+            >
+
             <input type="hidden" name="producto_id[]" value="${escaparHtml(productoId)}">
             <input type="hidden" name="cantidad[]" value="${escaparHtml(cantidad)}">
             <input type="hidden" name="costo_unitario[]" value="${escaparHtml(costo)}">
@@ -798,6 +803,62 @@ function agregarProductoSalida() {
     guardarBorradorSalida();
 }
 
+function actualizarCantidadFila(input) {
+    const tr = input.closest('tr');
+
+    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
+
+    input.value = cantidadTexto;
+
+    if (cantidadTexto === '') {
+        return;
+    }
+
+    const cantidad = parseInt(cantidadTexto, 10);
+
+    const existencia = parseInt(
+        tr.children[4].textContent || '0',
+        10
+    );
+
+    const precioTexto = tr.children[5]
+        .textContent
+        .replace('$', '')
+        .trim();
+
+    const precio = parseFloat(precioTexto || '0');
+
+    if (cantidad <= 0) {
+        return;
+    }
+
+    if (cantidad > existencia) {
+        alert('La cantidad no puede superar la existencia disponible.');
+
+        input.value = existencia;
+
+        return;
+    }
+
+    const nuevoImporte = cantidad * precio;
+
+    const inputHiddenCantidad = tr.querySelector(
+        'input[name="cantidad[]"]'
+    );
+
+    inputHiddenCantidad.value = cantidad;
+
+    const tdImporte = tr.querySelector('.importe-fila');
+
+    tdImporte.dataset.importe = nuevoImporte;
+
+    tdImporte.textContent =
+        '$' + nuevoImporte.toFixed(2);
+
+    actualizarTotalSalida();
+
+    guardarBorradorSalida();
+}
 function eliminarFilaSalida(btn) {
     btn.closest('tr').remove();
 

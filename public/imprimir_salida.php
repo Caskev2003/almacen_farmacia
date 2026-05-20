@@ -304,7 +304,7 @@ function imprimirYLimpiar() {
             <div><?= e($movimientoTexto) ?></div>
 
             
-            <div><?= (int)$salida['id'] ?></div>
+           
         </div>
 
         <div class="info-grid">

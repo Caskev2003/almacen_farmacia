@@ -308,8 +308,7 @@ function imprimirYLimpiar() {
         <div class="label">Movimiento:</div>
         <div><?= e($movimientoTexto) ?></div>
 
-        <div class="label">No. interno:</div>
-        <div><?= (int)$entrada['id'] ?></div>
+
     </div>
 
     <div class="info-grid">
@@ -342,7 +341,6 @@ function imprimirYLimpiar() {
                 <th style="width: 85px;">Clave</th>
                 <th>Descripción</th>
                 <th style="width: 70px;">Lote</th>
-                <th style="width: 70px;">Caducidad</th>
                 <th style="width: 75px;">Ubicación</th>
                 <th style="width: 65px;">Costo U.</th>
                 <th style="width: 75px;">Importe</th>
@@ -356,17 +354,12 @@ function imprimirYLimpiar() {
                     $costo = (float)$detalle['costo_unitario'];
                     $importe = $cantidad * $costo;
 
-                    $caducidadImpresa = '';
-                    if (!empty($detalle['fecha_caducidad'])) {
-                        $caducidadImpresa = date('d/m/Y', strtotime($detalle['fecha_caducidad']));
-                    }
                 ?>
                 <tr>
                     <td><?= $cantidad ?></td>
                     <td><?= e($detalle['codigo'] ?? '') ?></td>
                     <td><?= e($detalle['descripcion'] ?? '') ?></td>
                     <td><?= e($detalle['numero_lote'] ?? '') ?></td>
-                    <td><?= e($caducidadImpresa) ?></td>
                     <td><?= e($detalle['ubicacion'] ?? '') ?></td>
                     <td class="text-right"><?= number_format($costo, 2) ?></td>
                     <td class="text-right"><?= number_format($importe, 2) ?></td>

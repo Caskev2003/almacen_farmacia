@@ -475,6 +475,18 @@ const referenciaFinalInput = document.getElementById('referencia_final');
 const modalProductos = document.getElementById('modalProductos');
 const buscarProductoInput = document.getElementById('buscarProductoInput');
 
+
+function limpiarSinUbicacionEntrada() {
+    const valor = ubicacionInput.value.trim().toUpperCase();
+
+    if (valor === 'SIN UBICACION') {
+        ubicacionInput.value = '';
+        cargarCatalogoUbicacionesEntrada();
+    }
+}
+
+ubicacionInput.addEventListener('focus', limpiarSinUbicacionEntrada);
+ubicacionInput.addEventListener('click', limpiarSinUbicacionEntrada);
 function escapeHtml(text) {
     return String(text ?? '')
         .replace(/&/g, '&amp;')
@@ -504,9 +516,9 @@ function cargarCatalogoUbicacionesEntrada() {
     for (let z = 10; z <= 15; z++) add(5, 3, z);
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
 
-    ubicaciones.push('R7N1Z01 - PASILLO 1');
+    ubicaciones.push('R7N1Z01 - PASILLO 3');
     ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 3');
+    ubicaciones.push('R9N1Z01 - PASILLO 1');
     ubicaciones.push('BODEGA PEDYALITE');
 
     datalist.innerHTML = '';
@@ -554,15 +566,23 @@ function cargarUbicacionesDelProducto(option) {
 
     const ubicaciones = obtenerUbicacionesProducto(option);
 
+    const soloSinUbicacion =
+        ubicaciones.length === 0 ||
+        (
+            ubicaciones.length === 1 &&
+            ubicaciones[0].ubicacion === 'SIN UBICACION'
+        );
+
+    if (soloSinUbicacion) {
+        cargarCatalogoUbicacionesEntrada();
+        return;
+    }
+
     ubicaciones.forEach(item => {
         const opt = document.createElement('option');
         opt.value = item.ubicacion;
         datalist.appendChild(opt);
     });
-
-    if (ubicaciones.length === 0) {
-        cargarCatalogoUbicacionesEntrada();
-    }
 }
 
 function obtenerUbicacionSugerida(option) {
@@ -699,7 +719,17 @@ function agregarProductoDetalle() {
         </td>
         <td>${escapeHtml(codigo)}</td>
         <td>${escapeHtml(descripcion)}</td>
-        <td>$${costo.toFixed(2)}</td>
+        <td>
+    <input
+        type="number"
+        min="0"
+        step="0.01"
+        value="${escapeHtml(costo.toFixed(2))}"
+        class="input-precio-detalle"
+        style="width:85px;"
+        oninput="actualizarPrecioFilaEntrada(this)"
+    >
+</td>
         <td>${escapeHtml(lote)}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
@@ -717,36 +747,25 @@ function agregarProductoDetalle() {
     guardarBorradorEntrada();
 }
 
-function actualizarCantidadFilaEntrada(input) {
+function actualizarPrecioFilaEntrada(input) {
     const tr = input.closest('tr');
 
-    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
+    let precio = parseFloat(input.value || '0');
 
-    input.value = cantidadTexto;
-
-    if (cantidadTexto === '') {
-        return;
+    if (isNaN(precio) || precio < 0) {
+        precio = 0;
     }
 
-    const cantidad = parseInt(cantidadTexto, 10);
+    const cantidadInputFila = tr.querySelector('.input-cantidad-detalle');
+    const cantidad = parseInt(cantidadInputFila?.value || '0', 10);
 
-    if (cantidad <= 0) {
-        return;
+    const inputHiddenPrecio = tr.querySelector('input[name="costo_unitario[]"]');
+
+    if (inputHiddenPrecio) {
+        inputHiddenPrecio.value = precio.toFixed(2);
     }
 
-    const costoTexto = tr.children[3]
-        .textContent
-        .replace('$', '')
-        .trim();
-
-    const costo = parseFloat(costoTexto || '0');
-    const nuevoImporte = cantidad * costo;
-
-    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
-
-    if (inputHiddenCantidad) {
-        inputHiddenCantidad.value = cantidad;
-    }
+    const nuevoImporte = cantidad * precio;
 
     const tdImporte = tr.querySelector('.importe-fila');
 
@@ -882,6 +901,40 @@ document.addEventListener('DOMContentLoaded', function () {
     cargarBorradorEntrada();
     ponerFechaActualEntrada();
 });
+
+function actualizarCantidadFilaEntrada(input) {
+    const tr = input.closest('tr');
+
+    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
+    input.value = cantidadTexto;
+
+    if (cantidadTexto === '') return;
+
+    const cantidad = parseInt(cantidadTexto, 10);
+
+    if (cantidad <= 0) return;
+
+    const precioInputFila = tr.querySelector('.input-precio-detalle');
+    const precio = parseFloat(precioInputFila?.value || '0');
+
+    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
+
+    if (inputHiddenCantidad) {
+        inputHiddenCantidad.value = cantidad;
+    }
+
+    const nuevoImporte = cantidad * precio;
+
+    const tdImporte = tr.querySelector('.importe-fila');
+
+    if (tdImporte) {
+        tdImporte.dataset.importe = nuevoImporte;
+        tdImporte.textContent = '$' + nuevoImporte.toFixed(2);
+    }
+
+    actualizarTotalEntrada();
+    guardarBorradorEntrada();
+}
 </script>
 
 <?php

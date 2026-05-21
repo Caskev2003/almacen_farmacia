@@ -549,6 +549,38 @@ public function ultimoFolioEntrada(?int $almacenId = null): string
         }
     }
 
+
+    private function obtenerUbicacionesDisponiblesProducto(
+    int $productoId,
+    string $sucursal,
+    string $ubicacionPreferida = ''
+): array {
+    $ubicacionPreferida = $this->limpiarUbicacion($ubicacionPreferida);
+
+    $sql = "SELECT 
+                ubicacion,
+                existencia
+            FROM producto_existencias
+            WHERE producto_id = :producto_id
+            AND sucursal = :sucursal
+            AND existencia > 0
+            ORDER BY 
+                CASE 
+                    WHEN ubicacion = :ubicacion_preferida THEN 0
+                    ELSE 1
+                END,
+                existencia ASC,
+                ubicacion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute([
+        ':producto_id' => $productoId,
+        ':sucursal' => $sucursal,
+        ':ubicacion_preferida' => $ubicacionPreferida
+    ]);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 public function crearSalida(array $data, array $detalle): array
 {
     try {
@@ -612,8 +644,8 @@ public function crearSalida(array $data, array $detalle): array
 
         foreach ($detalle as $item) {
             $productoId = (int)$item['producto_id'];
-            $cantidad = (int)$item['cantidad'];
-            $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+            $cantidadSolicitada = (int)$item['cantidad'];
+            $ubicacionPreferida = $this->limpiarUbicacion($item['ubicacion'] ?? '');
 
             $stmtProducto->execute([
                 ':id' => $productoId
@@ -625,89 +657,71 @@ public function crearSalida(array $data, array $detalle): array
                 throw new Exception('Producto no encontrado.');
             }
 
-            $existenciaDisponible = $this->obtenerExistenciaProducto(
-                $productoId,
-                $sucursal,
-                $ubicacion
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | SI ESCRIBES UNA UBICACION NUEVA DESDE SALIDAS
-            | Y EL PRODUCTO TIENE STOCK EN SIN UBICACION,
-            | SE REEMPLAZA SIN UBICACION POR LA NUEVA UBICACION
-            |--------------------------------------------------------------------------
-            */
-            if (
-                $existenciaDisponible <= 0 &&
-                $ubicacion !== 'SIN UBICACION'
-            ) {
-                $existenciaSinUbicacion = $this->obtenerExistenciaProducto(
-                    $productoId,
-                    $sucursal,
-                    'SIN UBICACION'
-                );
-
-                if ($existenciaSinUbicacion > 0) {
-                    $sqlMover = "UPDATE producto_existencias
-                                 SET ubicacion = :nueva_ubicacion,
-                                     updated_at = CURRENT_TIMESTAMP
-                                 WHERE producto_id = :producto_id
-                                 AND sucursal = :sucursal
-                                 AND ubicacion = 'SIN UBICACION'";
-
-                    $stmtMover = $this->conn->prepare($sqlMover);
-
-                    $stmtMover->execute([
-                        ':nueva_ubicacion' => $ubicacion,
-                        ':producto_id' => $productoId,
-                        ':sucursal' => $sucursal
-                    ]);
-
-                    $sqlProductoUbicacion = "UPDATE productos
-                                             SET ubicacion = :ubicacion
-                                             WHERE id = :producto_id";
-
-                    $stmtProductoUbicacion = $this->conn->prepare($sqlProductoUbicacion);
-
-                    $stmtProductoUbicacion->execute([
-                        ':ubicacion' => $ubicacion,
-                        ':producto_id' => $productoId
-                    ]);
-
-                    $existenciaDisponible = $existenciaSinUbicacion;
-                }
+            if ($cantidadSolicitada <= 0) {
+                throw new Exception('La cantidad debe ser mayor a 0.');
             }
 
-            if ($existenciaDisponible < $cantidad) {
+            $ubicacionesDisponibles = $this->obtenerUbicacionesDisponiblesProducto(
+                $productoId,
+                $sucursal,
+                $ubicacionPreferida
+            );
+
+            $existenciaTotal = 0;
+
+            foreach ($ubicacionesDisponibles as $ubi) {
+                $existenciaTotal += (int)$ubi['existencia'];
+            }
+
+            if ($existenciaTotal < $cantidadSolicitada) {
                 throw new Exception(
                     'Stock insuficiente en ' . $sucursal .
                     ' para el producto: ' . $producto['descripcion'] .
-                    ' en ubicación: ' . $ubicacion .
-                    '. Disponible: ' . $existenciaDisponible
+                    '. Solicitado: ' . $cantidadSolicitada .
+                    '. Disponible total: ' . $existenciaTotal
                 );
             }
 
-            $stmtDetalle->execute([
-                ':movimiento_id' => $movimientoId,
-                ':producto_id' => $productoId,
-                ':cantidad' => $cantidad,
-                ':costo_unitario' => $item['costo_unitario'],
-                ':precio_unitario' => $item['precio_unitario'],
-                ':ubicacion' => $ubicacion,
-            ]);
+            $cantidadPendiente = $cantidadSolicitada;
 
-            $this->disminuirExistencia(
-                $productoId,
-                $sucursal,
-                $cantidad,
-                $ubicacion
-            );
-            $this->eliminarUbicacionSiEstaVacia(
-    $productoId,
-    $sucursal,
-    $ubicacion
-);
+            foreach ($ubicacionesDisponibles as $ubi) {
+                if ($cantidadPendiente <= 0) {
+                    break;
+                }
+
+                $ubicacionActual = $this->limpiarUbicacion($ubi['ubicacion'] ?? '');
+                $existenciaUbicacion = (int)$ubi['existencia'];
+
+                if ($existenciaUbicacion <= 0) {
+                    continue;
+                }
+
+                $cantidadADescontar = min($cantidadPendiente, $existenciaUbicacion);
+
+                $stmtDetalle->execute([
+                    ':movimiento_id' => $movimientoId,
+                    ':producto_id' => $productoId,
+                    ':cantidad' => $cantidadADescontar,
+                    ':costo_unitario' => $item['costo_unitario'],
+                    ':precio_unitario' => $item['precio_unitario'],
+                    ':ubicacion' => $ubicacionActual,
+                ]);
+
+                $this->disminuirExistencia(
+                    $productoId,
+                    $sucursal,
+                    $cantidadADescontar,
+                    $ubicacionActual
+                );
+
+                $this->eliminarUbicacionSiEstaVacia(
+                    $productoId,
+                    $sucursal,
+                    $ubicacionActual
+                );
+
+                $cantidadPendiente -= $cantidadADescontar;
+            }
         }
 
         $this->conn->commit();

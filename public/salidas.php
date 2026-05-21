@@ -714,8 +714,6 @@ function agregarProductoSalida() {
         return;
     }
 
-    actualizarExistenciaPorUbicacion();
-
     const productoId = productoSelect.value;
     const codigo = option.dataset.codigo || '';
     const descripcion = option.dataset.descripcion || '';
@@ -724,16 +722,14 @@ function agregarProductoSalida() {
     const cantidad = parseInt(cantidadInput.value || '0', 10);
     const costo = parseFloat(option.dataset.costo || '0');
     const precio = parseFloat(precioInput.value || '0');
-    const ubicacion = ubicacionInput.value.trim().toUpperCase();
+    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+
+    if (!ubicacion) {
+        ubicacion = 'SIN UBICACION';
+    }
 
     if (cantidad <= 0) {
         alert('La cantidad debe ser mayor a 0.');
-        return;
-    }
-
-    if (!ubicacion) {
-        alert('Selecciona o escribe una ubicación.');
-        ubicacionInput.focus();
         return;
     }
 
@@ -779,7 +775,7 @@ function agregarProductoSalida() {
         <td>${escaparHtml(unidad)}</td>
         <td>${escaparHtml(existenciaTotal)}</td>
         <td>$${precio.toFixed(2)}</td>
-        <td>${escaparHtml(ubicacion)}</td>
+        <td>${escaparHtml(ubicacion)} <small style="color:#64748b;">(se completará con otras ubicaciones si hace falta)</small></td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
         <td>
             <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
@@ -807,7 +803,6 @@ function actualizarCantidadFila(input) {
     const tr = input.closest('tr');
 
     let cantidadTexto = input.value.replace(/[^0-9]/g, '');
-
     input.value = cantidadTexto;
 
     if (cantidadTexto === '') {
@@ -815,11 +810,7 @@ function actualizarCantidadFila(input) {
     }
 
     const cantidad = parseInt(cantidadTexto, 10);
-
-    const existencia = parseInt(
-        tr.children[4].textContent || '0',
-        10
-    );
+    const existenciaTotal = parseInt(tr.children[4].textContent || '0', 10);
 
     const precioTexto = tr.children[5]
         .textContent
@@ -832,31 +823,23 @@ function actualizarCantidadFila(input) {
         return;
     }
 
-    if (cantidad > existencia) {
-        alert('La cantidad no puede superar la existencia disponible.');
+    if (cantidad > existenciaTotal) {
+        alert('La cantidad no puede superar la existencia total del producto.');
 
-        input.value = existencia;
-
+        input.value = existenciaTotal;
         return;
     }
 
     const nuevoImporte = cantidad * precio;
 
-    const inputHiddenCantidad = tr.querySelector(
-        'input[name="cantidad[]"]'
-    );
-
+    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
     inputHiddenCantidad.value = cantidad;
 
     const tdImporte = tr.querySelector('.importe-fila');
-
     tdImporte.dataset.importe = nuevoImporte;
-
-    tdImporte.textContent =
-        '$' + nuevoImporte.toFixed(2);
+    tdImporte.textContent = '$' + nuevoImporte.toFixed(2);
 
     actualizarTotalSalida();
-
     guardarBorradorSalida();
 }
 function eliminarFilaSalida(btn) {

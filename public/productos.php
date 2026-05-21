@@ -699,9 +699,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
 
-    ubicaciones.push('R7N1Z01 - PASILLO 1');
+    ubicaciones.push('R7N1Z01 - PASILLO 3');
     ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 3');
+    ubicaciones.push('R9N1Z01 - PASILLO 1');
     ubicaciones.push('BODEGA PEDYALITE');
 
     lista.innerHTML = '';

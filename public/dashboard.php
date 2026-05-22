@@ -425,7 +425,7 @@ function crearGraficaBarras(id, labels, data) {
     });
 }
 
-crearGraficaDona('stockChart', stockLabels, stockData);
+crearGraficaBarras('stockChart', stockLabels, stockData);
 crearGraficaDona('ubicacionChart', ubicacionLabels, ubicacionData);
 crearGraficaBarras('movimientosChart', movimientosLabels, movimientosData);
 </script>

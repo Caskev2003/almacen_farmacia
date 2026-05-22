@@ -5,8 +5,9 @@ require_once __DIR__ . '/../config/database.php';
 class DashboardController
 {
     private PDO $conn;
-    private int $almacenId = 0;
     private string $rol = '';
+    private string $sucursal = '';
+    private int $stockMinimoDashboard = 120;
 
     public function __construct()
     {
@@ -20,22 +21,36 @@ class DashboardController
         $usuario = $_SESSION['user'] ?? [];
 
         $this->rol = $usuario['rol'] ?? '';
-        $this->almacenId = (int)($usuario['almacen_id'] ?? 0);
+        $this->sucursal = trim($usuario['sucursal'] ?? '');
     }
 
-    private function filtroAlmacen(string $campo = 'l.almacen_id'): string
+    private function filtroSucursalExistencias(): string
     {
         if ($this->rol === 'ADMINISTRADOR') {
             return '';
         }
 
-        return " AND {$campo} = {$this->almacenId} ";
+        if ($this->sucursal === '') {
+            return '';
+        }
+
+        return " AND pe.sucursal = " . $this->conn->quote($this->sucursal) . " ";
+    }
+
+    private function filtroMovimientos(): string
+    {
+        if ($this->rol === 'ADMINISTRADOR' || $this->sucursal === '') {
+            return '';
+        }
+
+        return " AND a.nombre = " . $this->conn->quote($this->sucursal) . " ";
     }
 
     public function getIndicadores(): array
     {
-        $filtroLotes = $this->filtroAlmacen('l.almacen_id');
-        $filtroMovimientos = $this->filtroAlmacen('m.almacen_id');
+        $filtroExistencias = $this->filtroSucursalExistencias();
+        $filtroMovimientos = $this->filtroMovimientos();
+        $stockMinimo = $this->stockMinimoDashboard;
 
         $sqlProductos = "SELECT
                             COUNT(DISTINCT p.id) AS total_productos,
@@ -50,14 +65,14 @@ class DashboardController
                             SUM(
                                 CASE
                                     WHEN COALESCE(stock.total_existencia, 0) > 0
-                                     AND COALESCE(stock.total_existencia, 0) <= p.stock_minimo
+                                     AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
                                     THEN 1 ELSE 0
                                 END
                             ) AS bajo_stock,
 
                             SUM(
                                 CASE
-                                    WHEN COALESCE(stock.total_existencia, 0) > p.stock_minimo
+                                    WHEN COALESCE(stock.total_existencia, 0) > {$stockMinimo}
                                     THEN 1 ELSE 0
                                 END
                             ) AS en_stock,
@@ -66,26 +81,27 @@ class DashboardController
                                 COALESCE(stock.total_existencia, 0) * COALESCE(p.precio_compra, 0)
                             ) AS valor_inventario
 
-                         FROM productos p
+                        FROM productos p
 
-                         LEFT JOIN (
+                        LEFT JOIN (
                             SELECT
-                                l.producto_id,
-                                SUM(l.existencia) AS total_existencia
-                            FROM lotes l
-                            WHERE l.estado = 1
-                            {$filtroLotes}
-                            GROUP BY l.producto_id
-                         ) AS stock
+                                pe.producto_id,
+                                SUM(COALESCE(pe.existencia, 0)) AS total_existencia
+                            FROM producto_existencias pe
+                            WHERE 1=1
+                            {$filtroExistencias}
+                            GROUP BY pe.producto_id
+                        ) AS stock
                             ON stock.producto_id = p.id
 
-                         WHERE p.estado = 1";
+                        WHERE p.estado = 1";
 
         $stmtProductos = $this->conn->query($sqlProductos);
         $productos = $stmtProductos->fetch(PDO::FETCH_ASSOC) ?: [];
 
         $sqlEntradasHoy = "SELECT COUNT(*) AS total
                            FROM movimientos m
+                           LEFT JOIN almacenes a ON m.almacen_id = a.id
                            WHERE m.tipo_movimiento = 'ENTRADA'
                              AND DATE(m.fecha) = CURDATE()
                              {$filtroMovimientos}";
@@ -95,6 +111,7 @@ class DashboardController
 
         $sqlSalidasHoy = "SELECT COUNT(*) AS total
                           FROM movimientos m
+                          LEFT JOIN almacenes a ON m.almacen_id = a.id
                           WHERE m.tipo_movimiento = 'SALIDA'
                             AND DATE(m.fecha) = CURDATE()
                             {$filtroMovimientos}";
@@ -115,7 +132,8 @@ class DashboardController
 
     public function getProductosCriticos(): array
     {
-        $filtroLotes = $this->filtroAlmacen('l.almacen_id');
+        $filtroExistencias = $this->filtroSucursalExistencias();
+        $stockMinimo = $this->stockMinimoDashboard;
 
         $sql = "SELECT *
                 FROM (
@@ -123,22 +141,15 @@ class DashboardController
                         p.id,
                         p.codigo,
                         p.descripcion,
-                        p.stock_minimo,
+                        {$stockMinimo} AS stock_minimo,
                         COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
-
-                        COALESCE(SUM(
-                            CASE
-                                WHEN l.estado = 1
-                                THEN l.existencia
-                                ELSE 0
-                            END
-                        ), 0) AS existencia_actual
+                        COALESCE(SUM(pe.existencia), 0) AS existencia_actual
 
                     FROM productos p
 
-                    LEFT JOIN lotes l
-                        ON p.id = l.producto_id
-                        {$filtroLotes}
+                    LEFT JOIN producto_existencias pe
+                        ON pe.producto_id = p.id
+                        {$filtroExistencias}
 
                     WHERE p.estado = 1
 
@@ -146,18 +157,17 @@ class DashboardController
                         p.id,
                         p.codigo,
                         p.descripcion,
-                        p.stock_minimo,
                         p.ubicacion
                 ) AS inventario
 
                 WHERE
                     inventario.existencia_actual <= 0
-                    OR inventario.existencia_actual <= inventario.stock_minimo
+                    OR inventario.existencia_actual <= {$stockMinimo}
 
                 ORDER BY
                     CASE
                         WHEN inventario.existencia_actual <= 0 THEN 1
-                        WHEN inventario.existencia_actual <= inventario.stock_minimo THEN 2
+                        WHEN inventario.existencia_actual <= {$stockMinimo} THEN 2
                         ELSE 3
                     END,
                     inventario.descripcion ASC
@@ -173,8 +183,8 @@ class DashboardController
     {
         $filtro = '';
 
-        if ($this->rol !== 'ADMINISTRADOR') {
-            $filtro = " WHERE m.almacen_id = {$this->almacenId}";
+        if ($this->rol !== 'ADMINISTRADOR' && $this->sucursal !== '') {
+            $filtro = " WHERE a.nombre = " . $this->conn->quote($this->sucursal);
         }
 
         $sql = "SELECT
@@ -205,21 +215,22 @@ class DashboardController
 
     public function getProductosPorUbicacion(): array
     {
-        $filtroLotes = $this->filtroAlmacen('l.almacen_id');
+        $filtroExistencias = $this->filtroSucursalExistencias();
 
         $sql = "SELECT
-                    COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
-                    COUNT(DISTINCT p.id) AS total
+                    COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
+                    SUM(COALESCE(pe.existencia, 0)) AS total
 
-                FROM productos p
+                FROM producto_existencias pe
 
-                LEFT JOIN lotes l
-                    ON p.id = l.producto_id
-                    {$filtroLotes}
+                INNER JOIN productos p
+                    ON p.id = pe.producto_id
 
                 WHERE p.estado = 1
+                  AND COALESCE(pe.existencia, 0) > 0
+                  {$filtroExistencias}
 
-                GROUP BY COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN')
+                GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN')
 
                 ORDER BY total DESC
                 LIMIT 10";
@@ -232,13 +243,12 @@ class DashboardController
     public function getEstadoProducto(array $item): array
     {
         $existencia = (int)($item['existencia_actual'] ?? 0);
-        $stockMinimo = (int)($item['stock_minimo'] ?? 0);
 
         if ($existencia <= 0) {
             return ['texto' => 'AGOTADO', 'clase' => 'badge-danger'];
         }
 
-        if ($existencia <= $stockMinimo) {
+        if ($existencia <= $this->stockMinimoDashboard) {
             return ['texto' => 'BAJO STOCK', 'clase' => 'badge-warning'];
         }
 

@@ -15,8 +15,11 @@ class DashboardController
             session_start();
         }
 
+        date_default_timezone_set('America/Mexico_City');
+
         $database = new Database();
         $this->conn = $database->connect();
+        $this->conn->query("SET time_zone = '-06:00'");
 
         $usuario = $_SESSION['user'] ?? [];
 
@@ -24,17 +27,29 @@ class DashboardController
         $this->sucursal = trim($usuario['sucursal'] ?? '');
     }
 
+    private function normalizarSucursal(string $sucursal): string
+    {
+        $sucursal = strtoupper(trim($sucursal));
+
+        $map = [
+            'CIUDAD HIDALGO' => 'CD HIDALGO',
+            'CD HIDALGO' => 'CD HIDALGO',
+            'TUXTLA GUTIERREZ' => 'TUXTLA GUTIERREZ',
+            'TUXTLA GUTIÉRREZ' => 'TUXTLA GUTIERREZ',
+        ];
+
+        return $map[$sucursal] ?? $sucursal;
+    }
+
     private function filtroSucursalExistencias(): string
     {
-        if ($this->rol === 'ADMINISTRADOR') {
+        if ($this->rol === 'ADMINISTRADOR' || $this->sucursal === '') {
             return '';
         }
 
-        if ($this->sucursal === '') {
-            return '';
-        }
+        $sucursal = $this->normalizarSucursal($this->sucursal);
 
-        return " AND pe.sucursal = " . $this->conn->quote($this->sucursal) . " ";
+        return " AND UPPER(pe.sucursal) = " . $this->conn->quote($sucursal) . " ";
     }
 
     private function filtroMovimientos(): string
@@ -43,7 +58,9 @@ class DashboardController
             return '';
         }
 
-        return " AND a.nombre = " . $this->conn->quote($this->sucursal) . " ";
+        $sucursal = $this->normalizarSucursal($this->sucursal);
+
+        return " AND UPPER(a.nombre) = " . $this->conn->quote($sucursal) . " ";
     }
 
     public function getIndicadores(): array
@@ -161,15 +178,11 @@ class DashboardController
                 ) AS inventario
 
                 WHERE
-                    inventario.existencia_actual <= 0
-                    OR inventario.existencia_actual <= {$stockMinimo}
+                    inventario.existencia_actual > 0
+                    AND inventario.existencia_actual <= {$stockMinimo}
 
                 ORDER BY
-                    CASE
-                        WHEN inventario.existencia_actual <= 0 THEN 1
-                        WHEN inventario.existencia_actual <= {$stockMinimo} THEN 2
-                        ELSE 3
-                    END,
+                    inventario.existencia_actual ASC,
                     inventario.descripcion ASC
 
                 LIMIT 12";
@@ -184,7 +197,8 @@ class DashboardController
         $filtro = '';
 
         if ($this->rol !== 'ADMINISTRADOR' && $this->sucursal !== '') {
-            $filtro = " WHERE a.nombre = " . $this->conn->quote($this->sucursal);
+            $sucursal = $this->normalizarSucursal($this->sucursal);
+            $filtro = " WHERE UPPER(a.nombre) = " . $this->conn->quote($sucursal);
         }
 
         $sql = "SELECT
@@ -244,11 +258,7 @@ class DashboardController
     {
         $existencia = (int)($item['existencia_actual'] ?? 0);
 
-        if ($existencia <= 0) {
-            return ['texto' => 'AGOTADO', 'clase' => 'badge-danger'];
-        }
-
-        if ($existencia <= $this->stockMinimoDashboard) {
+        if ($existencia > 0 && $existencia <= $this->stockMinimoDashboard) {
             return ['texto' => 'BAJO STOCK', 'clase' => 'badge-warning'];
         }
 

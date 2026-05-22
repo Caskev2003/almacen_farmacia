@@ -144,9 +144,16 @@ class SalidaController
             $precio = isset($precios[$i]) ? (float)$precios[$i] : 0;
             $ubicacion = strtoupper(trim($ubicaciones[$i] ?? ''));
 
-            if ($ubicacion === '') {
-                $ubicacion = 'SIN UBICACION';
-            }
+if (
+    $ubicacion === '' ||
+    $ubicacion === 'SIN UBICACION' ||
+    $ubicacion === 'SIN UBICACIÓN'
+) {
+    return [
+        'success' => false,
+        'message' => 'Debes escribir o seleccionar una ubicación válida para el producto.'
+    ];
+}
 
             if ($productoId <= 0) {
                 continue;

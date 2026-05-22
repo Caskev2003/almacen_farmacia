@@ -18,10 +18,12 @@ class Movimiento
     }
 
     private function limpiarUbicacion(?string $ubicacion): string
-    {
-        $ubicacion = strtoupper(trim((string)$ubicacion));
-        return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
-    }
+{
+    $ubicacion = strtoupper(trim((string)$ubicacion));
+    $ubicacion = str_replace('SIN UBICACIÓN', 'SIN UBICACION', $ubicacion);
+
+    return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
+}
 
     private function obtenerSucursalPorAlmacenId(?int $almacenId): string
     {
@@ -357,6 +359,28 @@ public function ultimoFolioEntrada(?int $almacenId = null): string
         ]);
     }
 
+
+    private function actualizarUbicacionPrincipalProducto(
+    int $productoId,
+    string $ubicacion
+): void {
+    $ubicacion = $this->limpiarUbicacion($ubicacion);
+
+    if ($ubicacion === 'SIN UBICACION') {
+        return;
+    }
+
+    $sql = "UPDATE productos
+            SET ubicacion = :ubicacion
+            WHERE id = :producto_id";
+
+    $stmt = $this->conn->prepare($sql);
+
+    $stmt->execute([
+        ':ubicacion' => $ubicacion,
+        ':producto_id' => $productoId
+    ]);
+}
     private function eliminarUbicacionSiEstaVacia(
     int $productoId,
     string $sucursal,
@@ -647,6 +671,8 @@ public function crearSalida(array $data, array $detalle): array
             $cantidadSolicitada = (int)$item['cantidad'];
             $ubicacionPreferida = $this->limpiarUbicacion($item['ubicacion'] ?? '');
 
+            
+
             $stmtProducto->execute([
                 ':id' => $productoId
             ]);
@@ -656,6 +682,13 @@ public function crearSalida(array $data, array $detalle): array
             if (!$producto) {
                 throw new Exception('Producto no encontrado.');
             }
+
+            if ($ubicacionPreferida === 'SIN UBICACION') {
+    throw new Exception(
+        'Debes seleccionar o escribir una ubicación válida para el producto: ' .
+        $producto['descripcion']
+    );
+}
 
             if ($cantidadSolicitada <= 0) {
                 throw new Exception('La cantidad debe ser mayor a 0.');
@@ -714,6 +747,10 @@ public function crearSalida(array $data, array $detalle): array
                     $ubicacionActual
                 );
 
+                $this->actualizarUbicacionPrincipalProducto(
+    $productoId,
+    $ubicacionActual
+);
                 $this->eliminarUbicacionSiEstaVacia(
                     $productoId,
                     $sucursal,

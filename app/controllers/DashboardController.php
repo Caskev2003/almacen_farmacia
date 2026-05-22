@@ -63,13 +63,12 @@ class DashboardController
                             ) AS en_stock,
 
                             SUM(
-                                COALESCE(stock.total_existencia, 0) * p.precio_compra
+                                COALESCE(stock.total_existencia, 0) * COALESCE(p.precio_compra, 0)
                             ) AS valor_inventario
 
                          FROM productos p
 
                          LEFT JOIN (
-
                             SELECT
                                 l.producto_id,
                                 SUM(l.existencia) AS total_existencia
@@ -77,59 +76,31 @@ class DashboardController
                             WHERE l.estado = 1
                             {$filtroLotes}
                             GROUP BY l.producto_id
-
                          ) AS stock
                             ON stock.producto_id = p.id
 
                          WHERE p.estado = 1";
 
         $stmtProductos = $this->conn->query($sqlProductos);
-        $productos = $stmtProductos->fetch() ?: [];
-
-        $sqlCaducidad = "SELECT
-                            SUM(
-                                CASE
-                                    WHEN fecha_caducidad < CURDATE()
-                                     AND existencia > 0
-                                     AND estado = 1
-                                    THEN 1 ELSE 0
-                                END
-                            ) AS caducados,
-
-                            SUM(
-                                CASE
-                                    WHEN fecha_caducidad >= CURDATE()
-                                     AND fecha_caducidad <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-                                     AND existencia > 0
-                                     AND estado = 1
-                                    THEN 1 ELSE 0
-                                END
-                            ) AS por_caducar
-
-                         FROM lotes l
-                         WHERE 1=1
-                         {$filtroLotes}";
-
-        $stmtCaducidad = $this->conn->query($sqlCaducidad);
-        $caducidad = $stmtCaducidad->fetch() ?: [];
+        $productos = $stmtProductos->fetch(PDO::FETCH_ASSOC) ?: [];
 
         $sqlEntradasHoy = "SELECT COUNT(*) AS total
                            FROM movimientos m
-                           WHERE tipo_movimiento = 'ENTRADA'
-                             AND DATE(fecha) = CURDATE()
+                           WHERE m.tipo_movimiento = 'ENTRADA'
+                             AND DATE(m.fecha) = CURDATE()
                              {$filtroMovimientos}";
 
         $stmtEntradasHoy = $this->conn->query($sqlEntradasHoy);
-        $entradasHoy = $stmtEntradasHoy->fetch()['total'] ?? 0;
+        $entradasHoy = $stmtEntradasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
         $sqlSalidasHoy = "SELECT COUNT(*) AS total
                           FROM movimientos m
-                          WHERE tipo_movimiento = 'SALIDA'
-                            AND DATE(fecha) = CURDATE()
+                          WHERE m.tipo_movimiento = 'SALIDA'
+                            AND DATE(m.fecha) = CURDATE()
                             {$filtroMovimientos}";
 
         $stmtSalidasHoy = $this->conn->query($sqlSalidasHoy);
-        $salidasHoy = $stmtSalidasHoy->fetch()['total'] ?? 0;
+        $salidasHoy = $stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
         return [
             'total_productos' => (int)($productos['total_productos'] ?? 0),
@@ -137,8 +108,6 @@ class DashboardController
             'bajo_stock' => (int)($productos['bajo_stock'] ?? 0),
             'en_stock' => (int)($productos['en_stock'] ?? 0),
             'valor_inventario' => (float)($productos['valor_inventario'] ?? 0),
-            'caducados' => (int)($caducidad['caducados'] ?? 0),
-            'por_caducar' => (int)($caducidad['por_caducar'] ?? 0),
             'entradas_hoy' => (int)$entradasHoy,
             'salidas_hoy' => (int)$salidasHoy,
         ];
@@ -150,12 +119,12 @@ class DashboardController
 
         $sql = "SELECT *
                 FROM (
-
                     SELECT
+                        p.id,
                         p.codigo,
                         p.descripcion,
                         p.stock_minimo,
-                        p.ubicacion,
+                        COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
 
                         COALESCE(SUM(
                             CASE
@@ -163,16 +132,7 @@ class DashboardController
                                 THEN l.existencia
                                 ELSE 0
                             END
-                        ), 0) AS existencia_actual,
-
-                        MIN(
-                            CASE
-                                WHEN l.estado = 1
-                                 AND l.existencia > 0
-                                THEN l.fecha_caducidad
-                                ELSE NULL
-                            END
-                        ) AS proxima_caducidad
+                        ), 0) AS existencia_actual
 
                     FROM productos p
 
@@ -188,26 +148,17 @@ class DashboardController
                         p.descripcion,
                         p.stock_minimo,
                         p.ubicacion
-
                 ) AS inventario
 
                 WHERE
                     inventario.existencia_actual <= 0
                     OR inventario.existencia_actual <= inventario.stock_minimo
-                    OR (
-                        inventario.proxima_caducidad IS NOT NULL
-                        AND inventario.proxima_caducidad <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-                    )
 
                 ORDER BY
                     CASE
                         WHEN inventario.existencia_actual <= 0 THEN 1
-                        WHEN inventario.proxima_caducidad IS NOT NULL
-                             AND inventario.proxima_caducidad < CURDATE()
-                        THEN 2
-                        WHEN inventario.existencia_actual <= inventario.stock_minimo
-                        THEN 3
-                        ELSE 4
+                        WHEN inventario.existencia_actual <= inventario.stock_minimo THEN 2
+                        ELSE 3
                     END,
                     inventario.descripcion ASC
 
@@ -215,7 +166,7 @@ class DashboardController
 
         $stmt = $this->conn->query($sql);
 
-        return $stmt->fetchAll() ?: [];
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getMovimientosRecientes(): array
@@ -249,25 +200,42 @@ class DashboardController
 
         $stmt = $this->conn->query($sql);
 
-        return $stmt->fetchAll() ?: [];
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function getProductosPorUbicacion(): array
+    {
+        $filtroLotes = $this->filtroAlmacen('l.almacen_id');
+
+        $sql = "SELECT
+                    COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
+                    COUNT(DISTINCT p.id) AS total
+
+                FROM productos p
+
+                LEFT JOIN lotes l
+                    ON p.id = l.producto_id
+                    {$filtroLotes}
+
+                WHERE p.estado = 1
+
+                GROUP BY COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN')
+
+                ORDER BY total DESC
+                LIMIT 10";
+
+        $stmt = $this->conn->query($sql);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getEstadoProducto(array $item): array
     {
         $existencia = (int)($item['existencia_actual'] ?? 0);
         $stockMinimo = (int)($item['stock_minimo'] ?? 0);
-        $caducidad = $item['proxima_caducidad'] ?? null;
 
         if ($existencia <= 0) {
             return ['texto' => 'AGOTADO', 'clase' => 'badge-danger'];
-        }
-
-        if ($caducidad && strtotime($caducidad) < strtotime(date('Y-m-d'))) {
-            return ['texto' => 'CADUCADO', 'clase' => 'badge-dark'];
-        }
-
-        if ($caducidad && strtotime($caducidad) <= strtotime('+30 days')) {
-            return ['texto' => 'POR CADUCAR', 'clase' => 'badge-warning'];
         }
 
         if ($existencia <= $stockMinimo) {

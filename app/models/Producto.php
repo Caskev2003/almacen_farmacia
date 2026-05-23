@@ -6,6 +6,7 @@ class Producto
 {
     private PDO $conn;
     private string $table = "productos";
+    private int $limiteBajoStock = 120;
 
     public function __construct()
     {
@@ -15,289 +16,210 @@ class Producto
 
     public function getCategorias(): array
     {
-        $sql = "SELECT id, nombre FROM categorias WHERE estado = 1 ORDER BY nombre ASC";
+        $sql = "SELECT id, nombre 
+                FROM categorias 
+                WHERE estado = 1 
+                ORDER BY nombre ASC";
+
         return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function getProveedores(): array
     {
-        $sql = "SELECT id, nombre FROM proveedores WHERE estado = 1 ORDER BY nombre ASC";
+        $sql = "SELECT id, nombre 
+                FROM proveedores 
+                WHERE estado = 1 
+                ORDER BY nombre ASC";
+
         return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function getAlmacenes(): array
     {
-        $sql = "SELECT id, nombre FROM almacenes WHERE estado = 1 ORDER BY nombre ASC";
+        $sql = "SELECT id, nombre 
+                FROM almacenes 
+                WHERE estado = 1 
+                ORDER BY nombre ASC";
+
         return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     }
 
-public function getAll(string $search = '', string $sucursal = '', bool $isAdmin = false): array
-{
-    $params = [];
+    private function obtenerOCrearProveedor(string $nombre): ?int
+    {
+        $nombre = strtoupper(trim($nombre));
 
-    if ($isAdmin) {
-        $sql = "SELECT 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.estado,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-                    COALESCE(SUM(CASE WHEN pe.sucursal = 'CIUDAD HIDALGO' THEN pe.existencia ELSE 0 END), 0) AS existencia_hidalgo,
-                    COALESCE(SUM(CASE WHEN pe.sucursal = 'TUXTLA' THEN pe.existencia ELSE 0 END), 0) AS existencia_tuxtla
-                FROM productos p
-                LEFT JOIN categorias c ON p.categoria_id = c.id
-                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
-                LEFT JOIN producto_existencias pe 
-                    ON pe.producto_id = p.id
-                    AND pe.existencia > 0
-                WHERE p.estado = 1";
-    } else {
-        $sql = "SELECT 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.estado,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-                    COALESCE(SUM(pe.existencia), 0) AS existencia
-                FROM productos p
-                LEFT JOIN categorias c ON p.categoria_id = c.id
-                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
-                LEFT JOIN producto_existencias pe 
-                    ON pe.producto_id = p.id 
-                    AND pe.sucursal = :sucursal
-                    AND pe.existencia > 0
-                WHERE p.estado = 1";
+        if ($nombre === '') {
+            return null;
+        }
 
-        $params[':sucursal'] = $sucursal;
+        $sql = "SELECT id
+                FROM proveedores
+                WHERE UPPER(nombre) = :nombre
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':nombre' => $nombre
+        ]);
+
+        $id = $stmt->fetchColumn();
+
+        if ($id) {
+            return (int)$id;
+        }
+
+        $sqlInsert = "INSERT INTO proveedores (nombre, estado)
+                      VALUES (:nombre, 1)";
+
+        $stmtInsert = $this->conn->prepare($sqlInsert);
+        $stmtInsert->execute([
+            ':nombre' => $nombre
+        ]);
+
+        return (int)$this->conn->lastInsertId();
     }
 
-    if ($search !== '') {
-        $sql .= " AND (
-                    p.codigo LIKE :search
-                    OR p.codigo_barras LIKE :search
-                    OR p.descripcion LIKE :search
-                    OR p.laboratorio LIKE :search
-                    OR p.ubicacion LIKE :search
-                    OR pe.ubicacion LIKE :search
-                )";
+    private function calcularEstadoStock(int $existencia): string
+    {
+        if ($existencia <= 0) {
+            return 'agotado';
+        }
 
-        $params[':search'] = "%{$search}%";
+        if ($existencia <= $this->limiteBajoStock) {
+            return 'bajo';
+        }
+
+        return 'normal';
     }
 
-    $sql .= " GROUP BY 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.laboratorio,
-                p.unidad_medida,
-                p.precio_compra,
-                p.precio_venta,
-                p.stock_minimo,
-                p.stock_maximo,
-                p.ubicacion,
-                p.estado,
-                c.nombre,
-                pr.nombre
-              ORDER BY p.descripcion ASC";
-
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute($params);
-
-    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($productos as &$producto) {
-        $productoId = (int)$producto['id'];
+    public function getAll(
+        string $search = '',
+        string $sucursal = '',
+        bool $isAdmin = false,
+        string $categoriaId = '',
+        string $proveedor = '',
+        string $ubicacion = '',
+        string $estadoStock = ''
+    ): array {
+        $params = [];
 
         if ($isAdmin) {
-            $sqlUbi = "SELECT 
-                            sucursal,
-                            COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                            existencia AS existencia_actual
-                       FROM producto_existencias
-                       WHERE producto_id = :producto_id
-                       AND existencia > 0
-                       ORDER BY sucursal ASC, ubicacion ASC";
+            $sql = "SELECT 
+                        p.id,
+                        p.codigo,
+                        p.codigo_barras,
+                        p.descripcion,
+                        p.laboratorio,
+                        p.unidad_medida,
+                        p.precio_compra,
+                        p.precio_venta,
+                        p.stock_minimo,
+                        p.stock_maximo,
+                        p.ubicacion,
+                        p.estado,
+                        c.nombre AS categoria,
+                        pr.nombre AS proveedor,
 
-            $stmtUbi = $this->conn->prepare($sqlUbi);
+                        COALESCE(SUM(
+                            CASE 
+                                WHEN pe.sucursal = 'CIUDAD HIDALGO'
+                                THEN pe.existencia 
+                                ELSE 0 
+                            END
+                        ), 0) AS existencia_hidalgo,
 
-            $stmtUbi->execute([
-                ':producto_id' => $productoId
-            ]);
+                        COALESCE(SUM(
+                            CASE 
+                                WHEN pe.sucursal = 'TUXTLA'
+                                THEN pe.existencia 
+                                ELSE 0 
+                            END
+                        ), 0) AS existencia_tuxtla,
+
+                        COALESCE(SUM(pe.existencia), 0) AS existencia_total
+
+                    FROM productos p
+
+                    LEFT JOIN categorias c 
+                        ON p.categoria_id = c.id
+
+                    LEFT JOIN proveedores pr 
+                        ON p.proveedor_id = pr.id
+
+                    LEFT JOIN producto_existencias pe 
+                        ON pe.producto_id = p.id
+                        AND pe.existencia > 0
+
+                    WHERE p.estado = 1";
         } else {
-            $sqlUbi = "SELECT 
-                            sucursal,
-                            COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                            existencia AS existencia_actual
-                       FROM producto_existencias
-                       WHERE producto_id = :producto_id
-                       AND sucursal = :sucursal
-                       AND existencia > 0
-                       ORDER BY existencia ASC, ubicacion ASC";
+            $sql = "SELECT 
+                        p.id,
+                        p.codigo,
+                        p.codigo_barras,
+                        p.descripcion,
+                        p.laboratorio,
+                        p.unidad_medida,
+                        p.precio_compra,
+                        p.precio_venta,
+                        p.stock_minimo,
+                        p.stock_maximo,
+                        p.ubicacion,
+                        p.estado,
+                        c.nombre AS categoria,
+                        pr.nombre AS proveedor,
 
-            $stmtUbi = $this->conn->prepare($sqlUbi);
+                        COALESCE(SUM(pe.existencia), 0) AS existencia,
+                        COALESCE(SUM(pe.existencia), 0) AS existencia_total
 
-            $stmtUbi->execute([
-                ':producto_id' => $productoId,
-                ':sucursal' => $sucursal
-            ]);
+                    FROM productos p
+
+                    LEFT JOIN categorias c 
+                        ON p.categoria_id = c.id
+
+                    LEFT JOIN proveedores pr 
+                        ON p.proveedor_id = pr.id
+
+                    LEFT JOIN producto_existencias pe 
+                        ON pe.producto_id = p.id
+                        AND pe.sucursal = :sucursal
+                        AND pe.existencia > 0
+
+                    WHERE p.estado = 1";
+
+            $params[':sucursal'] = $sucursal;
         }
-
-        $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
-
-        if (empty($producto['ubicaciones'])) {
-            $producto['ubicacion'] = '';
-        }
-    }
-
-    unset($producto);
-
-    return $productos;
-}
-    public function countAll(string $search = ''): int
-    {
-        $sql = "SELECT COUNT(*) FROM productos p WHERE p.estado = 1";
-        $params = [];
 
         if ($search !== '') {
             $sql .= " AND (
                         p.codigo LIKE :search
                         OR p.codigo_barras LIKE :search
                         OR p.descripcion LIKE :search
+                        OR p.laboratorio LIKE :search
+                        OR p.ubicacion LIKE :search
+                        OR pr.nombre LIKE :search
+                        OR pe.ubicacion LIKE :search
                     )";
+
             $params[':search'] = "%{$search}%";
         }
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+        if ($categoriaId !== '') {
+            $sql .= " AND p.categoria_id = :categoria_id";
+            $params[':categoria_id'] = (int)$categoriaId;
+        }
 
-        return (int)$stmt->fetchColumn();
-    }
+        if ($proveedor !== '') {
+            $sql .= " AND pr.nombre LIKE :proveedor";
+            $params[':proveedor'] = "%{$proveedor}%";
+        }
 
-    public function getExistencias(
-    string $search = '',
-    int $almacenId = 0,
-    string $estadoStock = '',
-    string $sucursal = '',
-    bool $isAdmin = false
-): array {
-
-    $params = [];
-
-    if ($isAdmin) {
-
-        $sql = "SELECT 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.estado,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-
-                    COALESCE(MAX(
-                        CASE 
-                            WHEN pe.sucursal = 'CIUDAD HIDALGO'
-                            THEN pe.existencia
-                        END
-                    ), 0) AS existencia_hidalgo,
-
-                    COALESCE(MAX(
-                        CASE 
-                            WHEN pe.sucursal = 'TUXTLA'
-                            THEN pe.existencia
-                        END
-                    ), 0) AS existencia_tuxtla
-
-                FROM productos p
-
-                LEFT JOIN categorias c
-                    ON p.categoria_id = c.id
-
-                LEFT JOIN proveedores pr
-                    ON p.proveedor_id = pr.id
-
-                LEFT JOIN producto_existencias pe
-                    ON pe.producto_id = p.id
-
-                WHERE p.estado = 1";
-
-    } else {
-
-        $sql = "SELECT 
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
-                    p.precio_venta,
-                    p.stock_minimo,
-                    p.stock_maximo,
-                    p.ubicacion,
-                    p.estado,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-
-                    COALESCE(pe.existencia, 0) AS existencia_consultada
-
-                FROM productos p
-
-                LEFT JOIN categorias c
-                    ON p.categoria_id = c.id
-
-                LEFT JOIN proveedores pr
-                    ON p.proveedor_id = pr.id
-
-                LEFT JOIN producto_existencias pe
-                    ON pe.producto_id = p.id
-                    AND pe.sucursal = :sucursal
-
-                WHERE p.estado = 1";
-
-        $params[':sucursal'] = $sucursal;
-    }
-
-    if ($search !== '') {
-
-        $sql .= " AND (
-                    p.codigo LIKE :search
-                    OR p.codigo_barras LIKE :search
-                    OR p.descripcion LIKE :search
-                    OR p.laboratorio LIKE :search
-                    OR p.ubicacion LIKE :search
-                )";
-
-        $params[':search'] = "%{$search}%";
-    }
-
-    if ($isAdmin) {
+        if ($ubicacion !== '') {
+            $sql .= " AND (
+                        p.ubicacion LIKE :ubicacion
+                        OR pe.ubicacion LIKE :ubicacion
+                    )";
+            $params[':ubicacion'] = "%{$ubicacion}%";
+        }
 
         $sql .= " GROUP BY 
                     p.id,
@@ -313,97 +235,118 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
                     p.ubicacion,
                     p.estado,
                     c.nombre,
-                    pr.nombre";
-    }
+                    pr.nombre
 
-    $sql .= " ORDER BY p.descripcion ASC";
+                  ORDER BY p.descripcion ASC";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute($params);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
-    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // =========================
-    // FILTRO DE STOCK
-    // =========================
+        foreach ($productos as &$producto) {
+            $productoId = (int)$producto['id'];
 
-    if ($estadoStock === '') {
+            if ($isAdmin) {
+                $sqlUbi = "SELECT 
+                                sucursal,
+                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                                existencia AS existencia_actual
+                           FROM producto_existencias
+                           WHERE producto_id = :producto_id
+                           AND existencia > 0
+                           ORDER BY sucursal ASC, ubicacion ASC";
+
+                $stmtUbi = $this->conn->prepare($sqlUbi);
+                $stmtUbi->execute([
+                    ':producto_id' => $productoId
+                ]);
+            } else {
+                $sqlUbi = "SELECT 
+                                sucursal,
+                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                                existencia AS existencia_actual
+                           FROM producto_existencias
+                           WHERE producto_id = :producto_id
+                           AND sucursal = :sucursal
+                           AND existencia > 0
+                           ORDER BY existencia ASC, ubicacion ASC";
+
+                $stmtUbi = $this->conn->prepare($sqlUbi);
+                $stmtUbi->execute([
+                    ':producto_id' => $productoId,
+                    ':sucursal' => $sucursal
+                ]);
+            }
+
+            $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
+
+            if (empty($producto['ubicaciones'])) {
+                $producto['ubicacion'] = '';
+            }
+
+            $existencia = $isAdmin
+                ? (int)($producto['existencia_total'] ?? 0)
+                : (int)($producto['existencia'] ?? 0);
+
+            $producto['estado_stock'] = $this->calcularEstadoStock($existencia);
+            $producto['estado_stock_texto'] = match ($producto['estado_stock']) {
+                'agotado' => 'AGOTADO',
+                'bajo' => 'BAJO STOCK',
+                default => 'NORMAL',
+            };
+        }
+
+        unset($producto);
+
+        if ($estadoStock !== '') {
+            $productos = array_values(array_filter($productos, function ($producto) use ($estadoStock) {
+                return ($producto['estado_stock'] ?? '') === $estadoStock;
+            }));
+        }
+
         return $productos;
     }
 
-    $filtrados = [];
+    public function countAll(string $search = ''): int
+    {
+        $sql = "SELECT COUNT(*) 
+                FROM productos p 
+                WHERE p.estado = 1";
 
-    foreach ($productos as $producto) {
+        $params = [];
 
-        if ($isAdmin) {
+        if ($search !== '') {
+            $sql .= " AND (
+                        p.codigo LIKE :search
+                        OR p.codigo_barras LIKE :search
+                        OR p.descripcion LIKE :search
+                    )";
 
-            $existencia =
-                (int)($producto['existencia_hidalgo'] ?? 0)
-                +
-                (int)($producto['existencia_tuxtla'] ?? 0);
-
-        } else {
-
-            $existencia = (int)($producto['existencia_consultada'] ?? 0);
+            $params[':search'] = "%{$search}%";
         }
 
-        $stockMinimo = (int)($producto['stock_minimo'] ?? 0);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
-        $agregar = false;
-
-        switch ($estadoStock) {
-
-            case 'sin_existencia':
-
-                if ($existencia <= 0) {
-                    $agregar = true;
-                }
-
-            break;
-
-            case 'bajo':
-
-                if (
-                    $existencia > 0
-                    &&
-                    $stockMinimo > 0
-                    &&
-                    $existencia <= $stockMinimo
-                ) {
-                    $agregar = true;
-                }
-
-            break;
-
-            case 'normal':
-
-                if (
-                    $existencia > $stockMinimo
-                ) {
-                    $agregar = true;
-                }
-
-            break;
-
-            default:
-                $agregar = true;
-            break;
-        }
-
-        if ($agregar) {
-            $filtrados[] = $producto;
-        }
+        return (int)$stmt->fetchColumn();
     }
-
-    return $filtrados;
-}
 
     public function findById(int $id): ?array
     {
-        $sql = "SELECT * FROM productos WHERE id = :id LIMIT 1";
+        $sql = "SELECT 
+                    p.*,
+                    pr.nombre AS proveedor_nombre
+                FROM productos p
+                LEFT JOIN proveedores pr
+                    ON p.proveedor_id = pr.id
+                WHERE p.id = :id
+                LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute([':id' => $id]);
+        $stmt->execute([
+            ':id' => $id
+        ]);
 
         $producto = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -412,14 +355,16 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
 
     public function findByCodigo(string $codigo): ?array
     {
-        $sql = "SELECT * 
-                FROM productos 
-                WHERE codigo = :codigo 
+        $sql = "SELECT *
+                FROM productos
+                WHERE codigo = :codigo
                    OR codigo_barras = :codigo
                 LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute([':codigo' => $codigo]);
+        $stmt->execute([
+            ':codigo' => $codigo
+        ]);
 
         $producto = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -451,6 +396,8 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
 
     public function create(array $data): bool
     {
+        $proveedorId = $this->obtenerOCrearProveedor($data['proveedor_nombre'] ?? '');
+
         $sql = "INSERT INTO productos (
                     codigo,
                     codigo_barras,
@@ -477,8 +424,8 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
                     :unidad_medida,
                     :precio_compra,
                     :precio_venta,
-                    :stock_minimo,
-                    :stock_maximo,
+                    0,
+                    0,
                     :ubicacion,
                     0,
                     NULL,
@@ -492,19 +439,19 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
             ':codigo_barras' => $data['codigo_barras'] ?: $data['codigo'],
             ':descripcion' => $data['descripcion'],
             ':categoria_id' => $data['categoria_id'] ?: null,
-            ':proveedor_id' => $data['proveedor_id'] ?: null,
+            ':proveedor_id' => $proveedorId,
             ':laboratorio' => $data['laboratorio'] ?: null,
             ':unidad_medida' => $data['unidad_medida'] ?: null,
             ':precio_compra' => $data['precio_compra'] ?? 0,
             ':precio_venta' => $data['precio_venta'] ?? 0,
-            ':stock_minimo' => $data['stock_minimo'] ?? 0,
-            ':stock_maximo' => $data['stock_maximo'] ?? 0,
             ':ubicacion' => $data['ubicacion'] ?: null
         ]);
     }
 
     public function update(int $id, array $data): bool
     {
+        $proveedorId = $this->obtenerOCrearProveedor($data['proveedor_nombre'] ?? '');
+
         $sql = "UPDATE productos SET
                     codigo = :codigo,
                     codigo_barras = :codigo_barras,
@@ -515,8 +462,8 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
                     unidad_medida = :unidad_medida,
                     precio_compra = :precio_compra,
                     precio_venta = :precio_venta,
-                    stock_minimo = :stock_minimo,
-                    stock_maximo = :stock_maximo,
+                    stock_minimo = 0,
+                    stock_maximo = 0,
                     ubicacion = :ubicacion
                 WHERE id = :id";
 
@@ -527,13 +474,11 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
             ':codigo_barras' => $data['codigo_barras'] ?: $data['codigo'],
             ':descripcion' => $data['descripcion'],
             ':categoria_id' => $data['categoria_id'] ?: null,
-            ':proveedor_id' => $data['proveedor_id'] ?: null,
+            ':proveedor_id' => $proveedorId,
             ':laboratorio' => $data['laboratorio'] ?: null,
             ':unidad_medida' => $data['unidad_medida'] ?: null,
             ':precio_compra' => $data['precio_compra'] ?? 0,
             ':precio_venta' => $data['precio_venta'] ?? 0,
-            ':stock_minimo' => $data['stock_minimo'] ?? 0,
-            ':stock_maximo' => $data['stock_maximo'] ?? 0,
             ':ubicacion' => $data['ubicacion'] ?: null,
             ':id' => $id
         ]);
@@ -545,211 +490,180 @@ public function getAll(string $search = '', string $sucursal = '', bool $isAdmin
 
         $producto = $this->findByCodigo($codigo);
 
-        if ($producto) {
-            return $this->update((int)$producto['id'], [
-                'codigo' => $codigo,
-                'codigo_barras' => $data['codigo_barras'] ?: $codigo,
-                'descripcion' => $data['descripcion'],
-                'categoria_id' => $data['categoria_id'] ?? null,
-                'proveedor_id' => $data['proveedor_id'] ?? null,
-                'laboratorio' => $data['laboratorio'] ?? null,
-                'unidad_medida' => $data['unidad_medida'] ?? null,
-                'precio_compra' => $data['precio_compra'] ?? 0,
-                'precio_venta' => $data['precio_venta'] ?? 0,
-                'stock_minimo' => $data['stock_minimo'] ?? 0,
-                'stock_maximo' => $data['stock_maximo'] ?? 0,
-                'ubicacion' => $data['ubicacion'] ?? null
-            ]);
-        }
-
-        return $this->create([
+        $payload = [
             'codigo' => $codigo,
             'codigo_barras' => $data['codigo_barras'] ?: $codigo,
             'descripcion' => $data['descripcion'],
             'categoria_id' => $data['categoria_id'] ?? null,
-            'proveedor_id' => $data['proveedor_id'] ?? null,
+            'proveedor_nombre' => $data['proveedor_nombre'] ?? '',
             'laboratorio' => $data['laboratorio'] ?? null,
             'unidad_medida' => $data['unidad_medida'] ?? null,
             'precio_compra' => $data['precio_compra'] ?? 0,
             'precio_venta' => $data['precio_venta'] ?? 0,
-            'stock_minimo' => $data['stock_minimo'] ?? 0,
-            'stock_maximo' => $data['stock_maximo'] ?? 0,
+            'stock_minimo' => 0,
+            'stock_maximo' => 0,
             'ubicacion' => $data['ubicacion'] ?? null
-        ]);
+        ];
+
+        if ($producto) {
+            return $this->update((int)$producto['id'], $payload);
+        }
+
+        return $this->create($payload);
     }
 
     public function actualizarExistenciaPorCodigo(
-    string $codigo,
-    string $sucursal,
-    int $existencia,
-    string $ubicacion = 'SIN UBICACION'
-): bool {
+        string $codigo,
+        string $sucursal,
+        int $existencia,
+        string $ubicacion = 'SIN UBICACION'
+    ): bool {
+        $producto = $this->findByCodigo($codigo);
 
-    $producto = $this->findByCodigo($codigo);
-
-    if (!$producto) {
-        return false;
-    }
-
-    $ubicacion = strtoupper(trim($ubicacion));
-
-    if ($ubicacion === '') {
-        $ubicacion = 'SIN UBICACION';
-    }
-
-    $sql = "INSERT INTO producto_existencias (
-                producto_id,
-                sucursal,
-                ubicacion,
-                existencia
-            ) VALUES (
-                :producto_id,
-                :sucursal,
-                :ubicacion,
-                :existencia
-            )
-            ON DUPLICATE KEY UPDATE
-                existencia = VALUES(existencia),
-                updated_at = CURRENT_TIMESTAMP";
-
-    $stmt = $this->conn->prepare($sql);
-
-    return $stmt->execute([
-        ':producto_id' => (int)$producto['id'],
-        ':sucursal' => $sucursal,
-        ':ubicacion' => $ubicacion,
-        ':existencia' => $existencia
-    ]);
-}
-
-public function actualizarUbicacionExistencia(
-    int $productoId,
-    string $sucursal,
-    string $ubicacionAnterior,
-    string $ubicacionNueva,
-    int $existencia
-): bool {
-
-    $ubicacionAnterior = strtoupper(trim($ubicacionAnterior));
-    $ubicacionNueva = strtoupper(trim($ubicacionNueva));
-
-    if ($ubicacionAnterior === '') {
-        $ubicacionAnterior = 'SIN UBICACION';
-    }
-
-    if ($ubicacionNueva === '') {
-        $ubicacionNueva = 'SIN UBICACION';
-    }
-
-    if ($existencia < 0) {
-        $existencia = 0;
-    }
-
-    try {
-
-        $this->conn->beginTransaction();
-
-        /*
-        ==========================
-        VERIFICAR SI YA EXISTE
-        LA UBICACION NUEVA
-        ==========================
-        */
-
-        $sqlExiste = "SELECT id, existencia
-                      FROM producto_existencias
-                      WHERE producto_id = :producto_id
-                      AND sucursal = :sucursal
-                      AND ubicacion = :ubicacion";
-
-        $stmtExiste = $this->conn->prepare($sqlExiste);
-
-        $stmtExiste->execute([
-            ':producto_id' => $productoId,
-            ':sucursal' => $sucursal,
-            ':ubicacion' => $ubicacionNueva
-        ]);
-
-        $registroNuevo = $stmtExiste->fetch(PDO::FETCH_ASSOC);
-
-        /*
-        ==========================
-        SI LA UBICACION NUEVA
-        YA EXISTE
-        ==========================
-        */
-
-        if ($registroNuevo && $ubicacionAnterior !== $ubicacionNueva) {
-
-            $sqlActualizarNueva = "UPDATE producto_existencias
-                                   SET existencia = :existencia
-                                   WHERE id = :id";
-
-            $stmtActualizarNueva = $this->conn->prepare($sqlActualizarNueva);
-
-            $stmtActualizarNueva->execute([
-                ':existencia' => $existencia,
-                ':id' => $registroNuevo['id']
-            ]);
-
-            /*
-            ELIMINAR UBICACION ANTERIOR
-            */
-
-            $sqlEliminarAnterior = "DELETE FROM producto_existencias
-                                    WHERE producto_id = :producto_id
-                                    AND sucursal = :sucursal
-                                    AND ubicacion = :ubicacion";
-
-            $stmtEliminarAnterior = $this->conn->prepare($sqlEliminarAnterior);
-
-            $stmtEliminarAnterior->execute([
-                ':producto_id' => $productoId,
-                ':sucursal' => $sucursal,
-                ':ubicacion' => $ubicacionAnterior
-            ]);
-
-        } else {
-
-            /*
-            ==========================
-            SOLO ACTUALIZAR
-            ==========================
-            */
-
-            $sql = "UPDATE producto_existencias
-                    SET ubicacion = :ubicacion_nueva,
-                        existencia = :existencia,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE producto_id = :producto_id
-                    AND sucursal = :sucursal
-                    AND ubicacion = :ubicacion_anterior";
-
-            $stmt = $this->conn->prepare($sql);
-
-            $stmt->execute([
-                ':ubicacion_nueva' => $ubicacionNueva,
-                ':existencia' => $existencia,
-                ':producto_id' => $productoId,
-                ':sucursal' => $sucursal,
-                ':ubicacion_anterior' => $ubicacionAnterior
-            ]);
+        if (!$producto) {
+            return false;
         }
 
-        $this->conn->commit();
+        $ubicacion = strtoupper(trim($ubicacion));
 
-        return true;
+        if ($ubicacion === '') {
+            $ubicacion = 'SIN UBICACION';
+        }
 
-    } catch (Throwable $e) {
+        $sql = "INSERT INTO producto_existencias (
+                    producto_id,
+                    sucursal,
+                    ubicacion,
+                    existencia
+                ) VALUES (
+                    :producto_id,
+                    :sucursal,
+                    :ubicacion,
+                    :existencia
+                )
+                ON DUPLICATE KEY UPDATE
+                    existencia = VALUES(existencia),
+                    updated_at = CURRENT_TIMESTAMP";
 
-        $this->conn->rollBack();
+        $stmt = $this->conn->prepare($sql);
 
-        return false;
+        return $stmt->execute([
+            ':producto_id' => (int)$producto['id'],
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion,
+            ':existencia' => $existencia
+        ]);
     }
-}
+
+    public function actualizarUbicacionExistencia(
+        int $productoId,
+        string $sucursal,
+        string $ubicacionAnterior,
+        string $ubicacionNueva,
+        int $existencia
+    ): bool {
+        $ubicacionAnterior = strtoupper(trim($ubicacionAnterior));
+        $ubicacionNueva = strtoupper(trim($ubicacionNueva));
+
+        if ($ubicacionAnterior === '') {
+            $ubicacionAnterior = 'SIN UBICACION';
+        }
+
+        if ($ubicacionNueva === '') {
+            $ubicacionNueva = 'SIN UBICACION';
+        }
+
+        if ($existencia < 0) {
+            $existencia = 0;
+        }
+
+        try {
+            $this->conn->beginTransaction();
+
+            $sqlExiste = "SELECT id, existencia
+                          FROM producto_existencias
+                          WHERE producto_id = :producto_id
+                          AND sucursal = :sucursal
+                          AND ubicacion = :ubicacion";
+
+            $stmtExiste = $this->conn->prepare($sqlExiste);
+            $stmtExiste->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal,
+                ':ubicacion' => $ubicacionNueva
+            ]);
+
+            $registroNuevo = $stmtExiste->fetch(PDO::FETCH_ASSOC);
+
+            if ($registroNuevo && $ubicacionAnterior !== $ubicacionNueva) {
+                $sqlActualizarNueva = "UPDATE producto_existencias
+                                       SET existencia = :existencia,
+                                           updated_at = CURRENT_TIMESTAMP
+                                       WHERE id = :id";
+
+                $stmtActualizarNueva = $this->conn->prepare($sqlActualizarNueva);
+                $stmtActualizarNueva->execute([
+                    ':existencia' => $existencia,
+                    ':id' => $registroNuevo['id']
+                ]);
+
+                $sqlEliminarAnterior = "DELETE FROM producto_existencias
+                                        WHERE producto_id = :producto_id
+                                        AND sucursal = :sucursal
+                                        AND ubicacion = :ubicacion";
+
+                $stmtEliminarAnterior = $this->conn->prepare($sqlEliminarAnterior);
+                $stmtEliminarAnterior->execute([
+                    ':producto_id' => $productoId,
+                    ':sucursal' => $sucursal,
+                    ':ubicacion' => $ubicacionAnterior
+                ]);
+            } else {
+                $sql = "UPDATE producto_existencias
+                        SET ubicacion = :ubicacion_nueva,
+                            existencia = :existencia,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE producto_id = :producto_id
+                        AND sucursal = :sucursal
+                        AND ubicacion = :ubicacion_anterior";
+
+                $stmt = $this->conn->prepare($sql);
+                $stmt->execute([
+                    ':ubicacion_nueva' => $ubicacionNueva,
+                    ':existencia' => $existencia,
+                    ':producto_id' => $productoId,
+                    ':sucursal' => $sucursal,
+                    ':ubicacion_anterior' => $ubicacionAnterior
+                ]);
+            }
+
+            $sqlProducto = "UPDATE productos
+                            SET ubicacion = :ubicacion
+                            WHERE id = :producto_id";
+
+            $stmtProducto = $this->conn->prepare($sqlProducto);
+            $stmtProducto->execute([
+                ':ubicacion' => $ubicacionNueva,
+                ':producto_id' => $productoId
+            ]);
+
+            $this->conn->commit();
+
+            return true;
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            return false;
+        }
+    }
+
     public function deleteLogical(int $id): bool
     {
-        $sql = "UPDATE productos SET estado = 0 WHERE id = :id";
+        $sql = "UPDATE productos 
+                SET estado = 0 
+                WHERE id = :id";
 
         $stmt = $this->conn->prepare($sql);
 
@@ -757,55 +671,53 @@ public function actualizarUbicacionExistencia(
             ':id' => $id
         ]);
     }
+
     public function eliminarUbicacionExistencia(
-    int $productoId,
-    string $sucursal,
-    string $ubicacion
-): bool {
-    $ubicacion = strtoupper(trim($ubicacion));
+        int $productoId,
+        string $sucursal,
+        string $ubicacion
+    ): bool {
+        $ubicacion = strtoupper(trim($ubicacion));
 
-    if ($ubicacion === '') {
-        $ubicacion = 'SIN UBICACION';
-    }
-
-    try {
-        $this->conn->beginTransaction();
-
-        $sqlDelete = "DELETE FROM producto_existencias
-                      WHERE producto_id = :producto_id
-                      AND sucursal = :sucursal
-                      AND ubicacion = :ubicacion";
-
-        $stmtDelete = $this->conn->prepare($sqlDelete);
-
-        $stmtDelete->execute([
-            ':producto_id' => $productoId,
-            ':sucursal' => $sucursal,
-            ':ubicacion' => $ubicacion
-        ]);
-
-        $sqlProducto = "UPDATE productos
-                        SET ubicacion = NULL
-                        WHERE id = :producto_id
-                        AND ubicacion = :ubicacion";
-
-        $stmtProducto = $this->conn->prepare($sqlProducto);
-
-        $stmtProducto->execute([
-            ':producto_id' => $productoId,
-            ':ubicacion' => $ubicacion
-        ]);
-
-        $this->conn->commit();
-
-        return true;
-
-    } catch (Throwable $e) {
-        if ($this->conn->inTransaction()) {
-            $this->conn->rollBack();
+        if ($ubicacion === '') {
+            $ubicacion = 'SIN UBICACION';
         }
 
-        return false;
+        try {
+            $this->conn->beginTransaction();
+
+            $sqlDelete = "DELETE FROM producto_existencias
+                          WHERE producto_id = :producto_id
+                          AND sucursal = :sucursal
+                          AND ubicacion = :ubicacion";
+
+            $stmtDelete = $this->conn->prepare($sqlDelete);
+            $stmtDelete->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal,
+                ':ubicacion' => $ubicacion
+            ]);
+
+            $sqlProducto = "UPDATE productos
+                            SET ubicacion = NULL
+                            WHERE id = :producto_id
+                            AND ubicacion = :ubicacion";
+
+            $stmtProducto = $this->conn->prepare($sqlProducto);
+            $stmtProducto->execute([
+                ':producto_id' => $productoId,
+                ':ubicacion' => $ubicacion
+            ]);
+
+            $this->conn->commit();
+
+            return true;
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            return false;
+        }
     }
-}
 }

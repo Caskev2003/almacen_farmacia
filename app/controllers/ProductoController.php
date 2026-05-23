@@ -16,7 +16,7 @@ class ProductoController
         $user = $_SESSION['user'] ?? null;
 
         return isset($user['rol'])
-            && strtoupper(trim($user['rol'])) === 'ADMINISTRADOR';
+            && in_array(strtoupper(trim($user['rol'])), ['ADMINISTRADOR', 'ADMIN'], true);
     }
 
     private function sucursalUsuario(): string
@@ -27,7 +27,6 @@ class ProductoController
             return '';
         }
 
-        // PRIMERO intentamos por nombre
         $almacenNombre = strtoupper(trim($user['almacen_nombre'] ?? ''));
 
         if (str_contains($almacenNombre, 'HIDALGO')) {
@@ -38,23 +37,27 @@ class ProductoController
             return 'TUXTLA';
         }
 
-        // SI NO EXISTE EL NOMBRE, usamos el ID
         $almacenId = (int)($user['almacen_id'] ?? 0);
 
-        // AJUSTA ESTOS IDS SEGÚN TU TABLA almacenes
         if ($almacenId === 1) {
             return 'CIUDAD HIDALGO';
         }
 
-        if ($almacenId === 2) {
+        if ($almacenId === 2 || $almacenId === 3) {
             return 'TUXTLA';
         }
 
         return '';
     }
 
-    public function index(string $search = '', string $sucursal = ''): array
-    {
+    public function index(
+        string $search = '',
+        string $sucursal = '',
+        string $categoriaId = '',
+        string $proveedor = '',
+        string $ubicacion = '',
+        string $estadoStock = ''
+    ): array {
         $isAdmin = $this->esAdministrador();
 
         if (!$isAdmin) {
@@ -64,7 +67,11 @@ class ProductoController
         return $this->productoModel->getAll(
             trim($search),
             trim($sucursal),
-            $isAdmin
+            $isAdmin,
+            trim($categoriaId),
+            trim($proveedor),
+            trim($ubicacion),
+            trim($estadoStock)
         );
     }
 
@@ -100,14 +107,14 @@ class ProductoController
             'codigo_barras' => trim($data['codigo_barras'] ?? ''),
             'descripcion' => trim($data['descripcion'] ?? ''),
             'categoria_id' => trim($data['categoria_id'] ?? ''),
-            'proveedor_id' => trim($data['proveedor_id'] ?? ''),
+            'proveedor_nombre' => trim($data['proveedor_nombre'] ?? ''),
             'laboratorio' => trim($data['laboratorio'] ?? ''),
             'unidad_medida' => trim($data['unidad_medida'] ?? ''),
             'precio_compra' => trim($data['precio_compra'] ?? '0'),
             'precio_venta' => trim($data['precio_venta'] ?? '0'),
-            'stock_minimo' => trim($data['stock_minimo'] ?? '0'),
-            'stock_maximo' => trim($data['stock_maximo'] ?? '0'),
-            'ubicacion' => trim($data['ubicacion'] ?? ''),
+            'stock_minimo' => 0,
+            'stock_maximo' => 0,
+            'ubicacion' => strtoupper(trim($data['ubicacion'] ?? '')),
         ];
     }
 
@@ -130,7 +137,7 @@ class ProductoController
         if (!is_numeric($data['precio_compra']) || (float)$data['precio_compra'] < 0) {
             return [
                 'success' => false,
-                'message' => 'El precio de compra no es válido.'
+                'message' => 'El precio unitario no es válido.'
             ];
         }
 
@@ -138,20 +145,6 @@ class ProductoController
             return [
                 'success' => false,
                 'message' => 'El precio de venta no es válido.'
-            ];
-        }
-
-        if (!is_numeric($data['stock_minimo']) || (int)$data['stock_minimo'] < 0) {
-            return [
-                'success' => false,
-                'message' => 'El stock mínimo no es válido.'
-            ];
-        }
-
-        if (!is_numeric($data['stock_maximo']) || (int)$data['stock_maximo'] < 0) {
-            return [
-                'success' => false,
-                'message' => 'El stock máximo no es válido.'
             ];
         }
 
@@ -244,7 +237,7 @@ class ProductoController
             'laboratorio' => $data['marca'] ?? '',
             'unidad_medida' => '',
             'categoria_id' => null,
-            'proveedor_id' => null,
+            'proveedor_nombre' => '',
             'precio_compra' => 0,
             'precio_venta' => 0,
             'stock_minimo' => 0,
@@ -265,7 +258,6 @@ class ProductoController
         string $sucursal,
         int $existencia
     ): array {
-
         $codigo = trim($codigo);
         $sucursal = strtoupper(trim($sucursal));
 
@@ -302,128 +294,110 @@ class ProductoController
     }
 
     public function guardarUbicacionExistencia(array $postData): array
-{
-    $codigo = trim($postData['codigo'] ?? '');
+    {
+        $codigo = trim($postData['codigo'] ?? '');
+        $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+        $ubicacion = strtoupper(trim($postData['ubicacion'] ?? ''));
+        $existencia = (int)($postData['existencia'] ?? 0);
 
-    $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+        if ($codigo === '') {
+            return [
+                'success' => false,
+                'message' => 'Código vacío.'
+            ];
+        }
 
-    $ubicacion = strtoupper(trim($postData['ubicacion'] ?? ''));
+        if ($sucursal === '') {
+            return [
+                'success' => false,
+                'message' => 'Sucursal vacía.'
+            ];
+        }
 
-    $existencia = (int)($postData['existencia'] ?? 0);
+        if ($ubicacion === '') {
+            $ubicacion = 'SIN UBICACION';
+        }
 
-    if ($codigo === '') {
-        return [
-            'success' => false,
-            'message' => 'Código vacío.'
-        ];
-    }
+        if ($existencia < 0) {
+            $existencia = 0;
+        }
 
-    if ($sucursal === '') {
-        return [
-            'success' => false,
-            'message' => 'Sucursal vacía.'
-        ];
-    }
-
-    if ($ubicacion === '') {
-        $ubicacion = 'SIN UBICACION';
-    }
-
-    if ($existencia < 0) {
-        $existencia = 0;
-    }
-
-    $ok = $this->productoModel->actualizarExistenciaPorCodigo(
-        $codigo,
-        $sucursal,
-        $existencia,
-        $ubicacion
-    );
-
-    return [
-        'success' => $ok,
-        'message' => $ok
-            ? 'Ubicación guardada correctamente.'
-            : 'No se pudo guardar.'
-    ];
-}
-
-public function editarUbicacionExistencia(array $postData): array
-{
-    $productoId = (int)($postData['producto_id'] ?? 0);
-
-    $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
-
-    $ubicacionAnterior = strtoupper(trim($postData['ubicacion_anterior'] ?? ''));
-
-    $ubicacionNueva = strtoupper(trim($postData['ubicacion_nueva'] ?? ''));
-
-    $existencia = (int)($postData['existencia'] ?? 0);
-
-    if ($productoId <= 0) {
-        return [
-            'success' => false,
-            'message' => 'Producto inválido.'
-        ];
-    }
-
-    if ($sucursal === '') {
-        return [
-            'success' => false,
-            'message' => 'Sucursal inválida.'
-        ];
-    }
-
-    if ($ubicacionAnterior === '') {
-        $ubicacionAnterior = 'SIN UBICACION';
-    }
-
-    if ($ubicacionNueva === '') {
-        $ubicacionNueva = 'SIN UBICACION';
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | SI LA EXISTENCIA ES 0
-    | ELIMINAMOS LA UBICACION
-    |--------------------------------------------------------------------------
-    */
-    if ($existencia <= 0) {
-
-        $ok = $this->productoModel->eliminarUbicacionExistencia(
-            $productoId,
+        $ok = $this->productoModel->actualizarExistenciaPorCodigo(
+            $codigo,
             $sucursal,
-            $ubicacionAnterior
+            $existencia,
+            $ubicacion
         );
 
         return [
             'success' => $ok,
             'message' => $ok
-                ? 'Ubicación eliminada correctamente.'
-                : 'No se pudo eliminar la ubicación.'
+                ? 'Ubicación guardada correctamente.'
+                : 'No se pudo guardar.'
         ];
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | SI EXISTE STOCK
-    |--------------------------------------------------------------------------
-    */
-    $ok = $this->productoModel->actualizarUbicacionExistencia(
-        $productoId,
-        $sucursal,
-        $ubicacionAnterior,
-        $ubicacionNueva,
-        $existencia
-    );
+    public function editarUbicacionExistencia(array $postData): array
+    {
+        $productoId = (int)($postData['producto_id'] ?? 0);
+        $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+        $ubicacionAnterior = strtoupper(trim($postData['ubicacion_anterior'] ?? ''));
+        $ubicacionNueva = strtoupper(trim($postData['ubicacion_nueva'] ?? ''));
+        $existencia = (int)($postData['existencia'] ?? 0);
 
-    return [
-        'success' => $ok,
-        'message' => $ok
-            ? 'Ubicación actualizada correctamente.'
-            : 'No se pudo actualizar la ubicación.'
-    ];
-}
+        if ($productoId <= 0) {
+            return [
+                'success' => false,
+                'message' => 'Producto inválido.'
+            ];
+        }
+
+        if ($sucursal === '') {
+            return [
+                'success' => false,
+                'message' => 'Sucursal inválida.'
+            ];
+        }
+
+        if ($ubicacionAnterior === '') {
+            $ubicacionAnterior = 'SIN UBICACION';
+        }
+
+        if ($ubicacionNueva === '') {
+            $ubicacionNueva = 'SIN UBICACION';
+        }
+
+        if ($existencia <= 0) {
+            $ok = $this->productoModel->eliminarUbicacionExistencia(
+                $productoId,
+                $sucursal,
+                $ubicacionAnterior
+            );
+
+            return [
+                'success' => $ok,
+                'message' => $ok
+                    ? 'Ubicación eliminada correctamente.'
+                    : 'No se pudo eliminar la ubicación.'
+            ];
+        }
+
+        $ok = $this->productoModel->actualizarUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacionAnterior,
+            $ubicacionNueva,
+            $existencia
+        );
+
+        return [
+            'success' => $ok,
+            'message' => $ok
+                ? 'Ubicación actualizada correctamente.'
+                : 'No se pudo actualizar la ubicación.'
+        ];
+    }
+
     public function destroy(int $id): array
     {
         $producto = $this->productoModel->findById($id);

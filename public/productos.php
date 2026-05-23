@@ -24,7 +24,13 @@ if (str_contains($almacenNombre, 'HIDALGO')) {
 
 $message = '';
 $messageType = '';
+
 $search = trim($_GET['search'] ?? '');
+$filtroCategoria = trim($_GET['categoria_id'] ?? '');
+$filtroProveedor = trim($_GET['proveedor'] ?? '');
+$filtroUbicacion = trim($_GET['ubicacion'] ?? '');
+$filtroStock = trim($_GET['estado_stock'] ?? '');
+
 $editando = null;
 
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -71,7 +77,15 @@ if (isset($_GET['edit'])) {
     $editando = $controller->find($editId);
 }
 
-$productosTodos = $controller->index($search, $sucursalUsuario);
+$productosTodos = $controller->index(
+    $search,
+    $sucursalUsuario,
+    $filtroCategoria,
+    $filtroProveedor,
+    $filtroUbicacion,
+    $filtroStock
+);
+
 $categorias = $controller->categorias();
 $proveedores = $controller->proveedores();
 
@@ -86,11 +100,44 @@ $offset = ($page - 1) * $perPage;
 $productos = array_slice($productosTodos, $offset, $perPage);
 
 $queryBase = http_build_query([
-    'search' => $search
+    'search' => $search,
+    'categoria_id' => $filtroCategoria,
+    'proveedor' => $filtroProveedor,
+    'ubicacion' => $filtroUbicacion,
+    'estado_stock' => $filtroStock
 ]);
 
 $moduleCss = 'productos';
 include __DIR__ . '/../app/views/layouts/header.php';
+
+function estadoStockProducto(array $producto, bool $esAdmin): array
+{
+    $existencia = $esAdmin
+        ? (int)($producto['existencia_total'] ?? ((int)($producto['existencia_hidalgo'] ?? 0) + (int)($producto['existencia_tuxtla'] ?? 0)))
+        : (int)($producto['existencia'] ?? 0);
+
+    if ($existencia <= 0) {
+        return [
+            'texto' => 'AGOTADO',
+            'clase' => 'stock-agotado',
+            'existencia' => $existencia
+        ];
+    }
+
+    if ($existencia <= 120) {
+        return [
+            'texto' => 'BAJO STOCK',
+            'clase' => 'stock-bajo',
+            'existencia' => $existencia
+        ];
+    }
+
+    return [
+        'texto' => 'NORMAL',
+        'clase' => 'stock-normal',
+        'existencia' => $existencia
+    ];
+}
 ?>
 
 <div class="module-header">
@@ -162,6 +209,67 @@ include __DIR__ . '/../app/views/layouts/header.php';
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+}
+
+.filters-card {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 16px;
+}
+
+.filters-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+}
+
+.filters-grid .form-group {
+    margin: 0;
+}
+
+.filters-grid label {
+    font-size: 12px;
+    font-weight: 800;
+    color: #475569;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.filters-grid input,
+.filters-grid select {
+    width: 100%;
+}
+
+.stock-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.stock-normal {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.stock-bajo {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.stock-agotado {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
 }
 
 .badge-existencia {
@@ -247,6 +355,18 @@ include __DIR__ . '/../app/views/layouts/header.php';
     font-size: 28px;
     cursor: pointer;
 }
+
+@media (max-width: 1200px) {
+    .filters-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    .filters-grid {
+        grid-template-columns: 1fr;
+    }
+}
 </style>
 
 <div class="erp-container">
@@ -291,15 +411,20 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                 <div class="form-group">
                     <label>Proveedor</label>
-                    <select name="proveedor_id">
-                        <option value="">Seleccione</option>
+                    <input
+                        type="text"
+                        name="proveedor_nombre"
+                        list="listaProveedores"
+                        autocomplete="off"
+                        placeholder="Escribe o selecciona proveedor"
+                        value="<?= e($editando['proveedor_nombre'] ?? '') ?>"
+                    >
+
+                    <datalist id="listaProveedores">
                         <?php foreach ($proveedores as $proveedor): ?>
-                            <option value="<?= (int)$proveedor['id'] ?>"
-                                <?= isset($editando['proveedor_id']) && (int)$editando['proveedor_id'] === (int)$proveedor['id'] ? 'selected' : '' ?>>
-                                <?= e($proveedor['nombre']) ?>
-                            </option>
+                            <option value="<?= e($proveedor['nombre']) ?>"></option>
                         <?php endforeach; ?>
-                    </select>
+                    </datalist>
                 </div>
 
                 <div class="form-group">
@@ -315,16 +440,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <div class="form-group">
                     <label>Precio Unitario</label>
                     <input type="number" step="0.01" min="0" name="precio_compra" value="<?= e($editando['precio_compra'] ?? '0.00') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label>Stock mínimo</label>
-                    <input type="number" min="0" name="stock_minimo" value="<?= e($editando['stock_minimo'] ?? '0') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label>Stock máximo</label>
-                    <input type="number" min="0" name="stock_maximo" value="<?= e($editando['stock_maximo'] ?? '0') ?>">
                 </div>
 
                 <div class="form-group">
@@ -363,18 +478,74 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     Importar Excel
                 </a>
             </div>
-
-            <form method="GET" action="" class="search-form">
-                <input
-                    type="text"
-                    name="search"
-                    placeholder="Buscar por código, barras o descripción"
-                    value="<?= e($search) ?>"
-                >
-                <button type="submit" class="btn-search">Buscar</button>
-                <a href="productos.php" class="btn-clear">Limpiar</a>
-            </form>
         </div>
+
+        <form method="GET" action="" class="filters-card">
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label>Buscar</label>
+                    <input
+                        type="text"
+                        name="search"
+                        placeholder="Código, barras, descripción, proveedor..."
+                        value="<?= e($search) ?>"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Categoría</label>
+                    <select name="categoria_id">
+                        <option value="">Todas</option>
+                        <?php foreach ($categorias as $categoria): ?>
+                            <option value="<?= (int)$categoria['id'] ?>"
+                                <?= $filtroCategoria !== '' && (int)$filtroCategoria === (int)$categoria['id'] ? 'selected' : '' ?>>
+                                <?= e($categoria['nombre']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Proveedor</label>
+                    <input
+                        type="text"
+                        name="proveedor"
+                        list="listaProveedores"
+                        placeholder="Proveedor"
+                        value="<?= e($filtroProveedor) ?>"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Ubicación</label>
+                    <input
+                        type="text"
+                        name="ubicacion"
+                        list="listaUbicaciones"
+                        placeholder="R1N1Z01"
+                        value="<?= e($filtroUbicacion) ?>"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Estado stock</label>
+                    <select name="estado_stock">
+                        <option value="">Todos</option>
+                        <option value="normal" <?= $filtroStock === 'normal' ? 'selected' : '' ?>>Stock normal</option>
+                        <option value="bajo" <?= $filtroStock === 'bajo' ? 'selected' : '' ?>>Bajo stock</option>
+                        <option value="agotado" <?= $filtroStock === 'agotado' ? 'selected' : '' ?>>Agotados</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="btn-search">Filtrar</button>
+                        <a href="productos.php" class="btn-clear">Limpiar</a>
+                    </div>
+                </div>
+            </div>
+        </form>
 
         <div class="pagination-info" style="margin-bottom:12px;">
             Mostrando <?= $totalProductos > 0 ? ($offset + 1) : 0 ?> -
@@ -403,6 +574,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             <th>Existencia</th>
                         <?php endif; ?>
 
+                        <th>Estado stock</th>
                         <th>Ubicación</th>
                         <th>Acciones</th>
                     </tr>
@@ -411,6 +583,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <tbody>
                     <?php if (count($productos) > 0): ?>
                         <?php foreach ($productos as $producto): ?>
+                            <?php $estadoStock = estadoStockProducto($producto, $esAdmin); ?>
+
                             <tr>
                                 <td><?= (int)$producto['id'] ?></td>
                                 <td><?= e($producto['codigo']) ?></td>
@@ -428,6 +602,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 <?php else: ?>
                                     <td class="badge-existencia"><?= (int)($producto['existencia'] ?? 0) ?></td>
                                 <?php endif; ?>
+
+                                <td>
+                                    <span class="stock-pill <?= e($estadoStock['clase']) ?>">
+                                        <?= e($estadoStock['texto']) ?>
+                                    </span>
+                                </td>
 
                                 <td>
                                     <?php
@@ -505,8 +685,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?= $esAdmin ? '13' : '12' ?>" class="empty-table">
-                                No hay productos registrados.
+                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
+                                No hay productos registrados con esos filtros.
                             </td>
                         </tr>
                     <?php endif; ?>

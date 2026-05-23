@@ -6,7 +6,6 @@ class DashboardController
 {
     private PDO $conn;
     private string $rol = '';
-    private string $sucursal = '';
     private int $almacenId = 0;
     private int $stockMinimoDashboard = 120;
 
@@ -25,117 +24,153 @@ class DashboardController
         $usuario = $_SESSION['user'] ?? [];
 
         $this->rol = strtoupper(trim($usuario['rol'] ?? ''));
-        $this->sucursal = strtoupper(trim($usuario['sucursal'] ?? ''));
         $this->almacenId = (int)($usuario['almacen_id'] ?? 0);
     }
 
-    private function filtroSucursalExistencias(): string
-    {
-        if ($this->rol === 'ADMINISTRADOR' || $this->sucursal === '') {
-            return '';
-        }
-
-        if (str_contains($this->sucursal, 'HIDALGO')) {
-            return " AND UPPER(pe.sucursal) IN ('CIUDAD HIDALGO', 'CD HIDALGO') ";
-        }
-
-        if (str_contains($this->sucursal, 'TUXTLA')) {
-            return " AND UPPER(pe.sucursal) IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ') ";
-        }
-
-        return " AND UPPER(pe.sucursal) = " . $this->conn->quote($this->sucursal) . " ";
-    }
-
-    private function filtroMovimientos(): string
+    private function sucursalesPermitidas(): array
     {
         if ($this->rol === 'ADMINISTRADOR') {
-            return '';
+            return [];
         }
 
         if ($this->almacenId <= 0) {
-            return '';
+            return [];
         }
 
-        return " AND m.almacen_id = {$this->almacenId} ";
+        $stmt = $this->conn->prepare("
+            SELECT nombre
+            FROM almacenes
+            WHERE id = :id
+            LIMIT 1
+        ");
+
+        $stmt->execute([
+            ':id' => $this->almacenId
+        ]);
+
+        $almacen = strtoupper(trim($stmt->fetchColumn() ?: ''));
+
+        if ($almacen === '') {
+            return [];
+        }
+
+        if (str_contains($almacen, 'HIDALGO')) {
+            return ['CIUDAD HIDALGO', 'CD HIDALGO'];
+        }
+
+        if (str_contains($almacen, 'TUXTLA')) {
+            return ['TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ'];
+        }
+
+        return [$almacen];
+    }
+
+    private function agregarFiltroSucursal(string &$sql, array &$params, string $alias = 'pe'): void
+    {
+        $sucursales = $this->sucursalesPermitidas();
+
+        if (empty($sucursales)) {
+            return;
+        }
+
+        $placeholders = [];
+
+        foreach ($sucursales as $index => $sucursal) {
+            $key = ":sucursal_{$alias}_{$index}";
+            $placeholders[] = $key;
+            $params[$key] = $sucursal;
+        }
+
+        $sql .= " AND UPPER({$alias}.sucursal) IN (" . implode(',', $placeholders) . ") ";
+    }
+
+    private function agregarFiltroMovimientos(string &$sql, array &$params): void
+    {
+        if ($this->rol !== 'ADMINISTRADOR' && $this->almacenId > 0) {
+            $sql .= " AND m.almacen_id = :almacen_id ";
+            $params[':almacen_id'] = $this->almacenId;
+        }
     }
 
     public function getIndicadores(): array
     {
-        $filtroExistencias = $this->filtroSucursalExistencias();
+        $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
 
-        $sqlProductos = "SELECT
-                            COUNT(DISTINCT p.id) AS total_productos,
+        $subquery = "SELECT
+                        pe.producto_id,
+                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia
+                     FROM producto_existencias pe
+                     WHERE 1 = 1";
 
-                            SUM(CASE
-                                WHEN COALESCE(stock.total_existencia, 0) <= 0
-                                THEN 1 ELSE 0
-                            END) AS agotados,
+        $this->agregarFiltroSucursal($subquery, $params, 'pe');
 
-                            SUM(CASE
-                                WHEN COALESCE(stock.total_existencia, 0) > 0
-                                 AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
-                                THEN 1 ELSE 0
-                            END) AS bajo_stock,
+        $subquery .= " GROUP BY pe.producto_id";
 
-                            SUM(CASE
-                                WHEN COALESCE(stock.total_existencia, 0) > {$stockMinimo}
-                                THEN 1 ELSE 0
-                            END) AS en_stock
+        $sql = "SELECT
+                    COUNT(p.id) AS total_productos,
 
-                        FROM productos p
+                    SUM(CASE
+                        WHEN COALESCE(stock.total_existencia, 0) <= 0
+                        THEN 1 ELSE 0
+                    END) AS agotados,
 
-                        LEFT JOIN (
-                            SELECT
-                                pe.producto_id,
-                                SUM(COALESCE(pe.existencia, 0)) AS total_existencia
-                            FROM producto_existencias pe
-                            WHERE 1=1
-                            {$filtroExistencias}
-                            GROUP BY pe.producto_id
-                        ) AS stock
-                            ON stock.producto_id = p.id
+                    SUM(CASE
+                        WHEN COALESCE(stock.total_existencia, 0) > 0
+                         AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
+                        THEN 1 ELSE 0
+                    END) AS bajo_stock,
 
-                        WHERE p.estado = 1";
+                    SUM(CASE
+                        WHEN COALESCE(stock.total_existencia, 0) > {$stockMinimo}
+                        THEN 1 ELSE 0
+                    END) AS en_stock
 
-        $stmtProductos = $this->conn->query($sqlProductos);
-        $productos = $stmtProductos->fetch(PDO::FETCH_ASSOC) ?: [];
+                FROM productos p
+
+                LEFT JOIN ({$subquery}) AS stock
+                    ON stock.producto_id = p.id
+
+                WHERE p.estado = 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        $productos = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
         $inicioHoy = date('Y-m-d') . ' 00:00:00';
         $finHoy = date('Y-m-d') . ' 23:59:59';
 
-        $params = [
+        $paramsEntrada = [
             ':inicio' => $inicioHoy,
             ':fin' => $finHoy
         ];
 
-        $filtroMovimientos = '';
-
-        if ($this->rol !== 'ADMINISTRADOR' && $this->almacenId > 0) {
-            $filtroMovimientos = " AND m.almacen_id = :almacen_id ";
-            $params[':almacen_id'] = $this->almacenId;
-        }
-
         $sqlEntradasHoy = "SELECT COUNT(*) AS total
                            FROM movimientos m
                            WHERE m.tipo_movimiento = 'ENTRADA'
-                             AND m.fecha BETWEEN :inicio AND :fin
-                             {$filtroMovimientos}";
+                             AND m.fecha BETWEEN :inicio AND :fin";
+
+        $this->agregarFiltroMovimientos($sqlEntradasHoy, $paramsEntrada);
 
         $stmtEntradasHoy = $this->conn->prepare($sqlEntradasHoy);
-        $stmtEntradasHoy->execute($params);
-
+        $stmtEntradasHoy->execute($paramsEntrada);
         $entradasHoy = $stmtEntradasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+
+        $paramsSalida = [
+            ':inicio' => $inicioHoy,
+            ':fin' => $finHoy
+        ];
 
         $sqlSalidasHoy = "SELECT COUNT(*) AS total
                           FROM movimientos m
                           WHERE m.tipo_movimiento = 'SALIDA'
-                            AND m.fecha BETWEEN :inicio AND :fin
-                            {$filtroMovimientos}";
+                            AND m.fecha BETWEEN :inicio AND :fin";
+
+        $this->agregarFiltroMovimientos($sqlSalidasHoy, $paramsSalida);
 
         $stmtSalidasHoy = $this->conn->prepare($sqlSalidasHoy);
-        $stmtSalidasHoy->execute($params);
-
+        $stmtSalidasHoy->execute($paramsSalida);
         $salidasHoy = $stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
         return [
@@ -150,56 +185,50 @@ class DashboardController
 
     public function getProductosCriticos(): array
     {
-        $filtroExistencias = $this->filtroSucursalExistencias();
+        $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
 
-        $sql = "SELECT *
-                FROM (
-                    SELECT
-                        p.id,
-                        p.codigo,
-                        p.descripcion,
-                        {$stockMinimo} AS stock_minimo,
-                        COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
-                        COALESCE(SUM(pe.existencia), 0) AS existencia_actual
+        $subquery = "SELECT
+                        pe.producto_id,
+                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia,
+                        MIN(NULLIF(TRIM(pe.ubicacion), '')) AS ubicacion
+                     FROM producto_existencias pe
+                     WHERE 1 = 1";
 
-                    FROM productos p
+        $this->agregarFiltroSucursal($subquery, $params, 'pe');
 
-                    LEFT JOIN producto_existencias pe
-                        ON pe.producto_id = p.id
-                        {$filtroExistencias}
+        $subquery .= " GROUP BY pe.producto_id";
 
-                    WHERE p.estado = 1
+        $sql = "SELECT
+                    p.id,
+                    p.codigo,
+                    p.descripcion,
+                    {$stockMinimo} AS stock_minimo,
+                    COALESCE(stock.ubicacion, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
+                    COALESCE(stock.total_existencia, 0) AS existencia_actual
 
-                    GROUP BY
-                        p.id,
-                        p.codigo,
-                        p.descripcion,
-                        p.ubicacion
-                ) AS inventario
+                FROM productos p
 
-                WHERE
-                    inventario.existencia_actual > 0
-                    AND inventario.existencia_actual <= {$stockMinimo}
+                LEFT JOIN ({$subquery}) AS stock
+                    ON stock.producto_id = p.id
 
-                ORDER BY
-                    inventario.existencia_actual ASC,
-                    inventario.descripcion ASC
+                WHERE p.estado = 1
+                  AND COALESCE(stock.total_existencia, 0) > 0
+                  AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
+
+                ORDER BY existencia_actual ASC, p.descripcion ASC
 
                 LIMIT 12";
 
-        $stmt = $this->conn->query($sql);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getMovimientosRecientes(): array
     {
-        $filtro = '';
-
-        if ($this->rol !== 'ADMINISTRADOR' && $this->almacenId > 0) {
-            $filtro = " WHERE m.almacen_id = {$this->almacenId}";
-        }
+        $params = [];
 
         $sql = "SELECT
                     m.id,
@@ -217,19 +246,22 @@ class DashboardController
                 INNER JOIN usuarios u
                     ON m.usuario_id = u.id
 
-                {$filtro}
+                WHERE 1 = 1";
 
-                ORDER BY m.fecha DESC, m.id DESC
-                LIMIT 8";
+        $this->agregarFiltroMovimientos($sql, $params);
 
-        $stmt = $this->conn->query($sql);
+        $sql .= " ORDER BY m.fecha DESC, m.id DESC
+                  LIMIT 8";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getProductosPorUbicacion(): array
     {
-        $filtroExistencias = $this->filtroSucursalExistencias();
+        $params = [];
 
         $sql = "SELECT
                     COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
@@ -241,33 +273,37 @@ class DashboardController
                     ON p.id = pe.producto_id
 
                 WHERE p.estado = 1
-                  AND COALESCE(pe.existencia, 0) > 0
-                  {$filtroExistencias}
+                  AND COALESCE(pe.existencia, 0) > 0";
 
-                GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN')
+        $this->agregarFiltroSucursal($sql, $params, 'pe');
 
-                ORDER BY total DESC
-                LIMIT 10";
+        $sql .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN')
+                  ORDER BY total DESC
+                  LIMIT 10";
 
-        $stmt = $this->conn->query($sql);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getDocumentosMasUsados(): array
     {
-        $filtroMovimientos = $this->filtroMovimientos();
+        $params = [];
 
         $sql = "SELECT 
                     COALESCE(NULLIF(TRIM(m.tipo_operacion), ''), 'SIN DOCUMENTO') AS documento,
                     COUNT(*) AS total
                 FROM movimientos m
-                WHERE m.tipo_movimiento = 'SALIDA'
-                {$filtroMovimientos}
-                GROUP BY COALESCE(NULLIF(TRIM(m.tipo_operacion), ''), 'SIN DOCUMENTO')
-                ORDER BY total DESC";
+                WHERE m.tipo_movimiento = 'SALIDA'";
 
-        $stmt = $this->conn->query($sql);
+        $this->agregarFiltroMovimientos($sql, $params);
+
+        $sql .= " GROUP BY COALESCE(NULLIF(TRIM(m.tipo_operacion), ''), 'SIN DOCUMENTO')
+                  ORDER BY total DESC";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
@@ -276,7 +312,14 @@ class DashboardController
     {
         $existencia = (int)($item['existencia_actual'] ?? 0);
 
-        if ($existencia > 0 && $existencia <= $this->stockMinimoDashboard) {
+        if ($existencia <= 0) {
+            return [
+                'texto' => 'AGOTADO',
+                'clase' => 'badge-danger'
+            ];
+        }
+
+        if ($existencia <= $this->stockMinimoDashboard) {
             return [
                 'texto' => 'BAJO STOCK',
                 'clase' => 'badge-warning'

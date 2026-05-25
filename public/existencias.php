@@ -68,10 +68,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <strong><?= number_format((int)$resumen['sinExistencia']) ?></strong>
         </div>
 
-        <div class="existencia-card valor">
-            <span>Valor inventario</span>
-            <strong>$<?= number_format((float)$resumen['valorInventario'], 2) ?></strong>
-        </div>
+        
     </div>
 
     <div class="existencias-filter-card">

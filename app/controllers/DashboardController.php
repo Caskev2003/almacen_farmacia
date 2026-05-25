@@ -109,7 +109,7 @@ class DashboardController
                          AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
                          AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                         THEN 1 ELSE 0
-                    END) AS total_productos,
+                    END) AS productos_con_existencia,
 
                     SUM(CASE
                         WHEN stock.producto_id IS NOT NULL
@@ -137,16 +137,20 @@ class DashboardController
                     END) AS en_stock
 
                 FROM productos p
-
                 LEFT JOIN ({$subquery}) AS stock
                     ON stock.producto_id = p.id
-
                 WHERE p.estado = 1";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
 
         $productos = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $enStock = (int)($productos['en_stock'] ?? 0);
+        $bajoStock = (int)($productos['bajo_stock'] ?? 0);
+        $agotados = (int)($productos['agotados'] ?? 0);
+
+        $totalProductos = $enStock + $bajoStock + $agotados;
 
         $inicioHoy = date('Y-m-d') . ' 00:00:00';
         $finHoy = date('Y-m-d') . ' 23:59:59';
@@ -184,10 +188,10 @@ class DashboardController
         $salidasHoy = $stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
         return [
-            'total_productos' => (int)($productos['total_productos'] ?? 0),
-            'agotados' => (int)($productos['agotados'] ?? 0),
-            'bajo_stock' => (int)($productos['bajo_stock'] ?? 0),
-            'en_stock' => (int)($productos['en_stock'] ?? 0),
+            'total_productos' => $totalProductos,
+            'agotados' => $agotados,
+            'bajo_stock' => $bajoStock,
+            'en_stock' => $enStock,
             'entradas_hoy' => (int)$entradasHoy,
             'salidas_hoy' => (int)$salidasHoy,
         ];
@@ -206,20 +210,15 @@ class DashboardController
                     {$stockMinimo} AS stock_minimo,
                     COALESCE(stock.ubicaciones, 'SIN UBICACION') AS ubicacion,
                     COALESCE(stock.total_existencia, 0) AS existencia_actual
-
                 FROM productos p
-
                 INNER JOIN ({$subquery}) AS stock
                     ON stock.producto_id = p.id
-
                 WHERE p.estado = 1
                   AND COALESCE(stock.total_existencia, 0) > 0
                   AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
                   AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
                   AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-
                 ORDER BY existencia_actual ASC, p.descripcion ASC
-
                 LIMIT 12";
 
         $stmt = $this->conn->prepare($sql);
@@ -239,21 +238,16 @@ class DashboardController
                     m.fecha,
                     a.nombre AS almacen,
                     u.nombre AS usuario
-
                 FROM movimientos m
-
                 LEFT JOIN almacenes a
                     ON m.almacen_id = a.id
-
                 INNER JOIN usuarios u
                     ON m.usuario_id = u.id
-
                 WHERE 1 = 1";
 
         $this->agregarFiltroMovimientos($sql, $params);
 
-        $sql .= " ORDER BY m.fecha DESC, m.id DESC
-                  LIMIT 8";
+        $sql .= " ORDER BY m.fecha DESC, m.id DESC LIMIT 8";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
@@ -268,12 +262,9 @@ class DashboardController
         $sql = "SELECT
                     COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
                     SUM(COALESCE(pe.existencia, 0)) AS total
-
                 FROM producto_existencias pe
-
                 INNER JOIN productos p
                     ON p.id = pe.producto_id
-
                 WHERE p.estado = 1
                   AND COALESCE(pe.existencia, 0) > 0
                   AND pe.ubicacion IS NOT NULL
@@ -283,8 +274,7 @@ class DashboardController
         $this->agregarFiltroSucursal($sql, $params, 'pe');
 
         $sql .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
-                  ORDER BY total DESC
-                  LIMIT 10";
+                  ORDER BY total DESC";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);

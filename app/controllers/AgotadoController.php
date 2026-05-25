@@ -56,7 +56,7 @@ class AgotadoController
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER(pe.sucursal) IN (" . implode(',', $marks) . ") ";
+        $sql .= " AND UPPER(pe.sucursal) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
     }
 
     public function almacenes(): array
@@ -111,30 +111,35 @@ class AgotadoController
                     COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
                     COALESCE(stock.existencia_total, 0) AS existencia
                 FROM productos p
-                LEFT JOIN categorias c ON p.categoria_id = c.id
-                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
-                LEFT JOIN ({$subquery}) AS stock ON stock.producto_id = p.id
+                LEFT JOIN categorias c 
+                    ON p.categoria_id = c.id
+                LEFT JOIN proveedores pr 
+                    ON p.proveedor_id = pr.id
+                LEFT JOIN ({$subquery}) AS stock 
+                    ON stock.producto_id = p.id
                 WHERE p.estado = 1
                 AND (
                     COALESCE(stock.existencia_total, 0) <= 0
-                    OR COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '') = ''
-                    OR COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '') = 'SIN UBICACION'
+                    OR COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '') COLLATE utf8mb4_general_ci = ''
+                    OR UPPER(COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '')) COLLATE utf8mb4_general_ci = 'SIN UBICACION'
+                    OR UPPER(COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '')) COLLATE utf8mb4_general_ci = 'SIN UBICACIÓN'
                 )";
 
         if (!empty($filtros['buscar'])) {
             $sql .= " AND (
-                        p.codigo LIKE :buscar
-                        OR p.codigo_barras LIKE :buscar
-                        OR p.descripcion LIKE :buscar
-                        OR c.nombre LIKE :buscar
-                        OR pr.nombre LIKE :buscar
-                        OR p.laboratorio LIKE :buscar
+                        p.codigo COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR p.codigo_barras COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR p.descripcion COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR c.nombre COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR pr.nombre COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR p.laboratorio COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR stock.ubicaciones COLLATE utf8mb4_general_ci LIKE :buscar
                     )";
 
             $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
         }
 
-        $sql .= " ORDER BY p.descripcion ASC";
+        $sql .= " ORDER BY p.descripcion COLLATE utf8mb4_general_ci ASC";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);

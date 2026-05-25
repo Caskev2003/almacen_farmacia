@@ -10,10 +10,21 @@ $almacenId = (int)($user['almacen_id'] ?? 0);
 
 $esAdmin = $rolUsuario === 'ADMINISTRADOR';
 $esGerente = $rolUsuario === 'GERENTE';
+$esEncargado = $rolUsuario === 'ENCARGADO';
+$esConsulta = $rolUsuario === 'CONSULTA';
+
+$puedeVerAgotados = in_array($rolUsuario, [
+    'ADMINISTRADOR',
+    'GERENTE',
+    'ENCARGADO',
+    'CONSULTA'
+], true);
 
 $puedeVerInventarios =
     $esAdmin
     || $esGerente
+    || $esEncargado
+    || $esConsulta
     || $almacenId === 1
     || $almacenId === 2
     || $almacenId === 3;
@@ -29,7 +40,7 @@ $puedeVerInventarios =
     <link rel="stylesheet" href="assets/css/global.css">
 
     <?php if (!empty($moduleCss)): ?>
-        <link rel="stylesheet" href="assets/css/<?= $moduleCss ?>.css?v=<?= time() ?>">
+        <link rel="stylesheet" href="assets/css/<?= e($moduleCss) ?>.css?v=<?= time() ?>">
     <?php endif; ?>
 </head>
 
@@ -43,9 +54,9 @@ $puedeVerInventarios =
     <div class="topbar-right">
         <?php if ($user): ?>
             <span>
-                <?= e($user['nombre']) ?>
+                <?= e($user['nombre'] ?? '') ?>
                 |
-                <?= e($user['rol']) ?>
+                <?= e($user['rol'] ?? '') ?>
             </span>
 
             <a href="logout.php" class="btn-top">
@@ -61,7 +72,7 @@ $puedeVerInventarios =
 
         <a href="dashboard.php">Inicio</a>
 
-        <?php if (!$esGerente): ?>
+        <?php if (!$esGerente && !$esConsulta): ?>
             <a href="productos.php">Productos</a>
             <a href="entradas.php">Entradas</a>
             <a href="salidas.php">Salidas</a>
@@ -69,7 +80,11 @@ $puedeVerInventarios =
 
         <a href="existencias.php">Existencias</a>
 
-        <?php if (!$esGerente): ?>
+        <?php if ($puedeVerAgotados): ?>
+            <a href="agotados.php">Agotados</a>
+        <?php endif; ?>
+
+        <?php if (!$esGerente && !$esConsulta): ?>
             <a href="kardex.php">Kardex</a>
             <a href="reportes.php">Reportes</a>
 

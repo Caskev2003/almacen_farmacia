@@ -122,7 +122,7 @@ class Producto
 
                         COALESCE(SUM(
                             CASE 
-                                WHEN pe.sucursal = 'CIUDAD HIDALGO'
+                                WHEN UPPER(pe.sucursal) IN ('CIUDAD HIDALGO', 'CD HIDALGO')
                                 THEN pe.existencia 
                                 ELSE 0 
                             END
@@ -130,7 +130,7 @@ class Producto
 
                         COALESCE(SUM(
                             CASE 
-                                WHEN pe.sucursal = 'TUXTLA'
+                                WHEN UPPER(pe.sucursal) IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')
                                 THEN pe.existencia 
                                 ELSE 0 
                             END
@@ -149,6 +149,9 @@ class Producto
                     LEFT JOIN producto_existencias pe 
                         ON pe.producto_id = p.id
                         AND pe.existencia > 0
+                        AND pe.ubicacion IS NOT NULL
+                        AND TRIM(pe.ubicacion) != ''
+                        AND UPPER(TRIM(pe.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
 
                     WHERE p.estado = 1";
         } else {
@@ -183,6 +186,9 @@ class Producto
                         ON pe.producto_id = p.id
                         AND pe.sucursal = :sucursal
                         AND pe.existencia > 0
+                        AND pe.ubicacion IS NOT NULL
+                        AND TRIM(pe.ubicacion) != ''
+                        AND UPPER(TRIM(pe.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
 
                     WHERE p.estado = 1";
 
@@ -221,6 +227,31 @@ class Producto
             $params[':ubicacion'] = "%{$ubicacion}%";
         }
 
+        if ($isAdmin) {
+            $sql .= " AND EXISTS (
+                        SELECT 1
+                        FROM producto_existencias pe2
+                        WHERE pe2.producto_id = p.id
+                          AND pe2.existencia > 0
+                          AND pe2.ubicacion IS NOT NULL
+                          AND TRIM(pe2.ubicacion) != ''
+                          AND UPPER(TRIM(pe2.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                    )";
+        } else {
+            $sql .= " AND EXISTS (
+                        SELECT 1
+                        FROM producto_existencias pe2
+                        WHERE pe2.producto_id = p.id
+                          AND pe2.sucursal = :sucursal_existencia
+                          AND pe2.existencia > 0
+                          AND pe2.ubicacion IS NOT NULL
+                          AND TRIM(pe2.ubicacion) != ''
+                          AND UPPER(TRIM(pe2.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                    )";
+
+            $params[':sucursal_existencia'] = $sucursal;
+        }
+
         $sql .= " GROUP BY 
                     p.id,
                     p.codigo,
@@ -254,7 +285,10 @@ class Producto
                                 existencia AS existencia_actual
                            FROM producto_existencias
                            WHERE producto_id = :producto_id
-                           AND existencia > 0
+                             AND existencia > 0
+                             AND ubicacion IS NOT NULL
+                             AND TRIM(ubicacion) != ''
+                             AND UPPER(TRIM(ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                            ORDER BY sucursal ASC, ubicacion ASC";
 
                 $stmtUbi = $this->conn->prepare($sqlUbi);
@@ -268,8 +302,11 @@ class Producto
                                 existencia AS existencia_actual
                            FROM producto_existencias
                            WHERE producto_id = :producto_id
-                           AND sucursal = :sucursal
-                           AND existencia > 0
+                             AND sucursal = :sucursal
+                             AND existencia > 0
+                             AND ubicacion IS NOT NULL
+                             AND TRIM(ubicacion) != ''
+                             AND UPPER(TRIM(ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                            ORDER BY existencia ASC, ubicacion ASC";
 
                 $stmtUbi = $this->conn->prepare($sqlUbi);
@@ -280,10 +317,6 @@ class Producto
             }
 
             $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
-
-            if (empty($producto['ubicaciones'])) {
-                $producto['ubicacion'] = '';
-            }
 
             $existencia = $isAdmin
                 ? (int)($producto['existencia_total'] ?? 0)
@@ -530,6 +563,14 @@ class Producto
             $ubicacion = 'SIN UBICACION';
         }
 
+        if ($existencia <= 0) {
+            return $this->eliminarUbicacionExistencia(
+                (int)$producto['id'],
+                $sucursal,
+                $ubicacion
+            );
+        }
+
         $sql = "INSERT INTO producto_existencias (
                     producto_id,
                     sucursal,
@@ -573,18 +614,23 @@ class Producto
             $ubicacionNueva = 'SIN UBICACION';
         }
 
-        if ($existencia < 0) {
-            $existencia = 0;
+        if ($existencia <= 0) {
+            return $this->eliminarUbicacionExistencia(
+                $productoId,
+                $sucursal,
+                $ubicacionAnterior
+            );
         }
 
         try {
             $this->conn->beginTransaction();
 
-            $sqlExiste = "SELECT id, existencia
+            $sqlExiste = "SELECT id
                           FROM producto_existencias
                           WHERE producto_id = :producto_id
-                          AND sucursal = :sucursal
-                          AND ubicacion = :ubicacion";
+                            AND sucursal = :sucursal
+                            AND ubicacion = :ubicacion
+                          LIMIT 1";
 
             $stmtExiste = $this->conn->prepare($sqlExiste);
             $stmtExiste->execute([
@@ -609,8 +655,8 @@ class Producto
 
                 $sqlEliminarAnterior = "DELETE FROM producto_existencias
                                         WHERE producto_id = :producto_id
-                                        AND sucursal = :sucursal
-                                        AND ubicacion = :ubicacion";
+                                          AND sucursal = :sucursal
+                                          AND ubicacion = :ubicacion";
 
                 $stmtEliminarAnterior = $this->conn->prepare($sqlEliminarAnterior);
                 $stmtEliminarAnterior->execute([
@@ -624,8 +670,8 @@ class Producto
                             existencia = :existencia,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE producto_id = :producto_id
-                        AND sucursal = :sucursal
-                        AND ubicacion = :ubicacion_anterior";
+                          AND sucursal = :sucursal
+                          AND ubicacion = :ubicacion_anterior";
 
                 $stmt = $this->conn->prepare($sql);
                 $stmt->execute([
@@ -688,8 +734,8 @@ class Producto
 
             $sqlDelete = "DELETE FROM producto_existencias
                           WHERE producto_id = :producto_id
-                          AND sucursal = :sucursal
-                          AND ubicacion = :ubicacion";
+                            AND sucursal = :sucursal
+                            AND ubicacion = :ubicacion";
 
             $stmtDelete = $this->conn->prepare($sqlDelete);
             $stmtDelete->execute([
@@ -701,7 +747,7 @@ class Producto
             $sqlProducto = "UPDATE productos
                             SET ubicacion = NULL
                             WHERE id = :producto_id
-                            AND ubicacion = :ubicacion";
+                              AND ubicacion = :ubicacion";
 
             $stmtProducto = $this->conn->prepare($sqlProducto);
             $stmtProducto->execute([
@@ -720,21 +766,22 @@ class Producto
             return false;
         }
     }
+
     public function getExistencias(
-    string $buscar = '',
-    int $almacenId = 0,
-    string $estadoStock = '',
-    string $sucursal = '',
-    bool $isAdmin = false
-): array {
-    return $this->getAll(
-        $buscar,
-        $sucursal,
-        $isAdmin,
-        '',
-        '',
-        '',
-        $estadoStock
-    );
-}
+        string $buscar = '',
+        int $almacenId = 0,
+        string $estadoStock = '',
+        string $sucursal = '',
+        bool $isAdmin = false
+    ): array {
+        return $this->getAll(
+            $buscar,
+            $sucursal,
+            $isAdmin,
+            '',
+            '',
+            '',
+            $estadoStock
+        );
+    }
 }

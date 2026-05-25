@@ -1,0 +1,187 @@
+.agotados-page {
+    padding: 20px;
+}
+
+.contador-agotados {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 12px 18px;
+    border-radius: 14px;
+    text-align: center;
+    min-width: 160px;
+}
+
+.contador-agotados span {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.contador-agotados strong {
+    font-size: 28px;
+}
+
+.agotados-filter-card,
+.agotados-table-card {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 18px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.agotados-filter-form {
+    display: grid;
+    grid-template-columns: 2fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.agotados-filter-form label {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    color: #0f4c81;
+    margin-bottom: 6px;
+}
+
+.agotados-filter-form input,
+.agotados-filter-form select {
+    width: 100%;
+    height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    padding: 8px 10px;
+    outline: none;
+}
+
+.agotados-filter-form input:focus,
+.agotados-filter-form select:focus {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.agotados-filter-form .actions {
+    display: flex;
+    gap: 8px;
+}
+
+.agotados-filter-form button,
+.agotados-filter-form a {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 9px;
+    border: none;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agotados-filter-form button {
+    background: #dc2626;
+    color: #fff;
+    cursor: pointer;
+}
+
+.agotados-filter-form a {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.table-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.table-topbar h3 {
+    margin: 0;
+    color: #0f4c81;
+}
+
+.table-topbar span {
+    background: #fee2e2;
+    color: #991b1b;
+    font-weight: 900;
+    padding: 7px 12px;
+    border-radius: 999px;
+}
+
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.agotados-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.agotados-table th {
+    background: #991b1b;
+    color: #ffffff;
+    padding: 10px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.agotados-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+
+.agotados-table tr:hover {
+    background: #fff7f7;
+}
+
+.descripcion {
+    min-width: 280px;
+    white-space: normal !important;
+    font-weight: 700;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.badge-agotado {
+    display: inline-flex;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 900;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.empty-table {
+    text-align: center;
+    padding: 24px !important;
+    color: #64748b;
+    font-weight: 800;
+}
+
+@media (max-width: 900px) {
+    .agotados-filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .agotados-filter-form .actions {
+        flex-direction: column;
+    }
+    .agotados-filter-form .btn-excel {
+    background: #15803d;
+    color: #ffffff;
+}
+
+.agotados-filter-form .btn-excel:hover {
+    background: #166534;
+}
+}

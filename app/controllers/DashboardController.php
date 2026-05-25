@@ -27,42 +27,26 @@ class DashboardController
         $this->almacenId = (int)($usuario['almacen_id'] ?? 0);
     }
 
+    private function esAdmin(): bool
+    {
+        return in_array($this->rol, ['ADMINISTRADOR', 'ADMIN'], true);
+    }
+
     private function sucursalesPermitidas(): array
     {
-        if ($this->rol === 'ADMINISTRADOR') {
+        if ($this->esAdmin()) {
             return [];
         }
 
-        if ($this->almacenId <= 0) {
-            return [];
-        }
-
-        $stmt = $this->conn->prepare("
-            SELECT nombre
-            FROM almacenes
-            WHERE id = :id
-            LIMIT 1
-        ");
-
-        $stmt->execute([
-            ':id' => $this->almacenId
-        ]);
-
-        $almacen = strtoupper(trim($stmt->fetchColumn() ?: ''));
-
-        if ($almacen === '') {
-            return [];
-        }
-
-        if (str_contains($almacen, 'HIDALGO')) {
+        if ($this->almacenId === 1) {
             return ['CIUDAD HIDALGO', 'CD HIDALGO'];
         }
 
-        if (str_contains($almacen, 'TUXTLA')) {
+        if ($this->almacenId === 2 || $this->almacenId === 3) {
             return ['TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ'];
         }
 
-        return [$almacen];
+        return [];
     }
 
     private function agregarFiltroSucursal(string &$sql, array &$params, string $alias = 'pe'): void
@@ -73,33 +57,36 @@ class DashboardController
             return;
         }
 
-        $placeholders = [];
+        $marks = [];
 
-        foreach ($sucursales as $index => $sucursal) {
-            $key = ":sucursal_{$alias}_{$index}";
-            $placeholders[] = $key;
+        foreach ($sucursales as $i => $sucursal) {
+            $key = ":sucursal_{$alias}_{$i}";
+            $marks[] = $key;
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER({$alias}.sucursal) IN (" . implode(',', $placeholders) . ") ";
+        $sql .= " AND UPPER({$alias}.sucursal) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
     }
 
     private function agregarFiltroMovimientos(string &$sql, array &$params): void
     {
-        if ($this->rol !== 'ADMINISTRADOR' && $this->almacenId > 0) {
+        if (!$this->esAdmin() && $this->almacenId > 0) {
             $sql .= " AND m.almacen_id = :almacen_id ";
             $params[':almacen_id'] = $this->almacenId;
         }
     }
 
-    public function getIndicadores(): array
+    private function subqueryInventario(array &$params): string
     {
-        $params = [];
-        $stockMinimo = $this->stockMinimoDashboard;
-
         $subquery = "SELECT
                         pe.producto_id,
-                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia
+                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia,
+                        GROUP_CONCAT(
+                            DISTINCT COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
+                            ORDER BY pe.ubicacion ASC
+                            SEPARATOR ', '
+                        ) AS ubicaciones,
+                        MIN(pe.sucursal) AS sucursal
                      FROM producto_existencias pe
                      WHERE 1 = 1";
 
@@ -107,22 +94,45 @@ class DashboardController
 
         $subquery .= " GROUP BY pe.producto_id";
 
+        return $subquery;
+    }
+
+    public function getIndicadores(): array
+    {
+        $params = [];
+        $stockMinimo = $this->stockMinimoDashboard;
+        $subquery = $this->subqueryInventario($params);
+
         $sql = "SELECT
-                    COUNT(p.id) AS total_productos,
+                    SUM(CASE
+                        WHEN COALESCE(stock.total_existencia, 0) > 0
+                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
+                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                        THEN 1 ELSE 0
+                    END) AS total_productos,
 
                     SUM(CASE
-                        WHEN COALESCE(stock.total_existencia, 0) <= 0
+                        WHEN stock.producto_id IS NOT NULL
+                         AND (
+                            COALESCE(stock.total_existencia, 0) <= 0
+                            OR COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci = ''
+                            OR UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                         )
                         THEN 1 ELSE 0
                     END) AS agotados,
 
                     SUM(CASE
                         WHEN COALESCE(stock.total_existencia, 0) > 0
                          AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
+                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
+                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                         THEN 1 ELSE 0
                     END) AS bajo_stock,
 
                     SUM(CASE
                         WHEN COALESCE(stock.total_existencia, 0) > {$stockMinimo}
+                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
+                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                         THEN 1 ELSE 0
                     END) AS en_stock
 
@@ -187,34 +197,26 @@ class DashboardController
     {
         $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
-
-        $subquery = "SELECT
-                        pe.producto_id,
-                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia,
-                        MIN(NULLIF(TRIM(pe.ubicacion), '')) AS ubicacion
-                     FROM producto_existencias pe
-                     WHERE 1 = 1";
-
-        $this->agregarFiltroSucursal($subquery, $params, 'pe');
-
-        $subquery .= " GROUP BY pe.producto_id";
+        $subquery = $this->subqueryInventario($params);
 
         $sql = "SELECT
                     p.id,
                     p.codigo,
                     p.descripcion,
                     {$stockMinimo} AS stock_minimo,
-                    COALESCE(stock.ubicacion, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
+                    COALESCE(stock.ubicaciones, 'SIN UBICACION') AS ubicacion,
                     COALESCE(stock.total_existencia, 0) AS existencia_actual
 
                 FROM productos p
 
-                LEFT JOIN ({$subquery}) AS stock
+                INNER JOIN ({$subquery}) AS stock
                     ON stock.producto_id = p.id
 
                 WHERE p.estado = 1
                   AND COALESCE(stock.total_existencia, 0) > 0
                   AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
+                  AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
+                  AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
 
                 ORDER BY existencia_actual ASC, p.descripcion ASC
 
@@ -264,7 +266,7 @@ class DashboardController
         $params = [];
 
         $sql = "SELECT
-                    COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN') AS ubicacion,
+                    COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
                     SUM(COALESCE(pe.existencia, 0)) AS total
 
                 FROM producto_existencias pe
@@ -273,11 +275,14 @@ class DashboardController
                     ON p.id = pe.producto_id
 
                 WHERE p.estado = 1
-                  AND COALESCE(pe.existencia, 0) > 0";
+                  AND COALESCE(pe.existencia, 0) > 0
+                  AND pe.ubicacion IS NOT NULL
+                  AND TRIM(pe.ubicacion) COLLATE utf8mb4_general_ci != ''
+                  AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
 
         $this->agregarFiltroSucursal($sql, $params, 'pe');
 
-        $sql .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACIÓN')
+        $sql .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
                   ORDER BY total DESC
                   LIMIT 10";
 

@@ -12,13 +12,29 @@ $user = currentUser();
 $rol = strtoupper(trim($user['rol'] ?? ''));
 $esAdmin = in_array($rol, ['ADMINISTRADOR', 'ADMIN'], true);
 
+$almacenIdSesion = (int)($user['almacen_id'] ?? 0);
+
+if ($almacenIdSesion === 1) {
+    $almacenSesionNombre = 'CIUDAD HIDALGO';
+} elseif ($almacenIdSesion === 2 || $almacenIdSesion === 3) {
+    $almacenSesionNombre = 'TUXTLA';
+} else {
+    $almacenSesionNombre = '';
+}
+
 $filtros = [
     'buscar' => trim($_GET['buscar'] ?? ''),
     'almacen_id' => isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0,
 ];
 
+if (!$esAdmin) {
+    $filtros['almacen_id'] = $almacenIdSesion;
+}
+
 $almacenes = $controller->almacenes();
 $productos = $controller->listar($filtros);
+
+$queryExport = http_build_query($filtros);
 
 $moduleCss = 'agotados';
 include __DIR__ . '/../app/views/layouts/header.php';
@@ -29,7 +45,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
     <div class="module-header">
         <div>
             <h2>Agotados</h2>
-            <p>Productos sin ubicación o sin existencia registrados en el almacén.</p>
+            <p>
+                Productos sin existencia o sin ubicación registrados en almacén.
+                <?php if (!$esAdmin && $almacenSesionNombre !== ''): ?>
+                    <strong>Almacén actual: <?= e($almacenSesionNombre) ?></strong>
+                <?php endif; ?>
+            </p>
         </div>
 
         <div class="contador-agotados">
@@ -40,11 +61,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
     <div class="agotados-filter-card">
         <form method="GET" action="agotados.php" class="agotados-filter-form">
+
             <div class="field-search">
                 <label>Buscar producto</label>
-                <input 
-                    type="text" 
-                    name="buscar" 
+                <input
+                    type="text"
+                    name="buscar"
                     value="<?= e($filtros['buscar']) ?>"
                     placeholder="Código, barras, descripción, proveedor, categoría..."
                 >
@@ -54,9 +76,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <div>
                     <label>Almacén</label>
                     <select name="almacen_id">
-                        <option value="0">Todos</option>
+                        <option value="0">Todos los almacenes</option>
+
                         <?php foreach ($almacenes as $almacen): ?>
-                            <option 
+                            <option
                                 value="<?= (int)$almacen['id'] ?>"
                                 <?= (int)$filtros['almacen_id'] === (int)$almacen['id'] ? 'selected' : '' ?>
                             >
@@ -67,17 +90,21 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 </div>
             <?php endif; ?>
 
-           <div class="actions">
-    <button type="submit">Filtrar</button>
-    <a href="agotados.php">Limpiar</a>
+            <div class="actions">
+                <button type="submit">Filtrar</button>
 
-    <a 
-        href="exportar_agotados_excel.php?<?= http_build_query($filtros) ?>" 
-        class="btn-excel"
-    >
-        Exportar Excel
-    </a>
-</div>
+                <a href="agotados.php">
+                    Limpiar
+                </a>
+
+                <a
+                    href="exportar_agotados_excel.php?<?= e($queryExport) ?>"
+                    class="btn-excel"
+                >
+                    Exportar Excel
+                </a>
+            </div>
+
         </form>
     </div>
 
@@ -109,9 +136,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <?php foreach ($productos as $producto): ?>
                             <?php
                                 $existencia = (int)($producto['existencia'] ?? 0);
-                                $ubicacion = trim($producto['ubicacion'] ?? '');
+                                $ubicacion = strtoupper(trim($producto['ubicacion'] ?? ''));
 
-                                if ($existencia <= 0 && ($ubicacion === '' || strtoupper($ubicacion) === 'SIN UBICACION')) {
+                                if (
+                                    $existencia <= 0 &&
+                                    ($ubicacion === '' || $ubicacion === 'SIN UBICACION' || $ubicacion === 'SIN UBICACIÓN')
+                                ) {
                                     $motivo = 'SIN UBICACIÓN Y SIN EXISTENCIA';
                                 } elseif ($existencia <= 0) {
                                     $motivo = 'SIN EXISTENCIA';
@@ -127,18 +157,20 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 <td><?= e($producto['categoria'] ?? 'Sin categoría') ?></td>
                                 <td><?= e($producto['proveedor'] ?? 'Sin proveedor') ?></td>
                                 <td><?= e($producto['laboratorio'] ?? '') ?></td>
-                                <td><?= e($producto['sucursal'] ?? 'SIN ALMACEN') ?></td>
+                                <td><?= e($producto['sucursal'] ?? '') ?></td>
                                 <td><?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?></td>
                                 <td class="text-right"><?= number_format($existencia) ?></td>
                                 <td>
-                                    <span class="badge-agotado"><?= e($motivo) ?></span>
+                                    <span class="badge-agotado">
+                                        <?= e($motivo) ?>
+                                    </span>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
                             <td colspan="10" class="empty-table">
-                                No se encontraron productos agotados.
+                                No se encontraron productos agotados para este almacén.
                             </td>
                         </tr>
                     <?php endif; ?>

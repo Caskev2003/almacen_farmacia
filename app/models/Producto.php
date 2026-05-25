@@ -151,7 +151,7 @@ class Producto
                         AND pe.existencia > 0
                         AND pe.ubicacion IS NOT NULL
                         AND TRIM(pe.ubicacion) != ''
-                        AND UPPER(TRIM(pe.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                        AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
 
                     WHERE p.estado = 1";
         } else {
@@ -184,7 +184,7 @@ class Producto
 
                     LEFT JOIN producto_existencias pe 
                         ON pe.producto_id = p.id
-                        AND pe.sucursal = :sucursal
+                        AND UPPER(pe.sucursal) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
                         AND pe.existencia > 0
                         AND pe.ubicacion IS NOT NULL
                         AND TRIM(pe.ubicacion) != ''
@@ -235,14 +235,14 @@ class Producto
                           AND pe2.existencia > 0
                           AND pe2.ubicacion IS NOT NULL
                           AND TRIM(pe2.ubicacion) != ''
-                          AND UPPER(TRIM(pe2.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                          AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                     )";
         } else {
             $sql .= " AND EXISTS (
                         SELECT 1
                         FROM producto_existencias pe2
                         WHERE pe2.producto_id = p.id
-                          AND pe2.sucursal = :sucursal_existencia
+                          AND UPPER(pe2.sucursal) COLLATE utf8mb4_general_ci = UPPER(:sucursal_existencia)
                           AND pe2.existencia > 0
                           AND pe2.ubicacion IS NOT NULL
                           AND TRIM(pe2.ubicacion) != ''

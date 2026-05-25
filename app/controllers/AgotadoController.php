@@ -107,22 +107,28 @@ class AgotadoController
                     pr.nombre AS proveedor,
                     p.laboratorio,
                     p.unidad_medida,
-                    COALESCE(stock.sucursal, 'SIN ALMACEN') AS sucursal,
-                    COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                    stock.sucursal AS sucursal,
+                    COALESCE(stock.ubicaciones, 'SIN UBICACION') AS ubicacion,
                     COALESCE(stock.existencia_total, 0) AS existencia
                 FROM productos p
+
                 LEFT JOIN categorias c 
                     ON p.categoria_id = c.id
+
                 LEFT JOIN proveedores pr 
                     ON p.proveedor_id = pr.id
-                LEFT JOIN ({$subquery}) AS stock 
+
+                INNER JOIN ({$subquery}) AS stock 
                     ON stock.producto_id = p.id
+
                 WHERE p.estado = 1
+                AND stock.sucursal IS NOT NULL
+                AND stock.sucursal COLLATE utf8mb4_general_ci <> ''
                 AND (
                     COALESCE(stock.existencia_total, 0) <= 0
-                    OR COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '') COLLATE utf8mb4_general_ci = ''
-                    OR UPPER(COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '')) COLLATE utf8mb4_general_ci = 'SIN UBICACION'
-                    OR UPPER(COALESCE(stock.ubicaciones, NULLIF(TRIM(p.ubicacion), ''), '')) COLLATE utf8mb4_general_ci = 'SIN UBICACIÓN'
+                    OR COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci = ''
+                    OR UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci = 'SIN UBICACION'
+                    OR UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci = 'SIN UBICACIÓN'
                 )";
 
         if (!empty($filtros['buscar'])) {
@@ -134,6 +140,7 @@ class AgotadoController
                         OR pr.nombre COLLATE utf8mb4_general_ci LIKE :buscar
                         OR p.laboratorio COLLATE utf8mb4_general_ci LIKE :buscar
                         OR stock.ubicaciones COLLATE utf8mb4_general_ci LIKE :buscar
+                        OR stock.sucursal COLLATE utf8mb4_general_ci LIKE :buscar
                     )";
 
             $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';

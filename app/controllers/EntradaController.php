@@ -21,6 +21,14 @@ class EntradaController
         return (int)($usuario['almacen_id'] ?? 0);
     }
 
+    private function limpiarUbicacion(?string $ubicacion): string
+    {
+        $ubicacion = strtoupper(trim((string)$ubicacion));
+        $ubicacion = str_replace('SIN UBICACIÓN', 'SIN UBICACION', $ubicacion);
+
+        return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
+    }
+
     public function almacenes(): array
     {
         return $this->movimientoModel->getAlmacenes();
@@ -84,11 +92,9 @@ class EntradaController
         $rol = strtoupper(trim($usuario['rol'] ?? ''));
         $almacenSesionId = (int)($usuario['almacen_id'] ?? 0);
 
-        if ($rol === 'ADMINISTRADOR') {
-            $almacenId = (int)($postData['almacen_id'] ?? 0);
-        } else {
-            $almacenId = $almacenSesionId;
-        }
+        $almacenId = $rol === 'ADMINISTRADOR'
+            ? (int)($postData['almacen_id'] ?? 0)
+            : $almacenSesionId;
 
         if ($almacenId <= 0) {
             return [
@@ -139,11 +145,7 @@ class EntradaController
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
             $lote = trim($lotes[$i] ?? '');
             $caducidad = trim($caducidades[$i] ?? '');
-            $ubicacion = strtoupper(trim($ubicaciones[$i] ?? ''));
-
-            if ($ubicacion === '') {
-                $ubicacion = 'SIN UBICACION';
-            }
+            $ubicacion = $this->limpiarUbicacion($ubicaciones[$i] ?? '');
 
             if ($productoId <= 0) {
                 continue;
@@ -160,6 +162,13 @@ class EntradaController
                 return [
                     'success' => false,
                     'message' => 'El costo unitario no puede ser negativo.'
+                ];
+            }
+
+            if ($ubicacion === 'SIN UBICACION') {
+                return [
+                    'success' => false,
+                    'message' => 'Debes escribir o seleccionar una ubicación válida para cada producto.'
                 ];
             }
 

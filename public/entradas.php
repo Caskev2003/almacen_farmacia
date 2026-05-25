@@ -48,17 +48,17 @@ date_default_timezone_set('America/Mexico_City');
 $ubicacionesGenerales = [];
 
 foreach ($productos as $producto) {
-    $ubicacionProducto = trim((string)($producto['ubicacion'] ?? ''));
+    $ubicacionProducto = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
 
-    if ($ubicacionProducto !== '') {
+    if ($ubicacionProducto !== '' && $ubicacionProducto !== 'SIN UBICACION') {
         $ubicacionesGenerales[$ubicacionProducto] = $ubicacionProducto;
     }
 
     if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
         foreach ($producto['ubicaciones'] as $ubicacionItem) {
-            $ubicacionMultiple = trim((string)($ubicacionItem['ubicacion'] ?? ''));
+            $ubicacionMultiple = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
 
-            if ($ubicacionMultiple !== '') {
+            if ($ubicacionMultiple !== '' && $ubicacionMultiple !== 'SIN UBICACION') {
                 $ubicacionesGenerales[$ubicacionMultiple] = $ubicacionMultiple;
             }
         }
@@ -168,6 +168,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <option value="REMISION">Remisión</option>
                     <option value="TICKET">Ticket</option>
                     <option value="AJUSTE">Ajuste</option>
+                    <option value="TRASPASO">TRASPASO</option>
                     <option value="OTRO">Otro</option>
                 </select>
             </div>
@@ -212,12 +213,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                             if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
                                 foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = trim((string)($ubicacionItem['ubicacion'] ?? ''));
+                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '') {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION') {
                                         $ubicacionesProducto[] = [
-                                            'ubicacion' => strtoupper($ubicacionTmp),
+                                            'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
                                         ];
                                     }
@@ -225,11 +226,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             }
 
                             if (empty($ubicacionesProducto)) {
-                                $ubicacionNormal = trim((string)($producto['ubicacion'] ?? ''));
+                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
 
-                                if ($ubicacionNormal !== '') {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION') {
                                     $ubicacionesProducto[] = [
-                                        'ubicacion' => strtoupper($ubicacionNormal),
+                                        'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => (int)($producto['existencia_actual'] ?? 0),
                                     ];
                                 }
@@ -276,13 +277,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <div class="salida-field">
-                <label>Ubicación</label>
+                <label>Ubicación *</label>
                 <input
                     type="text"
                     id="ubicacion_input"
                     list="lista_ubicaciones_entrada"
                     autocomplete="off"
-                    placeholder="Seleccione o escriba ubicación"
+                    placeholder="Ejemplo: R1N1Z01"
                 >
 
                 <datalist id="lista_ubicaciones_entrada">
@@ -292,7 +293,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 </datalist>
 
                 <small style="display:block; margin-top:4px; color:#64748b; font-size:11px;">
-                    Puedes seleccionar una ubicación existente o escribir una nueva.
+                    La entrada asigna almacén, ubicación y existencia al producto.
                 </small>
             </div>
 
@@ -389,12 +390,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                             if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
                                 foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = trim((string)($ubicacionItem['ubicacion'] ?? ''));
+                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '') {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION') {
                                         $ubicacionesProductoModal[] = [
-                                            'ubicacion' => strtoupper($ubicacionTmp),
+                                            'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
                                         ];
                                     }
@@ -402,11 +403,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             }
 
                             if (empty($ubicacionesProductoModal)) {
-                                $ubicacionNormal = trim((string)($producto['ubicacion'] ?? ''));
+                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
 
-                                if ($ubicacionNormal !== '') {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION') {
                                     $ubicacionesProductoModal[] = [
-                                        'ubicacion' => strtoupper($ubicacionNormal),
+                                        'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => (int)($producto['existencia_actual'] ?? 0),
                                     ];
                                 }
@@ -416,7 +417,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
                             });
 
-                            $ubicacionSugerida = $ubicacionesProductoModal[0]['ubicacion'] ?? ($producto['ubicacion'] ?? '');
+                            $ubicacionSugerida = $ubicacionesProductoModal[0]['ubicacion'] ?? '';
 
                             $textoUbicaciones = [];
 
@@ -433,8 +434,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             <td><?= e($producto['codigo']) ?></td>
                             <td><?= e($producto['descripcion']) ?></td>
                             <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
-                            <td><?= e($ubicacionSugerida) ?></td>
-                            <td><?= e($textoUbicacionesPlano ?: ($producto['ubicacion'] ?? '')) ?></td>
+                            <td><?= e($ubicacionSugerida ?: 'Sin ubicación sugerida') ?></td>
+                            <td><?= e($textoUbicacionesPlano ?: 'Sin ubicaciones activas') ?></td>
                             <td>
                                 <button 
                                     type="button" 
@@ -475,18 +476,6 @@ const referenciaFinalInput = document.getElementById('referencia_final');
 const modalProductos = document.getElementById('modalProductos');
 const buscarProductoInput = document.getElementById('buscarProductoInput');
 
-
-function limpiarSinUbicacionEntrada() {
-    const valor = ubicacionInput.value.trim().toUpperCase();
-
-    if (valor === 'SIN UBICACION') {
-        ubicacionInput.value = '';
-        cargarCatalogoUbicacionesEntrada();
-    }
-}
-
-ubicacionInput.addEventListener('focus', limpiarSinUbicacionEntrada);
-ubicacionInput.addEventListener('click', limpiarSinUbicacionEntrada);
 function escapeHtml(text) {
     return String(text ?? '')
         .replace(/&/g, '&amp;')
@@ -494,6 +483,12 @@ function escapeHtml(text) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/'/g, '&#039;');
+}
+
+function limpiarUbicacion(valor) {
+    valor = String(valor || '').trim().toUpperCase();
+    valor = valor.replace('SIN UBICACIÓN', 'SIN UBICACION');
+    return valor || 'SIN UBICACION';
 }
 
 function cargarCatalogoUbicacionesEntrada() {
@@ -551,18 +546,16 @@ function obtenerUbicacionesProducto(option) {
 
     return ubicaciones
         .map(item => ({
-            ubicacion: String(item.ubicacion || '').trim().toUpperCase(),
+            ubicacion: limpiarUbicacion(item.ubicacion || ''),
             existencia_actual: parseInt(item.existencia_actual || item.existencia || '0', 10)
         }))
-        .filter(item => item.ubicacion !== '');
+        .filter(item => item.ubicacion !== 'SIN UBICACION');
 }
 
 function cargarUbicacionesDelProducto(option) {
     const datalist = document.getElementById('lista_ubicaciones_entrada');
 
     if (!datalist || !option) return;
-
-    datalist.innerHTML = '';
 
     cargarCatalogoUbicacionesEntrada();
 
@@ -582,16 +575,29 @@ function cargarUbicacionesDelProducto(option) {
         }
     });
 }
+
 function obtenerUbicacionSugerida(option) {
     const ubicaciones = obtenerUbicacionesProducto(option)
         .sort((a, b) => a.existencia_actual - b.existencia_actual);
 
     if (ubicaciones.length === 0) {
-        return option?.dataset.ubicacion || '';
+        return '';
     }
 
     return ubicaciones[0].ubicacion || '';
 }
+
+function limpiarSinUbicacionEntrada() {
+    const valor = limpiarUbicacion(ubicacionInput.value);
+
+    if (valor === 'SIN UBICACION') {
+        ubicacionInput.value = '';
+        cargarCatalogoUbicacionesEntrada();
+    }
+}
+
+ubicacionInput.addEventListener('focus', limpiarSinUbicacionEntrada);
+ubicacionInput.addEventListener('click', limpiarSinUbicacionEntrada);
 
 productoSelect.addEventListener('change', cargarDatosProductoSeleccionado);
 
@@ -606,10 +612,12 @@ function cargarDatosProductoSeleccionado() {
         return;
     }
 
+    const ubicacionSugerida = obtenerUbicacionSugerida(option);
+
     descripcionInput.value = option.dataset.descripcion || '';
     costoInput.value = option.dataset.costo || '0.00';
-    ubicacionInput.value = '';
-ubicacionInput.placeholder = 'Escribe nueva ubicación';
+    ubicacionInput.value = ubicacionSugerida || '';
+    ubicacionInput.placeholder = 'Escribe nueva ubicación';
 
     cargarUbicacionesDelProducto(option);
 }
@@ -670,7 +678,7 @@ function agregarProductoDetalle() {
     const cantidad = parseInt(cantidadInput.value || '0', 10);
     const costo = parseFloat(costoInput.value || '0');
     const lote = loteInput.value.trim();
-    const ubicacion = ubicacionInput.value.trim().toUpperCase();
+    const ubicacion = limpiarUbicacion(ubicacionInput.value);
 
     if (cantidad <= 0) {
         alert('La cantidad debe ser mayor a 0.');
@@ -682,8 +690,8 @@ function agregarProductoDetalle() {
         return;
     }
 
-    if (!ubicacion) {
-        alert('Debes ingresar una ubicación.');
+    if (ubicacion === 'SIN UBICACION') {
+        alert('Debes ingresar una ubicación válida.');
         ubicacionInput.focus();
         return;
     }
@@ -718,16 +726,16 @@ function agregarProductoDetalle() {
         <td>${escapeHtml(codigo)}</td>
         <td>${escapeHtml(descripcion)}</td>
         <td>
-    <input
-        type="number"
-        min="0"
-        step="0.01"
-        value="${escapeHtml(costo.toFixed(2))}"
-        class="input-precio-detalle"
-        style="width:85px;"
-        oninput="actualizarPrecioFilaEntrada(this)"
-    >
-</td>
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                value="${escapeHtml(costo.toFixed(2))}"
+                class="input-precio-detalle"
+                style="width:85px;"
+                oninput="actualizarPrecioFilaEntrada(this)"
+            >
+        </td>
         <td>${escapeHtml(lote)}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
@@ -761,6 +769,40 @@ function actualizarPrecioFilaEntrada(input) {
 
     if (inputHiddenPrecio) {
         inputHiddenPrecio.value = precio.toFixed(2);
+    }
+
+    const nuevoImporte = cantidad * precio;
+
+    const tdImporte = tr.querySelector('.importe-fila');
+
+    if (tdImporte) {
+        tdImporte.dataset.importe = nuevoImporte;
+        tdImporte.textContent = '$' + nuevoImporte.toFixed(2);
+    }
+
+    actualizarTotalEntrada();
+    guardarBorradorEntrada();
+}
+
+function actualizarCantidadFilaEntrada(input) {
+    const tr = input.closest('tr');
+
+    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
+    input.value = cantidadTexto;
+
+    if (cantidadTexto === '') return;
+
+    const cantidad = parseInt(cantidadTexto, 10);
+
+    if (cantidad <= 0) return;
+
+    const precioInputFila = tr.querySelector('.input-precio-detalle');
+    const precio = parseFloat(precioInputFila?.value || '0');
+
+    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
+
+    if (inputHiddenCantidad) {
+        inputHiddenCantidad.value = cantidad;
     }
 
     const nuevoImporte = cantidad * precio;
@@ -833,9 +875,24 @@ document.getElementById('formEntrada').addEventListener('submit', function (e) {
     if (document.querySelectorAll('input[name="producto_id[]"]').length === 0) {
         e.preventDefault();
         alert('Debes agregar al menos un producto.');
-    } else {
-        localStorage.removeItem('borradorEntrada');
+        return;
     }
+
+    let ubicacionInvalida = false;
+
+    document.querySelectorAll('input[name="ubicacion[]"]').forEach(input => {
+        if (limpiarUbicacion(input.value) === 'SIN UBICACION') {
+            ubicacionInvalida = true;
+        }
+    });
+
+    if (ubicacionInvalida) {
+        e.preventDefault();
+        alert('Todas las partidas deben tener una ubicación válida.');
+        return;
+    }
+
+    localStorage.removeItem('borradorEntrada');
 });
 
 function guardarBorradorEntrada() {
@@ -899,40 +956,6 @@ document.addEventListener('DOMContentLoaded', function () {
     cargarBorradorEntrada();
     ponerFechaActualEntrada();
 });
-
-function actualizarCantidadFilaEntrada(input) {
-    const tr = input.closest('tr');
-
-    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
-    input.value = cantidadTexto;
-
-    if (cantidadTexto === '') return;
-
-    const cantidad = parseInt(cantidadTexto, 10);
-
-    if (cantidad <= 0) return;
-
-    const precioInputFila = tr.querySelector('.input-precio-detalle');
-    const precio = parseFloat(precioInputFila?.value || '0');
-
-    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
-
-    if (inputHiddenCantidad) {
-        inputHiddenCantidad.value = cantidad;
-    }
-
-    const nuevoImporte = cantidad * precio;
-
-    const tdImporte = tr.querySelector('.importe-fila');
-
-    if (tdImporte) {
-        tdImporte.dataset.importe = nuevoImporte;
-        tdImporte.textContent = '$' + nuevoImporte.toFixed(2);
-    }
-
-    actualizarTotalEntrada();
-    guardarBorradorEntrada();
-}
 </script>
 
 <?php

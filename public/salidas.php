@@ -42,30 +42,13 @@ $folio = $controller->generarFolio($almacenSesion);
 $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 date_default_timezone_set('America/Mexico_City');
-$fechaActual = date('Y-m-d\TH:i');
-
-/*
-    IMPORTANTE:
-    Este archivo ya queda preparado para recibir productos con varias ubicaciones.
-
-    Para que funcione al 100%, en el siguiente archivo vamos a modificar:
-    app/controllers/SalidaController.php
-
-    La idea es que cada producto pueda traer un arreglo así:
-    $producto['ubicaciones'] = [
-        ['ubicacion' => 'R1N1Z01', 'existencia_actual' => 500],
-        ['ubicacion' => 'R4N1Z05', 'existencia_actual' => 300],
-    ];
-
-    Mientras todavía no exista ese arreglo, este archivo usa la ubicación normal actual.
-*/
 
 $ubicacionesGenerales = [];
 
 foreach ($productos as $producto) {
     $ubicacionProducto = trim((string)($producto['ubicacion'] ?? ''));
 
-    if ($ubicacionProducto !== '') {
+    if ($ubicacionProducto !== '' && strtoupper($ubicacionProducto) !== 'SIN UBICACION') {
         $ubicacionesGenerales[$ubicacionProducto] = $ubicacionProducto;
     }
 
@@ -73,7 +56,7 @@ foreach ($productos as $producto) {
         foreach ($producto['ubicaciones'] as $ubicacionItem) {
             $ubicacionMultiple = trim((string)($ubicacionItem['ubicacion'] ?? ''));
 
-            if ($ubicacionMultiple !== '') {
+            if ($ubicacionMultiple !== '' && strtoupper($ubicacionMultiple) !== 'SIN UBICACION') {
                 $ubicacionesGenerales[$ubicacionMultiple] = $ubicacionMultiple;
             }
         }
@@ -213,10 +196,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                             if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
                                 foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = trim((string)($ubicacionItem['ubicacion'] ?? ''));
+                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '') {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' && $existenciaTmp > 0) {
                                         $ubicacionesProducto[] = [
                                             'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
@@ -226,16 +209,28 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             }
 
                             if (empty($ubicacionesProducto)) {
-                                $ubicacionNormal = trim((string)($producto['ubicacion'] ?? ''));
-                                $existenciaNormal = (int)($producto['existencia_actual'] ?? 0);
+                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
+                                $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
 
-                                if ($ubicacionNormal !== '') {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' && $existenciaNormal > 0) {
                                     $ubicacionesProducto[] = [
                                         'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => $existenciaNormal,
                                     ];
                                 }
                             }
+
+                            usort($ubicacionesProducto, function ($a, $b) {
+                                return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
+                            });
+
+                            $existenciaTotalProducto = 0;
+
+                            foreach ($ubicacionesProducto as $ubiProd) {
+                                $existenciaTotalProducto += (int)$ubiProd['existencia_actual'];
+                            }
+
+                            $ubicacionSugerida = $ubicacionesProducto[0]['ubicacion'] ?? '';
 
                             $ubicacionesJson = htmlspecialchars(
                                 json_encode($ubicacionesProducto, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -249,9 +244,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             data-descripcion="<?= e($producto['descripcion']) ?>"
                             data-costo="<?= e((string)$producto['precio_compra']) ?>"
                             data-precio="<?= e((string)$producto['precio_compra']) ?>"
-                            data-existencia="<?= e((string)$producto['existencia_actual']) ?>"
+                            data-existencia="<?= e((string)$existenciaTotalProducto) ?>"
                             data-unidad="<?= e($producto['unidad_medida']) ?>"
-                            data-ubicacion="<?= e($producto['ubicacion'] ?? '') ?>"
+                            data-ubicacion="<?= e($ubicacionSugerida) ?>"
                             data-ubicaciones="<?= $ubicacionesJson ?>"
                         >
                             <?= e($producto['codigo']) ?>
@@ -275,7 +270,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <div class="salida-field mini-field">
-                <label>Existencia Actual</label>
+                <label>Existencia total</label>
                 <input type="text" id="existencia_input" value="0" readonly>
             </div>
 
@@ -285,7 +280,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <div class="salida-field">
-                <label>Ubicación</label>
+                <label>Ubicación sugerida</label>
                 <input 
                     type="text" 
                     id="ubicacion_input" 
@@ -299,7 +294,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php endforeach; ?>
                 </datalist>
                 <small style="display:block; margin-top:4px; color:#64748b; font-size:11px;">
-                    Puedes seleccionar una ubicación existente o escribir una nueva.
+                    Si la cantidad supera esta ubicación, el sistema completará con las siguientes ubicaciones disponibles.
                 </small>
             </div>
 
@@ -322,9 +317,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Existencia</th>
+                        <th>Existencia total</th>
                         <th>Precio U.</th>
-                        <th>Ubicación</th>
+                        <th>Ubicación inicial</th>
                         <th>Importe</th>
                         <th>Acción</th>
                     </tr>
@@ -380,7 +375,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Existencia</th>
+                        <th>Existencia total</th>
                         <th>Precio Unitario</th>
                         <th>Ubicación sugerida</th>
                         <th>Ubicaciones</th>
@@ -394,10 +389,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                             if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
                                 foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = trim((string)($ubicacionItem['ubicacion'] ?? ''));
+                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '') {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' && $existenciaTmp > 0) {
                                         $ubicacionesProductoModal[] = [
                                             'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
@@ -407,10 +402,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             }
 
                             if (empty($ubicacionesProductoModal)) {
-                                $ubicacionNormal = trim((string)($producto['ubicacion'] ?? ''));
-                                $existenciaNormal = (int)($producto['existencia_actual'] ?? 0);
+                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
+                                $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
 
-                                if ($ubicacionNormal !== '') {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' && $existenciaNormal > 0) {
                                     $ubicacionesProductoModal[] = [
                                         'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => $existenciaNormal,
@@ -422,35 +417,40 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
                             });
 
-                            $ubicacionSugerida = $ubicacionesProductoModal[0]['ubicacion'] ?? ($producto['ubicacion'] ?? '');
-
+                            $existenciaTotalModal = 0;
                             $textoUbicaciones = [];
+
                             foreach ($ubicacionesProductoModal as $ubicacionItem) {
+                                $existenciaTotalModal += (int)$ubicacionItem['existencia_actual'];
                                 $textoUbicaciones[] = $ubicacionItem['ubicacion'] . ' (' . (int)$ubicacionItem['existencia_actual'] . ')';
                             }
 
+                            $ubicacionSugerida = $ubicacionesProductoModal[0]['ubicacion'] ?? '';
                             $textoUbicacionesPlano = implode(', ', $textoUbicaciones);
                         ?>
-                        <tr 
-                            data-busqueda="<?= e(strtolower($producto['codigo'] . ' ' . $producto['descripcion'] . ' ' . $producto['unidad_medida'] . ' ' . $ubicacionSugerida . ' ' . $textoUbicacionesPlano)) ?>"
-                        >
-                            <td><?= e($producto['codigo']) ?></td>
-                            <td><?= e($producto['descripcion']) ?></td>
-                            <td><?= e($producto['unidad_medida']) ?></td>
-                            <td><?= e((string)$producto['existencia_actual']) ?></td>
-                            <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
-                            <td><?= e($ubicacionSugerida) ?></td>
-                            <td><?= e($textoUbicacionesPlano ?: ($producto['ubicacion'] ?? '')) ?></td>
-                            <td>
-                                <button 
-                                    type="button" 
-                                    class="btn-seleccionar-producto"
-                                    onclick="seleccionarProductoModal('<?= (int)$producto['id'] ?>')"
-                                >
-                                    Seleccionar
-                                </button>
-                            </td>
-                        </tr>
+
+                        <?php if ($existenciaTotalModal > 0): ?>
+                            <tr 
+                                data-busqueda="<?= e(strtolower($producto['codigo'] . ' ' . $producto['descripcion'] . ' ' . $producto['unidad_medida'] . ' ' . $ubicacionSugerida . ' ' . $textoUbicacionesPlano)) ?>"
+                            >
+                                <td><?= e($producto['codigo']) ?></td>
+                                <td><?= e($producto['descripcion']) ?></td>
+                                <td><?= e($producto['unidad_medida']) ?></td>
+                                <td><?= e((string)$existenciaTotalModal) ?></td>
+                                <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
+                                <td><?= e($ubicacionSugerida) ?></td>
+                                <td><?= e($textoUbicacionesPlano) ?></td>
+                                <td>
+                                    <button 
+                                        type="button" 
+                                        class="btn-seleccionar-producto"
+                                        onclick="seleccionarProductoModal('<?= (int)$producto['id'] ?>')"
+                                    >
+                                        Seleccionar
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endif; ?>
                     <?php endforeach; ?>
 
                     <?php if (empty($productos)): ?>
@@ -490,6 +490,12 @@ function escaparHtml(valor) {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+}
+
+function limpiarUbicacion(valor) {
+    valor = String(valor || '').trim().toUpperCase();
+    valor = valor.replace('SIN UBICACIÓN', 'SIN UBICACION');
+    return valor || 'SIN UBICACION';
 }
 
 function cargarCatalogoUbicacionesSalida() {
@@ -547,10 +553,15 @@ function obtenerUbicacionesProducto(option) {
 
     return ubicaciones
         .map(item => ({
-            ubicacion: String(item.ubicacion || '').trim().toUpperCase(),
+            ubicacion: limpiarUbicacion(item.ubicacion || ''),
             existencia_actual: parseInt(item.existencia_actual || item.existencia || '0', 10)
         }))
-        .filter(item => item.ubicacion !== '');
+        .filter(item => item.ubicacion !== 'SIN UBICACION' && item.existencia_actual > 0);
+}
+
+function existenciaTotalProducto(option) {
+    return obtenerUbicacionesProducto(option)
+        .reduce((total, item) => total + parseInt(item.existencia_actual || 0, 10), 0);
 }
 
 function cargarUbicacionesDelProducto(option) {
@@ -565,23 +576,17 @@ function cargarUbicacionesDelProducto(option) {
     ubicaciones.forEach(item => {
         const opt = document.createElement('option');
         opt.value = item.ubicacion;
+        opt.label = `${item.existencia_actual} disponibles`;
         datalist.appendChild(opt);
     });
 
-    if (
-        ubicaciones.length === 0 ||
-        (
-            ubicaciones.length === 1 &&
-            ubicaciones[0].ubicacion === 'SIN UBICACION'
-        )
-    ) {
+    if (ubicaciones.length === 0) {
         cargarCatalogoUbicacionesSalida();
     }
 }
 
 function obtenerUbicacionConMenorExistencia(option) {
     const ubicaciones = obtenerUbicacionesProducto(option)
-        .filter(item => item.existencia_actual > 0)
         .sort((a, b) => a.existencia_actual - b.existencia_actual);
 
     if (ubicaciones.length === 0) {
@@ -594,16 +599,34 @@ function obtenerUbicacionConMenorExistencia(option) {
     return ubicaciones[0];
 }
 
+function existenciaDeUbicacion(option, ubicacion) {
+    ubicacion = limpiarUbicacion(ubicacion);
+
+    const ubicaciones = obtenerUbicacionesProducto(option);
+    const encontrada = ubicaciones.find(item => limpiarUbicacion(item.ubicacion) === ubicacion);
+
+    return encontrada ? parseInt(encontrada.existencia_actual || 0, 10) : 0;
+}
+
 function actualizarExistenciaPorUbicacion() {
     const option = obtenerOptionProductoActual();
 
     if (!option || !productoSelect.value) return;
 
-    existenciaInput.value = option.dataset.existencia || '0';
+    const total = existenciaTotalProducto(option);
+    const existenciaUbi = existenciaDeUbicacion(option, ubicacionInput.value);
+
+    existenciaInput.value = total;
+
+    if (existenciaUbi > 0) {
+        existenciaInput.title = `Ubicación seleccionada: ${existenciaUbi}. Total producto: ${total}.`;
+    } else {
+        existenciaInput.title = `Total producto: ${total}.`;
+    }
 }
 
 function limpiarSinUbicacionAlClick() {
-    const valor = ubicacionInput.value.trim().toUpperCase();
+    const valor = limpiarUbicacion(ubicacionInput.value);
 
     if (valor === 'SIN UBICACION') {
         ubicacionInput.value = '';
@@ -654,14 +677,16 @@ function cargarDatosProductoSeleccionado() {
     }
 
     const ubicacionMenor = obtenerUbicacionConMenorExistencia(option);
+    const total = existenciaTotalProducto(option);
 
     descripcionInput.value = option.dataset.descripcion || '';
     unidadInput.value = option.dataset.unidad || '';
     precioInput.value = option.dataset.precio || '0.00';
-    ubicacionInput.value = ubicacionMenor.ubicacion || 'SIN UBICACION';
-    existenciaInput.value = option.dataset.existencia || '0';
+    ubicacionInput.value = ubicacionMenor.ubicacion || '';
+    existenciaInput.value = total;
 
     cargarUbicacionesDelProducto(option);
+    actualizarExistenciaPorUbicacion();
 }
 
 function abrirModalProductos() {
@@ -718,14 +743,15 @@ function agregarProductoSalida() {
     const codigo = option.dataset.codigo || '';
     const descripcion = option.dataset.descripcion || '';
     const unidad = option.dataset.unidad || '';
-    const existenciaTotal = parseInt(option.dataset.existencia || '0', 10);
+    const existenciaTotal = existenciaTotalProducto(option);
     const cantidad = parseInt(cantidadInput.value || '0', 10);
     const costo = parseFloat(option.dataset.costo || '0');
     const precio = parseFloat(precioInput.value || '0');
-    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+    let ubicacion = limpiarUbicacion(ubicacionInput.value);
 
-    if (!ubicacion) {
-        ubicacion = 'SIN UBICACION';
+    if (ubicacion === 'SIN UBICACION') {
+        alert('Debes seleccionar o escribir una ubicación válida.');
+        return;
     }
 
     if (cantidad <= 0) {
@@ -775,7 +801,7 @@ function agregarProductoSalida() {
         <td>${escaparHtml(unidad)}</td>
         <td>${escaparHtml(existenciaTotal)}</td>
         <td>$${precio.toFixed(2)}</td>
-        <td>${escaparHtml(ubicacion)} <small style="color:#64748b;">(se completará con otras ubicaciones si hace falta)</small></td>
+        <td>${escaparHtml(ubicacion)} <small style="color:#64748b;">(completa con otras ubicaciones si hace falta)</small></td>
         <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
         <td>
             <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
@@ -825,7 +851,6 @@ function actualizarCantidadFila(input) {
 
     if (cantidad > existenciaTotal) {
         alert('La cantidad no puede superar la existencia total del producto.');
-
         input.value = existenciaTotal;
         return;
     }
@@ -842,6 +867,7 @@ function actualizarCantidadFila(input) {
     actualizarTotalSalida();
     guardarBorradorSalida();
 }
+
 function eliminarFilaSalida(btn) {
     btn.closest('tr').remove();
 
@@ -908,16 +934,6 @@ function cargarBorradorSalida() {
     controlarFolioOperacion();
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    cargarCatalogoUbicacionesSalida();
-    cargarBorradorSalida();
-});
-
-document.querySelectorAll('input, select, textarea').forEach(campo => {
-    campo.addEventListener('change', guardarBorradorSalida);
-    campo.addEventListener('keyup', guardarBorradorSalida);
-});
-
 function ponerFechaActualSalida() {
     const inputFecha = document.getElementById('fecha_salida');
     if (!inputFecha) return;
@@ -935,9 +951,16 @@ function ponerFechaActualSalida() {
 
 document.addEventListener('DOMContentLoaded', function () {
     localStorage.removeItem('borradorSalida');
+    cargarCatalogoUbicacionesSalida();
     ponerFechaActualSalida();
 });
+
+document.querySelectorAll('input, select, textarea').forEach(campo => {
+    campo.addEventListener('change', guardarBorradorSalida);
+    campo.addEventListener('keyup', guardarBorradorSalida);
+});
 </script>
+
 <?php
 if (file_exists(__DIR__ . '/../app/views/layouts/footer.php')) {
     include __DIR__ . '/../app/views/layouts/footer.php';

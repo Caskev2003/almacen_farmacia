@@ -54,6 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = $result['message'];
         $messageType = $result['success'] ? 'success' : 'danger';
     }
+
+    if ($action === 'dar_baja') {
+        $result = $controller->darDeBaja($_POST);
+        $message = $result['message'];
+        $messageType = $result['success'] ? 'success' : 'danger';
+    }
 }
 
 $almacenes = $controller->almacenes();
@@ -77,14 +83,24 @@ function urlTab(string $tipo, array $filtros): string
 {
     $params = $filtros;
     $params['tipo'] = $tipo;
-    $params['pagina'] = 1;
+    unset($params['pagina'], $params['por_pagina']);
+    $params['page'] = 1;
 
     return 'agotados.php?' . http_build_query($params);
 }
 
+function jsValue($value): string
+{
+    return htmlspecialchars(
+        json_encode((string)$value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ENT_QUOTES,
+        'UTF-8'
+    );
+}
+
 $tituloTabla = match ($tipo) {
     'sin_existencia' => 'Productos sin existencia',
-    'ambas' => 'Productos sin ubicación, sin existencia o sin almacén',
+    'ambas' => 'Productos sin almacén',
     default => 'Productos sin ubicación',
 };
 
@@ -132,7 +148,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
         </a>
 
         <a href="<?= e(urlTab('ambas', $filtros)) ?>" class="<?= e(activeTab($tipo, 'ambas')) ?>">
-            <span>Sin ubicación / sin existencia / sin almacén</span>
+            <span>Sin almacén</span>
             <strong><?= number_format((int)$resumen['ambas']) ?></strong>
         </a>
     </div>
@@ -216,19 +232,26 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php if (!empty($productos)): ?>
                         <?php foreach ($productos as $producto): ?>
                             <?php
+                                $productoId = (int)($producto['id'] ?? 0);
                                 $existencia = (int)($producto['existencia'] ?? 0);
-                                $sucursal = trim($producto['sucursal'] ?? '');
+                                $sucursal = trim((string)($producto['sucursal'] ?? ''));
+                                $sucursales = trim((string)($producto['sucursales'] ?? ''));
+                                $almacenMostrar = $sucursal !== '' && $sucursal !== 'SIN ALMACEN'
+                                    ? $sucursal
+                                    : ($sucursales !== '' ? $sucursales : 'SIN ALMACEN');
+
                                 $motivo = $producto['motivo'] ?? 'PENDIENTE';
+                                $descripcion = $producto['descripcion'] ?? '';
                             ?>
 
                             <tr>
                                 <td><?= e($producto['codigo'] ?? '') ?></td>
                                 <td><?= e($producto['codigo_barras'] ?? '') ?></td>
-                                <td class="descripcion"><?= e($producto['descripcion'] ?? '') ?></td>
+                                <td class="descripcion"><?= e($descripcion) ?></td>
                                 <td><?= e($producto['categoria'] ?? 'Sin categoría') ?></td>
                                 <td><?= e($producto['proveedor'] ?? 'Sin proveedor') ?></td>
                                 <td><?= e($producto['laboratorio'] ?? '') ?></td>
-                                <td><?= e($sucursal !== '' ? $sucursal : 'SIN ALMACEN') ?></td>
+                                <td><?= e($almacenMostrar) ?></td>
                                 <td><?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?></td>
                                 <td class="text-right"><?= number_format($existencia) ?></td>
                                 <td>
@@ -237,18 +260,29 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </span>
                                 </td>
                                 <td>
-                                    <button
-                                        type="button"
-                                        class="btn-asignar"
-                                        onclick="abrirModalAsignarUbicacion(
-                                            '<?= (int)$producto['id'] ?>',
-                                            '<?= e($producto['descripcion'] ?? '') ?>',
-                                            '<?= e($sucursal) ?>',
-                                            '<?= (int)$existencia ?>'
-                                        )"
-                                    >
-                                        Asignar ubicación
-                                    </button>
+                                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                        <button
+                                            type="button"
+                                            class="btn-asignar"
+                                            onclick="abrirModalAsignarUbicacion(
+                                                <?= (int)$productoId ?>,
+                                                <?= jsValue($descripcion) ?>,
+                                                <?= jsValue($sucursal) ?>,
+                                                <?= (int)$existencia ?>
+                                            )"
+                                        >
+                                            Asignar ubicación
+                                        </button>
+
+                                        <form method="POST" style="margin:0;" onsubmit="return confirm('¿Seguro que deseas dar de baja este producto? Se enviará a Sin almacén, Sin ubicación y Sin existencia.');">
+                                            <input type="hidden" name="action" value="dar_baja">
+                                            <input type="hidden" name="producto_id" value="<?= (int)$productoId ?>">
+
+                                            <button type="submit" class="btn-dar-baja">
+                                                Dar de baja
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -363,8 +397,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
 function abrirModalAsignarUbicacion(productoId, descripcion, sucursal, existencia) {
     document.getElementById('modalAsignarUbicacion').style.display = 'flex';
     document.getElementById('agotadoProductoId').value = productoId;
-    document.getElementById('agotadoSucursal').value = sucursal;
+    document.getElementById('agotadoSucursal').value = sucursal || '';
     document.getElementById('agotadoExistencia').value = existencia > 0 ? existencia : 1;
+    document.getElementById('agotadoUbicacionNueva').value = '';
     document.getElementById('tituloAsignarUbicacion').innerText = descripcion;
 }
 

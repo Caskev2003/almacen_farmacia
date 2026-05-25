@@ -292,24 +292,88 @@ class Movimiento
     ): void {
         $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-        $sql = "INSERT INTO producto_existencias (
-                    producto_id,
-                    sucursal,
-                    ubicacion,
-                    existencia
-                ) VALUES (
-                    :producto_id,
-                    :sucursal,
-                    :ubicacion,
-                    :cantidad
-                )
-                ON DUPLICATE KEY UPDATE
-                    existencia = existencia + VALUES(existencia),
-                    updated_at = CURRENT_TIMESTAMP";
+        if ($cantidad <= 0) {
+            return;
+        }
 
-        $stmt = $this->conn->prepare($sql);
+        $sqlExisteExacta = "SELECT id
+                            FROM producto_existencias
+                            WHERE producto_id = :producto_id
+                            AND sucursal = :sucursal
+                            AND ubicacion = :ubicacion
+                            LIMIT 1";
 
-        $stmt->execute([
+        $stmtExisteExacta = $this->conn->prepare($sqlExisteExacta);
+        $stmtExisteExacta->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion
+        ]);
+
+        $existenciaExacta = $stmtExisteExacta->fetch(PDO::FETCH_ASSOC);
+
+        if ($existenciaExacta) {
+            $sqlUpdate = "UPDATE producto_existencias
+                          SET existencia = existencia + :cantidad,
+                              updated_at = CURRENT_TIMESTAMP
+                          WHERE id = :id";
+
+            $stmtUpdate = $this->conn->prepare($sqlUpdate);
+            $stmtUpdate->execute([
+                ':cantidad' => $cantidad,
+                ':id' => $existenciaExacta['id']
+            ]);
+
+            return;
+        }
+
+        $sqlSinUbicacion = "SELECT id
+                            FROM producto_existencias
+                            WHERE producto_id = :producto_id
+                            AND sucursal = :sucursal
+                            AND ubicacion IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            AND existencia <= 0
+                            LIMIT 1";
+
+        $stmtSinUbicacion = $this->conn->prepare($sqlSinUbicacion);
+        $stmtSinUbicacion->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+
+        $sinUbicacion = $stmtSinUbicacion->fetch(PDO::FETCH_ASSOC);
+
+        if ($sinUbicacion && $ubicacion !== 'SIN UBICACION') {
+            $sqlUpdateSin = "UPDATE producto_existencias
+                             SET ubicacion = :ubicacion,
+                                 existencia = :cantidad,
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = :id";
+
+            $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
+            $stmtUpdateSin->execute([
+                ':ubicacion' => $ubicacion,
+                ':cantidad' => $cantidad,
+                ':id' => $sinUbicacion['id']
+            ]);
+
+            return;
+        }
+
+        $sqlInsert = "INSERT INTO producto_existencias (
+                        producto_id,
+                        sucursal,
+                        ubicacion,
+                        existencia
+                    ) VALUES (
+                        :producto_id,
+                        :sucursal,
+                        :ubicacion,
+                        :cantidad
+                    )";
+
+        $stmtInsert = $this->conn->prepare($sqlInsert);
+        $stmtInsert->execute([
             ':producto_id' => $productoId,
             ':sucursal' => $sucursal,
             ':ubicacion' => $ubicacion,
@@ -326,7 +390,7 @@ class Movimiento
         $ubicacion = $this->limpiarUbicacion($ubicacion);
 
         $sql = "UPDATE producto_existencias
-                SET existencia = existencia - :cantidad,
+                SET existencia = GREATEST(existencia - :cantidad, 0),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE producto_id = :producto_id
                 AND sucursal = :sucursal
@@ -348,10 +412,6 @@ class Movimiento
     ): void {
         $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-        if ($ubicacion === 'SIN UBICACION') {
-            return;
-        }
-
         $sql = "UPDATE productos
                 SET ubicacion = :ubicacion
                 WHERE id = :producto_id";
@@ -364,91 +424,187 @@ class Movimiento
         ]);
     }
 
-   private function moverSinUbicacionAUbicacion(
-    int $productoId,
-    string $sucursal,
-    string $ubicacionNueva
-): void {
-    $ubicacionNueva = $this->limpiarUbicacion($ubicacionNueva);
+    private function moverSinUbicacionAUbicacion(
+        int $productoId,
+        string $sucursal,
+        string $ubicacionNueva
+    ): void {
+        $ubicacionNueva = $this->limpiarUbicacion($ubicacionNueva);
 
-    if ($ubicacionNueva === 'SIN UBICACION') {
-        return;
-    }
+        if ($ubicacionNueva === 'SIN UBICACION') {
+            return;
+        }
 
-    $sqlExisteNueva = "SELECT COUNT(*)
-                       FROM producto_existencias
-                       WHERE producto_id = :producto_id
-                         AND sucursal = :sucursal
-                         AND ubicacion = :ubicacion";
+        $sqlExisteNueva = "SELECT COUNT(*)
+                           FROM producto_existencias
+                           WHERE producto_id = :producto_id
+                           AND sucursal = :sucursal
+                           AND ubicacion = :ubicacion";
 
-    $stmtExisteNueva = $this->conn->prepare($sqlExisteNueva);
-    $stmtExisteNueva->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal,
-        ':ubicacion' => $ubicacionNueva
-    ]);
+        $stmtExisteNueva = $this->conn->prepare($sqlExisteNueva);
+        $stmtExisteNueva->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacionNueva
+        ]);
 
-    $yaExisteNueva = (int)$stmtExisteNueva->fetchColumn();
+        $yaExisteNueva = (int)$stmtExisteNueva->fetchColumn();
 
-    if ($yaExisteNueva > 0) {
+        if ($yaExisteNueva > 0) {
+            $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacionNueva);
+            return;
+        }
+
+        $sqlSinUbicacion = "SELECT id, existencia
+                            FROM producto_existencias
+                            WHERE producto_id = :producto_id
+                            AND sucursal = :sucursal
+                            AND ubicacion IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            AND existencia > 0
+                            LIMIT 1";
+
+        $stmtSin = $this->conn->prepare($sqlSinUbicacion);
+        $stmtSin->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+
+        $sinUbicacion = $stmtSin->fetch(PDO::FETCH_ASSOC);
+
+        if (!$sinUbicacion) {
+            $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacionNueva);
+            return;
+        }
+
+        $sqlUpdate = "UPDATE producto_existencias
+                      SET ubicacion = :ubicacion_nueva,
+                          updated_at = CURRENT_TIMESTAMP
+                      WHERE id = :id";
+
+        $stmtUpdate = $this->conn->prepare($sqlUpdate);
+        $stmtUpdate->execute([
+            ':ubicacion_nueva' => $ubicacionNueva,
+            ':id' => $sinUbicacion['id']
+        ]);
+
         $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacionNueva);
-        return;
     }
 
-    $sqlSinUbicacion = "SELECT id, existencia
-                        FROM producto_existencias
-                        WHERE producto_id = :producto_id
-                          AND sucursal = :sucursal
-                          AND ubicacion IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                          AND existencia > 0
-                        LIMIT 1";
-
-    $stmtSin = $this->conn->prepare($sqlSinUbicacion);
-    $stmtSin->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal
-    ]);
-
-    $sinUbicacion = $stmtSin->fetch(PDO::FETCH_ASSOC);
-
-    if (!$sinUbicacion) {
-        $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacionNueva);
-        return;
-    }
-
-    $sqlUpdate = "UPDATE producto_existencias
-                  SET ubicacion = :ubicacion_nueva,
-                      updated_at = CURRENT_TIMESTAMP
-                  WHERE id = :id";
-
-    $stmtUpdate = $this->conn->prepare($sqlUpdate);
-    $stmtUpdate->execute([
-        ':ubicacion_nueva' => $ubicacionNueva,
-        ':id' => $sinUbicacion['id']
-    ]);
-
-    $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacionNueva);
-}
-    private function eliminarUbicacionSiEstaVacia(
+    private function marcarUbicacionAgotadaSinEliminar(
         int $productoId,
         string $sucursal,
         string $ubicacion = ''
     ): void {
         $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-        $sql = "DELETE FROM producto_existencias
-                WHERE producto_id = :producto_id
-                AND sucursal = :sucursal
-                AND ubicacion = :ubicacion
-                AND existencia <= 0";
+        $sqlActual = "SELECT id, existencia
+                      FROM producto_existencias
+                      WHERE producto_id = :producto_id
+                      AND sucursal = :sucursal
+                      AND ubicacion = :ubicacion
+                      LIMIT 1";
 
-        $stmt = $this->conn->prepare($sql);
-
-        $stmt->execute([
+        $stmtActual = $this->conn->prepare($sqlActual);
+        $stmtActual->execute([
             ':producto_id' => $productoId,
             ':sucursal' => $sucursal,
             ':ubicacion' => $ubicacion
         ]);
+
+        $actual = $stmtActual->fetch(PDO::FETCH_ASSOC);
+
+        if (!$actual) {
+            return;
+        }
+
+        if ((int)$actual['existencia'] > 0) {
+            return;
+        }
+
+        if ($ubicacion === 'SIN UBICACION') {
+            $sqlUpdateMisma = "UPDATE producto_existencias
+                               SET existencia = 0,
+                                   ubicacion = 'SIN UBICACION',
+                                   updated_at = CURRENT_TIMESTAMP
+                               WHERE id = :id";
+
+            $stmtUpdateMisma = $this->conn->prepare($sqlUpdateMisma);
+            $stmtUpdateMisma->execute([
+                ':id' => $actual['id']
+            ]);
+
+            return;
+        }
+
+        $sqlExisteSin = "SELECT id
+                         FROM producto_existencias
+                         WHERE producto_id = :producto_id
+                         AND sucursal = :sucursal
+                         AND ubicacion IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                         LIMIT 1";
+
+        $stmtExisteSin = $this->conn->prepare($sqlExisteSin);
+        $stmtExisteSin->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+
+        $sinUbicacion = $stmtExisteSin->fetch(PDO::FETCH_ASSOC);
+
+        if ($sinUbicacion) {
+            $sqlUpdateSin = "UPDATE producto_existencias
+                             SET existencia = 0,
+                                 ubicacion = 'SIN UBICACION',
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = :id";
+
+            $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
+            $stmtUpdateSin->execute([
+                ':id' => $sinUbicacion['id']
+            ]);
+
+            $sqlEliminarDuplicadaVacia = "DELETE FROM producto_existencias
+                                          WHERE id = :id
+                                          AND existencia <= 0";
+
+            $stmtEliminarDuplicadaVacia = $this->conn->prepare($sqlEliminarDuplicadaVacia);
+            $stmtEliminarDuplicadaVacia->execute([
+                ':id' => $actual['id']
+            ]);
+        } else {
+            $sqlUpdateActual = "UPDATE producto_existencias
+                                SET existencia = 0,
+                                    ubicacion = 'SIN UBICACION',
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = :id";
+
+            $stmtUpdateActual = $this->conn->prepare($sqlUpdateActual);
+            $stmtUpdateActual->execute([
+                ':id' => $actual['id']
+            ]);
+        }
+    }
+
+    private function actualizarProductoSiQuedoSinStock(
+        int $productoId,
+        string $sucursal
+    ): void {
+        $sql = "SELECT COALESCE(SUM(existencia), 0)
+                FROM producto_existencias
+                WHERE producto_id = :producto_id
+                AND sucursal = :sucursal";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+
+        $total = (int)$stmt->fetchColumn();
+
+        if ($total <= 0) {
+            $this->actualizarUbicacionPrincipalProducto($productoId, 'SIN UBICACION');
+        }
     }
 
     private function obtenerUbicacionesDisponiblesProducto(
@@ -555,6 +711,10 @@ class Movimiento
                 $productoId = (int)$item['producto_id'];
                 $cantidad = (int)$item['cantidad'];
                 $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+                if ($cantidad <= 0) {
+                    throw new Exception('La cantidad debe ser mayor a 0.');
+                }
 
                 if (!empty($item['numero_lote'])) {
                     $stmtLote->execute([
@@ -758,16 +918,23 @@ class Movimiento
                         $ubicacionActual
                     );
 
-                    $this->actualizarUbicacionPrincipalProducto(
-                        $productoId,
-                        $ubicacionActual
-                    );
-
-                    $this->eliminarUbicacionSiEstaVacia(
+                    $this->marcarUbicacionAgotadaSinEliminar(
                         $productoId,
                         $sucursal,
                         $ubicacionActual
                     );
+
+                    $this->actualizarProductoSiQuedoSinStock(
+                        $productoId,
+                        $sucursal
+                    );
+
+                    if ($cantidadADescontar < $existenciaUbicacion) {
+                        $this->actualizarUbicacionPrincipalProducto(
+                            $productoId,
+                            $ubicacionActual
+                        );
+                    }
 
                     $cantidadPendiente -= $cantidadADescontar;
                 }

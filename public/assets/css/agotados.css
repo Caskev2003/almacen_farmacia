@@ -1,12 +1,14 @@
+/* =========================
+   AGOTADOS - DISEÑO MEJORADO
+========================= */
+
 .agotados-page {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 22px;
 }
 
-/* =========================
-   HEADER
-========================= */
+/* HEADER */
 
 .module-header {
     display: flex;
@@ -14,72 +16,74 @@
     align-items: center;
     gap: 20px;
     flex-wrap: wrap;
+    background: #ffffff;
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .module-header h2 {
     margin: 0;
-    color: #0d3b75;
-    font-size: 44px;
-    font-weight: 800;
+    color: #0f172a;
+    font-size: 38px;
+    font-weight: 900;
 }
 
 .module-header p {
     margin-top: 8px;
-    color: #5f6b7a;
+    color: #64748b;
     font-size: 15px;
 }
 
 .contador-agotados {
-    background: linear-gradient(135deg, #d71414, #ff4343);
-    color: #fff;
-    min-width: 210px;
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    color: #ffffff;
+    min-width: 220px;
     padding: 22px;
     border-radius: 18px;
     text-align: center;
-    box-shadow: 0 12px 25px rgba(215, 20, 20, 0.25);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
 }
 
 .contador-agotados span {
     display: block;
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
-    opacity: .9;
+    opacity: .85;
 }
 
 .contador-agotados strong {
     display: block;
     margin-top: 8px;
-    font-size: 56px;
-    font-weight: 900;
+    font-size: 48px;
+    font-weight: 950;
 }
 
-/* =========================
-   ALERTS
-========================= */
+/* ALERTAS */
 
 .alert {
-    padding: 16px 18px;
-    border-radius: 12px;
-    font-weight: 700;
+    padding: 15px 18px;
+    border-radius: 14px;
+    font-weight: 800;
+    border-left: 6px solid transparent;
 }
 
 .alert-success {
-    background: #d7f8df;
+    background: #ecfdf5;
     color: #166534;
-    border: 1px solid #8be0a0;
+    border-color: #16a34a;
 }
 
 .alert-danger {
-    background: #ffe2e2;
+    background: #fef2f2;
     color: #991b1b;
-    border: 1px solid #ffb3b3;
+    border-color: #dc2626;
 }
 
-/* =========================
-   TABS
-========================= */
+/* TABS */
 
 .tabs-agotados {
     display: grid;
@@ -88,52 +92,79 @@
 }
 
 .tabs-agotados a {
+    position: relative;
+    overflow: hidden;
     text-decoration: none;
     background: #ffffff;
-    border-radius: 18px;
-    padding: 24px;
-    border: 2px solid #edf2f7;
+    border-radius: 20px;
+    padding: 22px;
+    border: 2px solid #e5e7eb;
     transition: .25s ease;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.tabs-agotados a::before {
+    content: "";
+    width: 8px;
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: #94a3b8;
+}
+
+.tabs-agotados a:nth-child(1)::before {
+    background: #f59e0b;
+}
+
+.tabs-agotados a:nth-child(2)::before {
+    background: #ef4444;
+}
+
+.tabs-agotados a:nth-child(3)::before {
+    background: #6b7280;
 }
 
 .tabs-agotados a:hover {
     transform: translateY(-3px);
-    box-shadow: 0 12px 30px rgba(0,0,0,.08);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
 }
 
 .tabs-agotados a span {
-    color: #6b7280;
+    color: #475569;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .4px;
 }
 
 .tabs-agotados a strong {
     color: #0f172a;
-    font-size: 34px;
-    font-weight: 900;
+    font-size: 38px;
+    font-weight: 950;
 }
 
 .tabs-agotados a.active {
-    border-color: #d71414;
-    background: linear-gradient(135deg, #fff5f5, #ffe7e7);
+    border-color: #0f172a;
+    background: #f8fafc;
 }
 
-.tabs-agotados a.active strong {
-    color: #d71414;
+.tabs-agotados a.active span {
+    color: #0f172a;
 }
 
-/* =========================
-   FILTROS
-========================= */
+/* FILTROS */
 
-.agotados-filter-card {
+.agotados-filter-card,
+.agotados-table-card {
     background: #ffffff;
-    border-radius: 18px;
-    padding: 18px;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+    border-radius: 20px;
+    padding: 20px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .agotados-filter-form {
@@ -147,29 +178,26 @@
     display: block;
     margin-bottom: 8px;
     color: #0f172a;
-    font-weight: 700;
+    font-weight: 900;
     font-size: 13px;
 }
 
 .agotados-filter-form input,
 .agotados-filter-form select {
     width: 100%;
-    border: 1px solid #d6dee8;
-    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 14px;
     padding: 13px 14px;
     font-size: 14px;
-    background: #fff;
+    background: #f8fafc;
     outline: none;
 }
 
 .agotados-filter-form input:focus,
 .agotados-filter-form select:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 3px rgba(13,110,253,.12);
-}
-
-.field-search {
-    width: 100%;
+    background: #ffffff;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
 }
 
 .actions {
@@ -184,50 +212,41 @@
     border: none;
     text-decoration: none;
     padding: 13px 18px;
-    border-radius: 12px;
-    font-weight: 800;
+    border-radius: 14px;
+    font-weight: 900;
     font-size: 13px;
     cursor: pointer;
     transition: .2s ease;
 }
 
 .actions button {
-    background: #d71414;
-    color: #fff;
+    background: #2563eb;
+    color: #ffffff;
 }
 
 .actions button:hover {
-    background: #b90f0f;
+    background: #1d4ed8;
 }
 
 .actions a {
-    background: #eef2f7;
+    background: #e2e8f0;
     color: #1e293b;
 }
 
 .actions a:hover {
-    background: #dce4ee;
+    background: #cbd5e1;
 }
 
 .actions .btn-excel {
-    background: #0f9d58;
-    color: #fff;
+    background: #16a34a;
+    color: #ffffff;
 }
 
 .actions .btn-excel:hover {
-    background: #0b7c45;
+    background: #15803d;
 }
 
-/* =========================
-   TABLA
-========================= */
-
-.agotados-table-card {
-    background: #ffffff;
-    border-radius: 18px;
-    padding: 18px;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
-}
+/* TABLA */
 
 .table-topbar {
     display: flex;
@@ -240,18 +259,18 @@
 
 .table-topbar h3 {
     margin: 0;
-    color: #0d3b75;
-    font-size: 34px;
-    font-weight: 800;
+    color: #0f172a;
+    font-size: 28px;
+    font-weight: 950;
 }
 
 .table-topbar span {
-    background: #ffe9e9;
-    color: #b91c1c;
-    padding: 10px 14px;
+    background: #e0f2fe;
+    color: #075985;
+    padding: 10px 15px;
     border-radius: 999px;
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 900;
 }
 
 .table-responsive {
@@ -260,52 +279,59 @@
 
 .agotados-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     min-width: 1500px;
 }
 
 .agotados-table thead th {
-    background: linear-gradient(135deg, #a50f0f, #d71414);
-    color: #fff;
-    padding: 16px 12px;
-    font-size: 13px;
+    background: #0f172a;
+    color: #ffffff;
+    padding: 15px 12px;
+    font-size: 12px;
     text-align: left;
-    font-weight: 800;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .4px;
 }
 
 .agotados-table thead th:first-child {
-    border-top-left-radius: 12px;
+    border-top-left-radius: 14px;
 }
 
 .agotados-table thead th:last-child {
-    border-top-right-radius: 12px;
+    border-top-right-radius: 14px;
 }
 
 .agotados-table tbody td {
     padding: 14px 12px;
-    border-bottom: 1px solid #edf2f7;
+    border-bottom: 1px solid #e5e7eb;
     font-size: 13px;
-    vertical-align: top;
+    vertical-align: middle;
+    color: #334155;
+}
+
+.agotados-table tbody tr:nth-child(even) {
+    background: #f8fafc;
 }
 
 .agotados-table tbody tr:hover {
-    background: #f8fbff;
+    background: #eff6ff;
 }
 
 .agotados-table .descripcion {
     min-width: 300px;
-    font-weight: 700;
+    font-weight: 900;
     color: #0f172a;
 }
 
 .text-right {
     text-align: right;
-    font-weight: 800;
+    font-weight: 900;
+    color: #991b1b;
 }
 
-/* =========================
-   BADGES
-========================= */
+/* BADGE MOTIVO */
 
 .badge-agotado {
     display: inline-flex;
@@ -313,44 +339,55 @@
     justify-content: center;
     padding: 8px 12px;
     border-radius: 999px;
-    background: #ffe6e6;
-    color: #b91c1c;
+    background: #fee2e2;
+    color: #991b1b;
     font-size: 11px;
-    font-weight: 900;
+    font-weight: 950;
     text-transform: uppercase;
-    letter-spacing: .5px;
+    letter-spacing: .4px;
+    white-space: nowrap;
 }
 
-/* =========================
-   BOTON
-========================= */
+/* BOTONES */
 
-.btn-asignar {
+.btn-asignar,
+.btn-dar-baja {
     border: none;
-    background: linear-gradient(135deg, #0d6efd, #0a58ca);
-    color: #fff;
-    padding: 12px 15px;
+    padding: 11px 14px;
     border-radius: 12px;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 900;
     cursor: pointer;
     transition: .2s ease;
     white-space: nowrap;
 }
 
-.btn-asignar:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 18px rgba(13,110,253,.25);
+.btn-asignar {
+    background: #2563eb;
+    color: #ffffff;
 }
 
-/* =========================
-   MODAL
-========================= */
+.btn-asignar:hover {
+    background: #1d4ed8;
+    transform: translateY(-2px);
+}
+
+.btn-dar-baja {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.btn-dar-baja:hover {
+    background: #991b1b;
+    transform: translateY(-2px);
+}
+
+/* MODAL */
 
 .modal-agotado {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, .55);
+    background: rgba(15, 23, 42, .65);
     display: none;
     align-items: center;
     justify-content: center;
@@ -361,9 +398,10 @@
 .modal-agotado-card {
     width: 100%;
     max-width: 520px;
-    background: #fff;
-    border-radius: 22px;
+    background: #ffffff;
+    border-radius: 24px;
     padding: 24px;
+    box-shadow: 0 25px 60px rgba(15, 23, 42, .35);
     animation: modalShow .2s ease;
 }
 
@@ -391,7 +429,7 @@
     margin: 0;
     color: #0f172a;
     font-size: 24px;
-    font-weight: 900;
+    font-weight: 950;
 }
 
 .modal-agotado-header p {
@@ -402,13 +440,14 @@
 
 .modal-agotado-header button {
     border: none;
-    background: #f1f5f9;
+    background: #e2e8f0;
+    color: #0f172a;
     width: 42px;
     height: 42px;
-    border-radius: 12px;
+    border-radius: 14px;
     cursor: pointer;
     font-size: 26px;
-    font-weight: 700;
+    font-weight: 900;
 }
 
 .form-group {
@@ -419,57 +458,100 @@
     display: block;
     margin-bottom: 8px;
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 900;
     color: #0f172a;
 }
 
 .form-group input {
     width: 100%;
-    border: 1px solid #d6dee8;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
     border-radius: 14px;
     padding: 14px;
     font-size: 14px;
 }
 
 .form-group input:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 3px rgba(13,110,253,.12);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
     outline: none;
+    background: #ffffff;
 }
 
 .btn-guardar-ubicacion {
     width: 100%;
     border: none;
-    background: linear-gradient(135deg, #0f9d58, #0c7a45);
-    color: #fff;
+    background: #16a34a;
+    color: #ffffff;
     padding: 16px;
     border-radius: 14px;
     font-size: 14px;
-    font-weight: 900;
+    font-weight: 950;
     cursor: pointer;
 }
 
 .btn-guardar-ubicacion:hover {
-    opacity: .95;
+    background: #15803d;
 }
 
-/* =========================
-   EMPTY
-========================= */
+/* EMPTY */
 
 .empty-table {
     text-align: center;
-    padding: 40px !important;
+    padding: 42px !important;
     color: #64748b;
-    font-weight: 700;
+    font-weight: 900;
 }
 
-/* =========================
-   RESPONSIVE
-========================= */
+/* PAGINACIÓN */
+
+.pagination-wrapper {
+    margin-top: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.pagination-info {
+    font-size: 14px;
+    color: #475569;
+    font-weight: 900;
+}
+
+.pagination {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.pagination a,
+.pagination span {
+    padding: 9px 13px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    text-decoration: none;
+    color: #0f172a;
+    background: #ffffff;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.pagination .active {
+    background: #0f172a;
+    color: #ffffff;
+    border-color: #0f172a;
+}
+
+.pagination .disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+/* RESPONSIVE */
 
 @media (max-width: 1200px) {
-
     .agotados-filter-form {
         grid-template-columns: 1fr;
     }
@@ -486,64 +568,28 @@
 }
 
 @media (max-width: 768px) {
-
     .module-header h2 {
-        font-size: 34px;
+        font-size: 30px;
     }
 
     .contador-agotados {
         width: 100%;
     }
 
+    .contador-agotados strong {
+        font-size: 40px;
+    }
+
     .table-topbar h3 {
-        font-size: 26px;
+        font-size: 24px;
     }
 
     .tabs-agotados {
         grid-template-columns: 1fr;
     }
-    
-}
-.pagination-wrapper {
-    margin-top: 18px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-}
 
-.pagination-info {
-    font-size: 14px;
-    color: #475569;
-    font-weight: 800;
-}
-
-.pagination {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.pagination a,
-.pagination span {
-    padding: 8px 12px;
-    border-radius: 9px;
-    border: 1px solid #d1d5db;
-    text-decoration: none;
-    color: #0f3d75;
-    background: #ffffff;
-    font-size: 13px;
-    font-weight: 800;
-}
-
-.pagination .active {
-    background: #d71414;
-    color: #ffffff;
-    border-color: #d71414;
-}
-
-.pagination .disabled {
-    opacity: .45;
-    cursor: not-allowed;
+    .agotados-filter-card,
+    .agotados-table-card {
+        padding: 14px;
+    }
 }

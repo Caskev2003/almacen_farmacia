@@ -21,6 +21,14 @@ class SalidaController
         return (int)($usuario['almacen_id'] ?? 0);
     }
 
+    private function limpiarUbicacion(?string $ubicacion): string
+    {
+        $ubicacion = strtoupper(trim((string)$ubicacion));
+        $ubicacion = str_replace('SIN UBICACIÓN', 'SIN UBICACION', $ubicacion);
+
+        return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
+    }
+
     public function almacenes(): array
     {
         return $this->movimientoModel->getAlmacenes();
@@ -119,7 +127,7 @@ class SalidaController
         }
 
         if (
-            ($tipoOperacion === 'TICKET' || $tipoOperacion === 'RESURTIDO')
+            in_array($tipoOperacion, ['TICKET', 'RESURTIDO'], true)
             && $folioOperacion === ''
         ) {
             return [
@@ -142,21 +150,17 @@ class SalidaController
             $cantidad = isset($cantidades[$i]) ? (int)$cantidades[$i] : 0;
             $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
             $precio = isset($precios[$i]) ? (float)$precios[$i] : 0;
-            $ubicacion = strtoupper(trim($ubicaciones[$i] ?? ''));
-
-if (
-    $ubicacion === '' ||
-    $ubicacion === 'SIN UBICACION' ||
-    $ubicacion === 'SIN UBICACIÓN'
-) {
-    return [
-        'success' => false,
-        'message' => 'Debes escribir o seleccionar una ubicación válida para el producto.'
-    ];
-}
+            $ubicacion = $this->limpiarUbicacion($ubicaciones[$i] ?? '');
 
             if ($productoId <= 0) {
                 continue;
+            }
+
+            if ($ubicacion === 'SIN UBICACION') {
+                return [
+                    'success' => false,
+                    'message' => 'Debes escribir o seleccionar una ubicación válida para el producto.'
+                ];
             }
 
             if ($cantidad <= 0) {
@@ -194,6 +198,7 @@ if (
 
         if ($folioOperacion !== '') {
             $textoFolio = 'Folio ' . strtolower($tipoOperacion) . ': ' . $folioOperacion;
+
             $observacionesFinales = $observacionesFinales !== ''
                 ? $textoFolio . ' | ' . $observacionesFinales
                 : $textoFolio;

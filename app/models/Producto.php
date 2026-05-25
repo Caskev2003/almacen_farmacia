@@ -720,4 +720,21 @@ class Producto
             return false;
         }
     }
+    public function getExistencias(
+    string $buscar = '',
+    int $almacenId = 0,
+    string $estadoStock = '',
+    string $sucursal = '',
+    bool $isAdmin = false
+): array {
+    return $this->getAll(
+        $buscar,
+        $sucursal,
+        $isAdmin,
+        '',
+        '',
+        '',
+        $estadoStock
+    );
+}
 }

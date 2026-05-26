@@ -331,17 +331,26 @@ class AgotadoController
 
         $productosConExistencia = (int)($stmtExistencias->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-        $agotadosTotal = $sinUbicacion + $sinExistencia + $sinAlmacen;
+        $sqlInventarioTotal = "SELECT COUNT(*) AS total
+                       FROM productos
+                       WHERE estado = 1";
 
-        return [
-            'sin_ubicacion' => $sinUbicacion,
-            'sin_existencia' => $sinExistencia,
-            'ambas' => $sinAlmacen,
-            'sin_almacen' => $sinAlmacen,
-            'agotados_total' => $agotadosTotal,
-            'productos_con_existencia' => $productosConExistencia,
-            'inventario_total' => $productosConExistencia + $agotadosTotal,
-        ];
+$stmtInventarioTotal = $this->conn->prepare($sqlInventarioTotal);
+$stmtInventarioTotal->execute();
+
+$inventarioTotal = (int)($stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+$agotadosTotal = $sinUbicacion + $sinExistencia + $sinAlmacen;
+
+return [
+    'sin_ubicacion' => $sinUbicacion,
+    'sin_existencia' => $sinExistencia,
+    'ambas' => $sinAlmacen,
+    'sin_almacen' => $sinAlmacen,
+    'agotados_total' => $agotadosTotal,
+    'productos_con_existencia' => $productosConExistencia,
+    'inventario_total' => $inventarioTotal,
+];
     }
 
     public function actualizarUbicacion(array $data): array

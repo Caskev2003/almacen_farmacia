@@ -68,27 +68,56 @@ class AgotadoController
 
     private function sucursalSesion(): string
     {
-        $almacenId = $this->almacenIdSesion();
-        return $this->sucursalPorAlmacenId($almacenId);
+        return $this->sucursalPorAlmacenId($this->almacenIdSesion());
     }
 
-    private function aplicarFiltroSucursal(string &$sql, array &$params, int $almacenId): void
-    {
-        $sucursales = $this->sucursalesPorAlmacen($almacenId);
+    private function aplicarFiltroAlmacenAgotados(
+        string &$sql,
+        array &$params,
+        string $filtroAlmacen,
+        int $almacenId = 0
+    ): void {
+        $filtroAlmacen = strtolower(trim($filtroAlmacen));
 
-        if (empty($sucursales)) {
+        if ($filtroAlmacen === 'sin_almacen') {
+            $sql .= " AND (
+                pe.sucursal IS NULL
+                OR TRIM(pe.sucursal) = ''
+            )";
             return;
         }
 
-        $marks = [];
-
-        foreach ($sucursales as $i => $sucursal) {
-            $key = ":sucursal_$i";
-            $marks[] = $key;
-            $params[$key] = $sucursal;
+        if ($filtroAlmacen === 'ciudad_hidalgo') {
+            $sql .= " AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
+                      IN ('CIUDAD HIDALGO', 'CD HIDALGO')";
+            return;
         }
 
-        $sql .= " AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
+        if ($filtroAlmacen === 'tuxtla') {
+            $sql .= " AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
+                      IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')";
+            return;
+        }
+
+        if ($almacenId > 0) {
+            $sucursales = $this->sucursalesPorAlmacen($almacenId);
+
+            if (!empty($sucursales)) {
+                $marks = [];
+
+                foreach ($sucursales as $i => $sucursal) {
+                    $key = ":sucursal_permitida_$i";
+                    $marks[] = $key;
+                    $params[$key] = $sucursal;
+                }
+
+                $sql .= " AND (
+                    pe.sucursal IS NULL
+                    OR TRIM(pe.sucursal) = ''
+                    OR UPPER(pe.sucursal) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ")
+                )";
+            }
+        }
     }
 
     public function almacenes(): array
@@ -101,8 +130,12 @@ class AgotadoController
         return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    private function subqueryInventario(array &$params, int $almacenId, bool $incluirSinAlmacen = true): string
-    {
+    private function subqueryInventario(
+        array &$params,
+        int $almacenId,
+        string $filtroAlmacen = '',
+        bool $incluirSinAlmacen = true
+    ): string {
         $subquery = "SELECT 
                         pe.producto_id,
 
@@ -133,8 +166,18 @@ class AgotadoController
 
                         SUM(
                             CASE 
+                                WHEN pe.sucursal IS NULL 
+                                OR TRIM(pe.sucursal) = ''
+                                THEN 1 
+                                ELSE 0 
+                            END
+                        ) AS filas_sin_almacen,
+
+                        SUM(
+                            CASE 
                                 WHEN pe.sucursal IS NOT NULL 
                                 AND TRIM(pe.sucursal) != ''
+                                AND COALESCE(pe.existencia, 0) > 0
                                 AND (
                                     pe.ubicacion IS NULL
                                     OR TRIM(pe.ubicacion) = ''
@@ -147,24 +190,22 @@ class AgotadoController
 
                         SUM(
                             CASE 
-                                WHEN pe.sucursal IS NULL 
-                                OR TRIM(pe.sucursal) = ''
+                                WHEN pe.sucursal IS NOT NULL 
+                                AND TRIM(pe.sucursal) != ''
+                                AND COALESCE(pe.existencia, 0) <= 0
                                 THEN 1 
                                 ELSE 0 
                             END
-                        ) AS filas_sin_almacen
+                        ) AS filas_sin_existencia
 
                     FROM producto_existencias pe
                     WHERE 1 = 1";
 
-        $filtroAlmacen = trim($_GET['filtro_almacen'] ?? '');
-
-if ($filtroAlmacen !== '') {
-    $this->aplicarFiltroAlmacenAgotados($subquery, $params, $filtroAlmacen);
-} elseif ($almacenId > 0) {
-    $this->aplicarFiltroSucursal($subquery, $params, $almacenId);
-}
-        elseif (!$incluirSinAlmacen) {
+        if ($filtroAlmacen !== '') {
+            $this->aplicarFiltroAlmacenAgotados($subquery, $params, $filtroAlmacen, $almacenId);
+        } elseif ($almacenId > 0) {
+            $this->aplicarFiltroAlmacenAgotados($subquery, $params, '', $almacenId);
+        } elseif (!$incluirSinAlmacen) {
             $subquery .= " AND pe.sucursal IS NOT NULL AND TRIM(pe.sucursal) != '' ";
         }
 
@@ -177,18 +218,18 @@ if ($filtroAlmacen !== '') {
     {
         $params = [];
 
-        $esAdmin = $this->esAdmin();
         $almacenId = (int)($filtros['almacen_id'] ?? 0);
+        $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
         $tipo = trim($filtros['tipo'] ?? 'sin_ubicacion');
 
         $pagina = max((int)($filtros['pagina'] ?? 1), 1);
         $porPagina = max((int)($filtros['por_pagina'] ?? 25), 1);
 
-        if (!$esAdmin) {
+        if (!$this->esAdmin()) {
             $almacenId = $this->almacenIdSesion();
         }
 
-        $subquery = $this->subqueryInventario($params, $almacenId, true);
+        $subquery = $this->subqueryInventario($params, $almacenId, $filtroAlmacen, true);
 
         $sql = "SELECT
                     p.id,
@@ -206,19 +247,16 @@ if ($filtroAlmacen !== '') {
                     COALESCE(stock.existencia_total, 0) AS existencia,
 
                     COALESCE(stock.filas_con_sucursal, 0) AS filas_con_sucursal,
-                    COALESCE(stock.filas_sin_ubicacion, 0) AS filas_sin_ubicacion,
                     COALESCE(stock.filas_sin_almacen, 0) AS filas_sin_almacen,
+                    COALESCE(stock.filas_sin_ubicacion, 0) AS filas_sin_ubicacion,
+                    COALESCE(stock.filas_sin_existencia, 0) AS filas_sin_existencia,
 
                     CASE
                         WHEN stock.producto_id IS NULL
                              OR COALESCE(stock.filas_con_sucursal, 0) = 0
                         THEN 'SIN ALMACEN'
 
-                        WHEN COALESCE(stock.existencia_total, 0) <= 0
-                             AND COALESCE(stock.filas_sin_ubicacion, 0) > 0
-                        THEN 'SIN UBICACIÓN Y SIN EXISTENCIA'
-
-                        WHEN COALESCE(stock.existencia_total, 0) <= 0
+                        WHEN COALESCE(stock.filas_sin_existencia, 0) > 0
                         THEN 'SIN EXISTENCIA'
 
                         WHEN COALESCE(stock.filas_sin_ubicacion, 0) > 0
@@ -243,11 +281,12 @@ if ($filtroAlmacen !== '') {
         if ($tipo === 'sin_ubicacion') {
             $sql .= " AND stock.producto_id IS NOT NULL
                       AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                      AND COALESCE(stock.filas_sin_ubicacion, 0) > 0";
+                      AND COALESCE(stock.filas_sin_ubicacion, 0) > 0
+                      AND COALESCE(stock.filas_sin_existencia, 0) = 0";
         } elseif ($tipo === 'sin_existencia') {
             $sql .= " AND stock.producto_id IS NOT NULL
                       AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                      AND COALESCE(stock.existencia_total, 0) <= 0";
+                      AND COALESCE(stock.filas_sin_existencia, 0) > 0";
         } else {
             $sql .= " AND (
                         stock.producto_id IS NULL
@@ -286,10 +325,8 @@ if ($filtroAlmacen !== '') {
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
 
-        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
         return [
-            'items' => $items,
+            'items' => $stmt->fetchAll(PDO::FETCH_ASSOC),
             'total' => $total,
             'pagina' => $pagina,
             'por_pagina' => $porPagina,
@@ -315,12 +352,13 @@ if ($filtroAlmacen !== '') {
         $params = [];
 
         $almacenId = (int)($filtros['almacen_id'] ?? 0);
+        $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
 
         if (!$this->esAdmin()) {
             $almacenId = $this->almacenIdSesion();
         }
 
-        $subquery = $this->subqueryInventario($params, $almacenId, false);
+        $subquery = $this->subqueryInventario($params, $almacenId, $filtroAlmacen, false);
 
         $sqlExistencias = "SELECT COUNT(*) AS total
                            FROM productos p
@@ -337,56 +375,27 @@ if ($filtroAlmacen !== '') {
         $productosConExistencia = (int)($stmtExistencias->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $sqlInventarioTotal = "SELECT COUNT(*) AS total
-                       FROM productos
-                       WHERE estado = 1";
+                               FROM productos
+                               WHERE estado = 1";
 
-$stmtInventarioTotal = $this->conn->prepare($sqlInventarioTotal);
-$stmtInventarioTotal->execute();
+        $stmtInventarioTotal = $this->conn->prepare($sqlInventarioTotal);
+        $stmtInventarioTotal->execute();
 
-$inventarioTotal = (int)($stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+        $inventarioTotal = (int)($stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-$agotadosTotal = $sinUbicacion + $sinExistencia + $sinAlmacen;
+        $agotadosTotal = $sinUbicacion + $sinExistencia + $sinAlmacen;
 
-return [
-    'sin_ubicacion' => $sinUbicacion,
-    'sin_existencia' => $sinExistencia,
-    'ambas' => $sinAlmacen,
-    'sin_almacen' => $sinAlmacen,
-    'agotados_total' => $agotadosTotal,
-    'productos_con_existencia' => $productosConExistencia,
-    'inventario_total' => $inventarioTotal,
-];
+        return [
+            'sin_ubicacion' => $sinUbicacion,
+            'sin_existencia' => $sinExistencia,
+            'ambas' => $sinAlmacen,
+            'sin_almacen' => $sinAlmacen,
+            'agotados_total' => $agotadosTotal,
+            'productos_con_existencia' => $productosConExistencia,
+            'inventario_total' => $inventarioTotal,
+        ];
     }
 
-
-    private function aplicarFiltroAlmacenAgotados(string &$sql, array &$params, string $filtroAlmacen): void
-{
-    $filtroAlmacen = strtolower(trim($filtroAlmacen));
-
-    if ($filtroAlmacen === 'sin_almacen') {
-        $sql .= " AND (
-            pe.sucursal IS NULL
-            OR TRIM(pe.sucursal) = ''
-        )";
-        return;
-    }
-
-    if ($filtroAlmacen === 'ciudad_hidalgo') {
-        $sql .= " AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
-                  IN ('CIUDAD HIDALGO', 'CD HIDALGO')";
-        return;
-    }
-
-    if ($filtroAlmacen === 'tuxtla') {
-        $sql .= " AND (
-            pe.sucursal IS NULL
-            OR TRIM(pe.sucursal) = ''
-            OR UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
-               IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')
-        )";
-        return;
-    }
-}
     public function actualizarUbicacion(array $data): array
     {
         $productoId = (int)($data['producto_id'] ?? 0);
@@ -395,10 +404,7 @@ return [
         $existencia = (int)($data['existencia'] ?? 0);
 
         if ($productoId <= 0) {
-            return [
-                'success' => false,
-                'message' => 'Producto inválido.'
-            ];
+            return ['success' => false, 'message' => 'Producto inválido.'];
         }
 
         if (!$this->esAdmin()) {
@@ -410,144 +416,80 @@ return [
         }
 
         if ($sucursal === '') {
-            return [
-                'success' => false,
-                'message' => 'Sucursal inválida.'
-            ];
+            return ['success' => false, 'message' => 'Sucursal inválida.'];
         }
 
         if ($ubicacionNueva === 'SIN UBICACION') {
-            return [
-                'success' => false,
-                'message' => 'Debes escribir una ubicación válida.'
-            ];
+            return ['success' => false, 'message' => 'Debes escribir una ubicación válida.'];
         }
 
         if ($existencia <= 0) {
-            return [
-                'success' => false,
-                'message' => 'La existencia debe ser mayor a 0 para asignar ubicación.'
-            ];
+            return ['success' => false, 'message' => 'La existencia debe ser mayor a 0 para asignar ubicación.'];
         }
 
         try {
             $this->conn->beginTransaction();
 
-            $sqlExisteUbicacion = "SELECT id
-                                   FROM producto_existencias
-                                   WHERE producto_id = :producto_id
-                                   AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                                   AND UPPER(COALESCE(ubicacion, '')) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
-                                   LIMIT 1";
+            $sqlRegistroBase = "SELECT id
+                                FROM producto_existencias
+                                WHERE producto_id = :producto_id
+                                AND (
+                                    sucursal IS NULL
+                                    OR TRIM(sucursal) = ''
+                                    OR UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                                )
+                                ORDER BY 
+                                    CASE 
+                                        WHEN sucursal IS NULL OR TRIM(sucursal) = '' THEN 0 
+                                        ELSE 1 
+                                    END,
+                                    id ASC
+                                LIMIT 1";
 
-            $stmtExiste = $this->conn->prepare($sqlExisteUbicacion);
-            $stmtExiste->execute([
-                ':producto_id' => $productoId,
-                ':sucursal' => $sucursal,
-                ':ubicacion' => $ubicacionNueva
-            ]);
-
-            $existeUbicacion = $stmtExiste->fetch(PDO::FETCH_ASSOC);
-
-            if ($existeUbicacion) {
-                $sqlUpdate = "UPDATE producto_existencias
-                              SET existencia = :existencia,
-                                  ubicacion = :ubicacion,
-                                  sucursal = :sucursal,
-                                  updated_at = CURRENT_TIMESTAMP
-                              WHERE id = :id";
-
-                $stmtUpdate = $this->conn->prepare($sqlUpdate);
-                $stmtUpdate->execute([
-                    ':existencia' => $existencia,
-                    ':ubicacion' => $ubicacionNueva,
-                    ':sucursal' => $sucursal,
-                    ':id' => $existeUbicacion['id']
-                ]);
-            } else {
-                $sqlRegistroBase = "SELECT id
-                                    FROM producto_existencias
-                                    WHERE producto_id = :producto_id
-                                    AND (
-                                        sucursal IS NULL
-                                        OR TRIM(sucursal) = ''
-                                        OR UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                                    )
-                                    AND (
-                                        existencia <= 0
-                                        OR ubicacion IS NULL
-                                        OR TRIM(ubicacion) = ''
-                                        OR UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                                    )
-                                    ORDER BY 
-                                        CASE 
-                                            WHEN sucursal IS NULL OR TRIM(sucursal) = '' THEN 0 
-                                            ELSE 1 
-                                        END,
-                                        id ASC
-                                    LIMIT 1";
-
-                $stmtBase = $this->conn->prepare($sqlRegistroBase);
-                $stmtBase->execute([
-                    ':producto_id' => $productoId,
-                    ':sucursal' => $sucursal
-                ]);
-
-                $base = $stmtBase->fetch(PDO::FETCH_ASSOC);
-
-                if ($base) {
-                    $sqlUpdateBase = "UPDATE producto_existencias
-                                      SET sucursal = :sucursal,
-                                          ubicacion = :ubicacion,
-                                          existencia = :existencia,
-                                          updated_at = CURRENT_TIMESTAMP
-                                      WHERE id = :id";
-
-                    $stmtUpdateBase = $this->conn->prepare($sqlUpdateBase);
-                    $stmtUpdateBase->execute([
-                        ':sucursal' => $sucursal,
-                        ':ubicacion' => $ubicacionNueva,
-                        ':existencia' => $existencia,
-                        ':id' => $base['id']
-                    ]);
-                } else {
-                    $sqlInsert = "INSERT INTO producto_existencias (
-                                    producto_id,
-                                    sucursal,
-                                    ubicacion,
-                                    existencia
-                                ) VALUES (
-                                    :producto_id,
-                                    :sucursal,
-                                    :ubicacion,
-                                    :existencia
-                                )";
-
-                    $stmtInsert = $this->conn->prepare($sqlInsert);
-                    $stmtInsert->execute([
-                        ':producto_id' => $productoId,
-                        ':sucursal' => $sucursal,
-                        ':ubicacion' => $ubicacionNueva,
-                        ':existencia' => $existencia
-                    ]);
-                }
-            }
-
-            $sqlLimpiarDuplicados = "DELETE FROM producto_existencias
-                                     WHERE producto_id = :producto_id
-                                     AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                                     AND (
-                                        ubicacion IS NULL
-                                        OR TRIM(ubicacion) = ''
-                                        OR UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                                     )
-                                     AND existencia <= 0";
-
-            $stmtLimpiar = $this->conn->prepare($sqlLimpiarDuplicados);
-            $stmtLimpiar->execute([
+            $stmtBase = $this->conn->prepare($sqlRegistroBase);
+            $stmtBase->execute([
                 ':producto_id' => $productoId,
                 ':sucursal' => $sucursal
             ]);
+
+            $base = $stmtBase->fetch(PDO::FETCH_ASSOC);
+
+            if ($base) {
+                $sqlUpdateBase = "UPDATE producto_existencias
+                                  SET sucursal = :sucursal,
+                                      ubicacion = :ubicacion,
+                                      existencia = :existencia,
+                                      updated_at = CURRENT_TIMESTAMP
+                                  WHERE id = :id";
+
+                $stmtUpdateBase = $this->conn->prepare($sqlUpdateBase);
+                $stmtUpdateBase->execute([
+                    ':sucursal' => $sucursal,
+                    ':ubicacion' => $ubicacionNueva,
+                    ':existencia' => $existencia,
+                    ':id' => $base['id']
+                ]);
+            } else {
+                $sqlInsert = "INSERT INTO producto_existencias (
+                                producto_id,
+                                sucursal,
+                                ubicacion,
+                                existencia
+                            ) VALUES (
+                                :producto_id,
+                                :sucursal,
+                                :ubicacion,
+                                :existencia
+                            )";
+
+                $stmtInsert = $this->conn->prepare($sqlInsert);
+                $stmtInsert->execute([
+                    ':producto_id' => $productoId,
+                    ':sucursal' => $sucursal,
+                    ':ubicacion' => $ubicacionNueva,
+                    ':existencia' => $existencia
+                ]);
+            }
 
             $sqlProducto = "UPDATE productos
                             SET ubicacion = :ubicacion
@@ -582,10 +524,7 @@ return [
         $productoId = (int)($data['producto_id'] ?? 0);
 
         if ($productoId <= 0) {
-            return [
-                'success' => false,
-                'message' => 'Producto inválido.'
-            ];
+            return ['success' => false, 'message' => 'Producto inválido.'];
         }
 
         try {

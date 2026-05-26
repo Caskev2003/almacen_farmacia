@@ -612,6 +612,28 @@ class Movimiento
         }
     }
 
+    public function getProductosCatalogo(): array
+{
+    $sql = "SELECT 
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.precio_compra,
+                p.precio_venta,
+                p.unidad_medida,
+                COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                0 AS existencia_actual,
+                0 AS existencia_bodega
+            FROM productos p
+            WHERE p.estado = 1
+            ORDER BY p.descripcion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute();
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
     private function obtenerUbicacionesDisponiblesProducto(
     int $productoId,
     string $sucursal,

@@ -41,7 +41,7 @@ class EntradaController
 
     public function productos(): array
     {
-        return $this->movimientoModel->getProductosActivos();
+        return $this->movimientoModel->getProductosCatalogo();
     }
 
     public function generarFolio(?int $almacenId = null): string

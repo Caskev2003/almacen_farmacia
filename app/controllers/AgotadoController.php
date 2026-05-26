@@ -310,63 +310,164 @@ class AgotadoController
         ];
     }
 
-    public function resumen(array $filtros): array
-    {
-        $baseFiltros = $filtros;
-        $baseFiltros['pagina'] = 1;
-        $baseFiltros['por_pagina'] = 1;
+   public function resumen(array $filtros): array
+{
+    $params = [];
 
-        $baseFiltros['tipo'] = 'sin_existencia';
-        $sinExistencia = $this->listar($baseFiltros)['total'];
+    $almacenId = (int)($filtros['almacen_id'] ?? 0);
 
-        $baseFiltros['tipo'] = 'ambas';
-        $sinAlmacen = $this->listar($baseFiltros)['total'];
+    if (!$this->esAdmin()) {
+        $almacenId = $this->almacenIdSesion();
+    }
 
-        $params = [];
+    $sucursales = $this->sucursalesPorAlmacen($almacenId);
 
-        $almacenId = (int)($filtros['almacen_id'] ?? 0);
-        $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
+    /*
+    |--------------------------------------------------------------------------
+    | SIN EXISTENCIA
+    | Productos del almacén actual con existencia total <= 0
+    |--------------------------------------------------------------------------
+    */
 
-        if (!$this->esAdmin()) {
-            $almacenId = $this->almacenIdSesion();
+    $sqlSinExistencia = "SELECT COUNT(*) AS total
+                         FROM (
+                            SELECT p.id
+                            FROM productos p
+                            INNER JOIN producto_existencias pe
+                                ON pe.producto_id = p.id
+                            WHERE p.estado = 1";
+
+    if (!empty($sucursales)) {
+
+        $placeholders = [];
+
+        foreach ($sucursales as $i => $sucursal) {
+            $key = ":sx_$i";
+            $placeholders[] = $key;
+            $params[$key] = strtoupper($sucursal);
         }
 
-        $subquery = $this->subqueryInventario($params, $almacenId, $filtroAlmacen, false);
-
-        $sqlStock = "SELECT COUNT(*) AS total
-                     FROM productos p
-                     INNER JOIN ({$subquery}) stock
-                         ON stock.producto_id = p.id
-                     WHERE p.estado = 1
-                     AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                     AND COALESCE(stock.existencia_total, 0) > 0";
-
-        $stmtStock = $this->conn->prepare($sqlStock);
-        $stmtStock->execute($params);
-
-        $productosConExistencia = (int)($stmtStock->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
-
-        $sqlInventarioTotal = "SELECT COUNT(*) AS total
-                               FROM productos
-                               WHERE estado = 1";
-
-        $stmtInventarioTotal = $this->conn->prepare($sqlInventarioTotal);
-        $stmtInventarioTotal->execute();
-
-        $inventarioTotal = (int)($stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
-
-        $agotadosTotal = $sinExistencia + $sinAlmacen;
-
-        return [
-            'sin_ubicacion' => 0,
-            'sin_existencia' => $sinExistencia,
-            'ambas' => $sinAlmacen,
-            'sin_almacen' => $sinAlmacen,
-            'agotados_total' => $agotadosTotal,
-            'productos_con_existencia' => $productosConExistencia,
-            'inventario_total' => $inventarioTotal,
-        ];
+        $sqlSinExistencia .= " 
+            AND UPPER(TRIM(pe.sucursal)) COLLATE utf8mb4_general_ci 
+            IN (" . implode(',', $placeholders) . ")";
     }
+
+    $sqlSinExistencia .= "
+                            GROUP BY p.id
+                            HAVING SUM(COALESCE(pe.existencia, 0)) <= 0
+                         ) t";
+
+    $stmtSinExistencia = $this->conn->prepare($sqlSinExistencia);
+    $stmtSinExistencia->execute($params);
+
+    $sinExistencia = (int)$stmtSinExistencia->fetch(PDO::FETCH_ASSOC)['total'];
+
+    /*
+    |--------------------------------------------------------------------------
+    | SIN ALMACEN
+    | Sin sucursal + sin ubicación + existencia 0
+    |--------------------------------------------------------------------------
+    */
+
+    $sqlSinAlmacen = "SELECT COUNT(*) AS total
+                      FROM (
+                        SELECT DISTINCT p.id
+                        FROM productos p
+                        LEFT JOIN producto_existencias pe
+                            ON pe.producto_id = p.id
+                        WHERE p.estado = 1
+                        AND (
+                            pe.sucursal IS NULL
+                            OR TRIM(pe.sucursal) = ''
+                        )
+                        AND (
+                            pe.ubicacion IS NULL
+                            OR TRIM(pe.ubicacion) = ''
+                            OR UPPER(TRIM(pe.ubicacion)) IN (
+                                'SIN UBICACION',
+                                'SIN UBICACIÓN'
+                            )
+                        )
+                        AND COALESCE(pe.existencia, 0) <= 0
+                      ) t";
+
+    $stmtSinAlmacen = $this->conn->prepare($sqlSinAlmacen);
+    $stmtSinAlmacen->execute();
+
+    $sinAlmacen = (int)$stmtSinAlmacen->fetch(PDO::FETCH_ASSOC)['total'];
+
+    /*
+    |--------------------------------------------------------------------------
+    | STOCK CORRECTO
+    |--------------------------------------------------------------------------
+    */
+
+    $paramsStock = [];
+
+    $sqlStock = "SELECT COUNT(*) AS total
+                 FROM (
+                    SELECT p.id
+                    FROM productos p
+                    INNER JOIN producto_existencias pe
+                        ON pe.producto_id = p.id
+                    WHERE p.estado = 1
+                    AND pe.ubicacion IS NOT NULL
+                    AND TRIM(pe.ubicacion) != ''
+                    AND UPPER(TRIM(pe.ubicacion)) NOT IN (
+                        'SIN UBICACION',
+                        'SIN UBICACIÓN'
+                    )";
+
+    if (!empty($sucursales)) {
+
+        $placeholders = [];
+
+        foreach ($sucursales as $i => $sucursal) {
+            $key = ":sc_$i";
+            $placeholders[] = $key;
+            $paramsStock[$key] = strtoupper($sucursal);
+        }
+
+        $sqlStock .= "
+            AND UPPER(TRIM(pe.sucursal)) COLLATE utf8mb4_general_ci 
+            IN (" . implode(',', $placeholders) . ")";
+    }
+
+    $sqlStock .= "
+                    GROUP BY p.id
+                    HAVING SUM(COALESCE(pe.existencia, 0)) > 0
+                 ) t";
+
+    $stmtStock = $this->conn->prepare($sqlStock);
+    $stmtStock->execute($paramsStock);
+
+    $productosConExistencia = (int)$stmtStock->fetch(PDO::FETCH_ASSOC)['total'];
+
+    /*
+    |--------------------------------------------------------------------------
+    | INVENTARIO TOTAL
+    |--------------------------------------------------------------------------
+    */
+
+    $sqlInventarioTotal = "SELECT COUNT(*) AS total
+                           FROM productos
+                           WHERE estado = 1";
+
+    $stmtInventarioTotal = $this->conn->prepare($sqlInventarioTotal);
+    $stmtInventarioTotal->execute();
+
+    $inventarioTotal = (int)$stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'];
+
+    return [
+        'sin_ubicacion' => 0,
+        'sin_existencia' => $sinExistencia,
+        'ambas' => $sinAlmacen,
+        'sin_almacen' => $sinAlmacen,
+        'agotados_total' => $sinExistencia + $sinAlmacen,
+        'productos_con_existencia' => $productosConExistencia,
+        'inventario_total' => $inventarioTotal,
+    ];
+}
 
     public function actualizarUbicacion(array $data): array
     {

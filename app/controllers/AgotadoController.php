@@ -177,21 +177,6 @@ class AgotadoController
                             CASE 
                                 WHEN pe.sucursal IS NOT NULL 
                                 AND TRIM(pe.sucursal) != ''
-                                AND COALESCE(pe.existencia, 0) > 0
-                                AND (
-                                    pe.ubicacion IS NULL
-                                    OR TRIM(pe.ubicacion) = ''
-                                    OR UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                                )
-                                THEN 1 
-                                ELSE 0 
-                            END
-                        ) AS filas_sin_ubicacion,
-
-                        SUM(
-                            CASE 
-                                WHEN pe.sucursal IS NOT NULL 
-                                AND TRIM(pe.sucursal) != ''
                                 AND COALESCE(pe.existencia, 0) <= 0
                                 THEN 1 
                                 ELSE 0 
@@ -220,7 +205,7 @@ class AgotadoController
 
         $almacenId = (int)($filtros['almacen_id'] ?? 0);
         $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
-        $tipo = trim($filtros['tipo'] ?? 'sin_ubicacion');
+        $tipo = trim($filtros['tipo'] ?? 'sin_existencia');
 
         $pagina = max((int)($filtros['pagina'] ?? 1), 1);
         $porPagina = max((int)($filtros['por_pagina'] ?? 25), 1);
@@ -248,7 +233,6 @@ class AgotadoController
 
                     COALESCE(stock.filas_con_sucursal, 0) AS filas_con_sucursal,
                     COALESCE(stock.filas_sin_almacen, 0) AS filas_sin_almacen,
-                    COALESCE(stock.filas_sin_ubicacion, 0) AS filas_sin_ubicacion,
                     COALESCE(stock.filas_sin_existencia, 0) AS filas_sin_existencia,
 
                     CASE
@@ -259,10 +243,7 @@ class AgotadoController
                         WHEN COALESCE(stock.filas_sin_existencia, 0) > 0
                         THEN 'SIN EXISTENCIA'
 
-                        WHEN COALESCE(stock.filas_sin_ubicacion, 0) > 0
-                        THEN 'SIN UBICACIÓN'
-
-                        ELSE 'NORMAL'
+                        ELSE 'EN STOCK'
                     END AS motivo
 
                 FROM productos p
@@ -278,12 +259,7 @@ class AgotadoController
 
                 WHERE p.estado = 1";
 
-        if ($tipo === 'sin_ubicacion') {
-            $sql .= " AND stock.producto_id IS NOT NULL
-                      AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                      AND COALESCE(stock.filas_sin_ubicacion, 0) > 0
-                      AND COALESCE(stock.filas_sin_existencia, 0) = 0";
-        } elseif ($tipo === 'sin_existencia') {
+        if ($tipo === 'sin_existencia') {
             $sql .= " AND stock.producto_id IS NOT NULL
                       AND COALESCE(stock.filas_con_sucursal, 0) > 0
                       AND COALESCE(stock.filas_sin_existencia, 0) > 0";
@@ -340,9 +316,6 @@ class AgotadoController
         $baseFiltros['pagina'] = 1;
         $baseFiltros['por_pagina'] = 1;
 
-        $baseFiltros['tipo'] = 'sin_ubicacion';
-        $sinUbicacion = $this->listar($baseFiltros)['total'];
-
         $baseFiltros['tipo'] = 'sin_existencia';
         $sinExistencia = $this->listar($baseFiltros)['total'];
 
@@ -360,19 +333,18 @@ class AgotadoController
 
         $subquery = $this->subqueryInventario($params, $almacenId, $filtroAlmacen, false);
 
-        $sqlExistencias = "SELECT COUNT(*) AS total
-                           FROM productos p
-                           INNER JOIN ({$subquery}) stock
-                               ON stock.producto_id = p.id
-                           WHERE p.estado = 1
-                           AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                           AND COALESCE(stock.existencia_total, 0) > 0
-                           AND COALESCE(stock.filas_sin_ubicacion, 0) = 0";
+        $sqlStock = "SELECT COUNT(*) AS total
+                     FROM productos p
+                     INNER JOIN ({$subquery}) stock
+                         ON stock.producto_id = p.id
+                     WHERE p.estado = 1
+                     AND COALESCE(stock.filas_con_sucursal, 0) > 0
+                     AND COALESCE(stock.existencia_total, 0) > 0";
 
-        $stmtExistencias = $this->conn->prepare($sqlExistencias);
-        $stmtExistencias->execute($params);
+        $stmtStock = $this->conn->prepare($sqlStock);
+        $stmtStock->execute($params);
 
-        $productosConExistencia = (int)($stmtExistencias->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+        $productosConExistencia = (int)($stmtStock->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $sqlInventarioTotal = "SELECT COUNT(*) AS total
                                FROM productos
@@ -383,10 +355,10 @@ class AgotadoController
 
         $inventarioTotal = (int)($stmtInventarioTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-        $agotadosTotal = $sinUbicacion + $sinExistencia + $sinAlmacen;
+        $agotadosTotal = $sinExistencia + $sinAlmacen;
 
         return [
-            'sin_ubicacion' => $sinUbicacion,
+            'sin_ubicacion' => 0,
             'sin_existencia' => $sinExistencia,
             'ambas' => $sinAlmacen,
             'sin_almacen' => $sinAlmacen,

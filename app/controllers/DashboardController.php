@@ -65,7 +65,7 @@ class DashboardController
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER({$alias}.sucursal) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
+        $sql .= " AND UPPER(COALESCE({$alias}.sucursal, '')) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
     }
 
     private function agregarFiltroMovimientos(string &$sql, array &$params): void
@@ -76,81 +76,104 @@ class DashboardController
         }
     }
 
-    private function subqueryInventario(array &$params): string
-    {
-        $subquery = "SELECT
-                        pe.producto_id,
-                        SUM(COALESCE(pe.existencia, 0)) AS total_existencia,
-                        GROUP_CONCAT(
-                            DISTINCT COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
-                            ORDER BY pe.ubicacion ASC
-                            SEPARATOR ', '
-                        ) AS ubicaciones,
-                        MIN(pe.sucursal) AS sucursal
-                     FROM producto_existencias pe
-                     WHERE 1 = 1";
-
-        $this->agregarFiltroSucursal($subquery, $params, 'pe');
-
-        $subquery .= " GROUP BY pe.producto_id";
-
-        return $subquery;
-    }
-
     public function getIndicadores(): array
     {
-        $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
-        $subquery = $this->subqueryInventario($params);
 
-        $sql = "SELECT
-                    SUM(CASE
-                        WHEN COALESCE(stock.total_existencia, 0) > 0
-                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
-                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                        THEN 1 ELSE 0
-                    END) AS productos_con_existencia,
+        $stmtTotal = $this->conn->prepare("SELECT COUNT(*) AS total FROM productos WHERE estado = 1");
+        $stmtTotal->execute();
+        $totalProductos = (int)($stmtTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-                    SUM(CASE
-                        WHEN stock.producto_id IS NOT NULL
-                         AND (
-                            COALESCE(stock.total_existencia, 0) <= 0
-                            OR COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci = ''
-                            OR UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                         )
-                        THEN 1 ELSE 0
-                    END) AS agotados,
+        $paramsSinAlmacen = [];
 
-                    SUM(CASE
-                        WHEN COALESCE(stock.total_existencia, 0) > 0
-                         AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
-                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
-                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                        THEN 1 ELSE 0
-                    END) AS bajo_stock,
+        $sqlSinAlmacen = "SELECT COUNT(DISTINCT p.id) AS total
+                          FROM productos p
+                          LEFT JOIN producto_existencias pe
+                              ON pe.producto_id = p.id
+                          WHERE p.estado = 1
+                          AND (
+                              pe.producto_id IS NULL
+                              OR pe.sucursal IS NULL
+                              OR TRIM(pe.sucursal) = ''
+                          )";
 
-                    SUM(CASE
-                        WHEN COALESCE(stock.total_existencia, 0) > {$stockMinimo}
-                         AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
-                         AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                        THEN 1 ELSE 0
-                    END) AS en_stock
+        $stmtSinAlmacen = $this->conn->prepare($sqlSinAlmacen);
+        $stmtSinAlmacen->execute($paramsSinAlmacen);
+        $sinAlmacen = (int)($stmtSinAlmacen->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-                FROM productos p
-                LEFT JOIN ({$subquery}) AS stock
-                    ON stock.producto_id = p.id
-                WHERE p.estado = 1";
+        $paramsSinExistencia = [];
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+        $sqlSinExistencia = "SELECT COUNT(*) AS total
+                             FROM (
+                                SELECT p.id
+                                FROM productos p
+                                INNER JOIN producto_existencias pe
+                                    ON pe.producto_id = p.id
+                                WHERE p.estado = 1
+                                AND pe.sucursal IS NOT NULL
+                                AND TRIM(pe.sucursal) != ''";
 
-        $productos = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $this->agregarFiltroSucursal($sqlSinExistencia, $paramsSinExistencia, 'pe');
 
-        $enStock = (int)($productos['en_stock'] ?? 0);
-        $bajoStock = (int)($productos['bajo_stock'] ?? 0);
-        $agotados = (int)($productos['agotados'] ?? 0);
+        $sqlSinExistencia .= " GROUP BY p.id
+                               HAVING SUM(COALESCE(pe.existencia, 0)) <= 0
+                             ) AS t";
 
-        $totalProductos = $enStock + $bajoStock + $agotados;
+        $stmtSinExistencia = $this->conn->prepare($sqlSinExistencia);
+        $stmtSinExistencia->execute($paramsSinExistencia);
+        $sinExistencia = (int)($stmtSinExistencia->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        $paramsStock = [];
+
+        $sqlStock = "SELECT COUNT(*) AS total
+                     FROM (
+                        SELECT p.id, SUM(COALESCE(pe.existencia, 0)) AS existencia_total
+                        FROM productos p
+                        INNER JOIN producto_existencias pe
+                            ON pe.producto_id = p.id
+                        WHERE p.estado = 1
+                        AND pe.sucursal IS NOT NULL
+                        AND TRIM(pe.sucursal) != ''
+                        AND pe.ubicacion IS NOT NULL
+                        AND TRIM(pe.ubicacion) != ''
+                        AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+
+        $this->agregarFiltroSucursal($sqlStock, $paramsStock, 'pe');
+
+        $sqlStock .= " GROUP BY p.id
+                       HAVING SUM(COALESCE(pe.existencia, 0)) > 0
+                     ) AS t";
+
+        $stmtStock = $this->conn->prepare($sqlStock);
+        $stmtStock->execute($paramsStock);
+        $conStockCorrecto = (int)($stmtStock->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        $paramsBajo = [];
+
+        $sqlBajo = "SELECT COUNT(*) AS total
+                    FROM (
+                        SELECT p.id, SUM(COALESCE(pe.existencia, 0)) AS existencia_total
+                        FROM productos p
+                        INNER JOIN producto_existencias pe
+                            ON pe.producto_id = p.id
+                        WHERE p.estado = 1
+                        AND pe.sucursal IS NOT NULL
+                        AND TRIM(pe.sucursal) != ''
+                        AND pe.ubicacion IS NOT NULL
+                        AND TRIM(pe.ubicacion) != ''
+                        AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+
+        $this->agregarFiltroSucursal($sqlBajo, $paramsBajo, 'pe');
+
+        $sqlBajo .= " GROUP BY p.id
+                      HAVING SUM(COALESCE(pe.existencia, 0)) BETWEEN 1 AND {$stockMinimo}
+                    ) AS t";
+
+        $stmtBajo = $this->conn->prepare($sqlBajo);
+        $stmtBajo->execute($paramsBajo);
+        $bajoStock = (int)($stmtBajo->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        $enStock = max($conStockCorrecto - $bajoStock, 0);
 
         $inicioHoy = date('Y-m-d') . ' 00:00:00';
         $finHoy = date('Y-m-d') . ' 23:59:59';
@@ -163,13 +186,13 @@ class DashboardController
         $sqlEntradasHoy = "SELECT COUNT(*) AS total
                            FROM movimientos m
                            WHERE m.tipo_movimiento = 'ENTRADA'
-                             AND m.fecha BETWEEN :inicio AND :fin";
+                           AND m.fecha BETWEEN :inicio AND :fin";
 
         $this->agregarFiltroMovimientos($sqlEntradasHoy, $paramsEntrada);
 
         $stmtEntradasHoy = $this->conn->prepare($sqlEntradasHoy);
         $stmtEntradasHoy->execute($paramsEntrada);
-        $entradasHoy = $stmtEntradasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+        $entradasHoy = (int)($stmtEntradasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $paramsSalida = [
             ':inicio' => $inicioHoy,
@@ -179,21 +202,24 @@ class DashboardController
         $sqlSalidasHoy = "SELECT COUNT(*) AS total
                           FROM movimientos m
                           WHERE m.tipo_movimiento = 'SALIDA'
-                            AND m.fecha BETWEEN :inicio AND :fin";
+                          AND m.fecha BETWEEN :inicio AND :fin";
 
         $this->agregarFiltroMovimientos($sqlSalidasHoy, $paramsSalida);
 
         $stmtSalidasHoy = $this->conn->prepare($sqlSalidasHoy);
         $stmtSalidasHoy->execute($paramsSalida);
-        $salidasHoy = $stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+        $salidasHoy = (int)($stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         return [
             'total_productos' => $totalProductos,
-            'agotados' => $agotados,
+            'agotados' => $sinExistencia,
+            'sin_existencia' => $sinExistencia,
+            'sin_almacen' => $sinAlmacen,
             'bajo_stock' => $bajoStock,
             'en_stock' => $enStock,
-            'entradas_hoy' => (int)$entradasHoy,
-            'salidas_hoy' => (int)$salidasHoy,
+            'stock_correcto' => $conStockCorrecto,
+            'entradas_hoy' => $entradasHoy,
+            'salidas_hoy' => $salidasHoy,
         ];
     }
 
@@ -201,25 +227,30 @@ class DashboardController
     {
         $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
-        $subquery = $this->subqueryInventario($params);
 
         $sql = "SELECT
                     p.id,
                     p.codigo,
                     p.descripcion,
                     {$stockMinimo} AS stock_minimo,
-                    COALESCE(stock.ubicaciones, 'SIN UBICACION') AS ubicacion,
-                    COALESCE(stock.total_existencia, 0) AS existencia_actual
+                    MIN(pe.ubicacion) AS ubicacion,
+                    SUM(COALESCE(pe.existencia, 0)) AS existencia_actual
                 FROM productos p
-                INNER JOIN ({$subquery}) AS stock
-                    ON stock.producto_id = p.id
+                INNER JOIN producto_existencias pe
+                    ON pe.producto_id = p.id
                 WHERE p.estado = 1
-                  AND COALESCE(stock.total_existencia, 0) > 0
-                  AND COALESCE(stock.total_existencia, 0) <= {$stockMinimo}
-                  AND COALESCE(stock.ubicaciones, '') COLLATE utf8mb4_general_ci != ''
-                  AND UPPER(COALESCE(stock.ubicaciones, '')) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                ORDER BY existencia_actual ASC, p.descripcion ASC
-                LIMIT 12";
+                AND pe.sucursal IS NOT NULL
+                AND TRIM(pe.sucursal) != ''
+                AND pe.ubicacion IS NOT NULL
+                AND TRIM(pe.ubicacion) != ''
+                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+
+        $this->agregarFiltroSucursal($sql, $params, 'pe');
+
+        $sql .= " GROUP BY p.id, p.codigo, p.descripcion
+                  HAVING SUM(COALESCE(pe.existencia, 0)) BETWEEN 1 AND {$stockMinimo}
+                  ORDER BY existencia_actual ASC, p.descripcion ASC
+                  LIMIT 12";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
@@ -266,10 +297,12 @@ class DashboardController
                 INNER JOIN productos p
                     ON p.id = pe.producto_id
                 WHERE p.estado = 1
-                  AND COALESCE(pe.existencia, 0) > 0
-                  AND pe.ubicacion IS NOT NULL
-                  AND TRIM(pe.ubicacion) COLLATE utf8mb4_general_ci != ''
-                  AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+                AND COALESCE(pe.existencia, 0) > 0
+                AND pe.sucursal IS NOT NULL
+                AND TRIM(pe.sucursal) != ''
+                AND pe.ubicacion IS NOT NULL
+                AND TRIM(pe.ubicacion) != ''
+                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
 
         $this->agregarFiltroSucursal($sql, $params, 'pe');
 
@@ -309,7 +342,7 @@ class DashboardController
 
         if ($existencia <= 0) {
             return [
-                'texto' => 'AGOTADO',
+                'texto' => 'SIN EXISTENCIA',
                 'clase' => 'badge-danger'
             ];
         }

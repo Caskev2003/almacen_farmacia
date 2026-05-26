@@ -30,7 +30,9 @@ $productos = $controller->index($filtros);
 $resumen = $controller->resumen($productos);
 
 $moduleCss = 'existencias';
+
 include __DIR__ . '/../app/views/layouts/header.php';
+
 ?>
 
 <div class="existencias-page">
@@ -38,11 +40,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
     <div class="module-header existencias-header">
         <div>
             <h2>Existencias</h2>
-            <p>Consulta general de inventario por almacén, rack, categoría, proveedor y estado de stock.</p>
+            <p>
+                Consulta general de inventario por almacén, rack,
+                categoría, proveedor y estado de stock.
+            </p>
         </div>
     </div>
 
     <div class="existencias-resumen-grid">
+
         <div class="existencia-card total">
             <span>Total productos</span>
             <strong><?= number_format((int)$resumen['totalProductos']) ?></strong>
@@ -68,14 +74,20 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <strong><?= number_format((int)$resumen['sinExistencia']) ?></strong>
         </div>
 
-        
+        <div class="existencia-card dark">
+            <span>Sin almacén</span>
+            <strong><?= number_format((int)$resumen['sinAlmacen']) ?></strong>
+        </div>
+
     </div>
 
     <div class="existencias-filter-card">
+
         <form method="GET" action="existencias.php" class="existencias-filter-form">
 
             <div class="existencia-field search-field">
                 <label>Buscar general</label>
+
                 <input
                     type="text"
                     name="buscar"
@@ -85,104 +97,214 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <?php if ($esAdmin): ?>
+
                 <div class="existencia-field">
                     <label>Almacén</label>
+
                     <select name="almacen_id">
+
                         <option value="0">Todos</option>
+
                         <?php foreach ($almacenes as $almacen): ?>
+
                             <option
                                 value="<?= (int)$almacen['id'] ?>"
                                 <?= (int)$filtros['almacen_id'] === (int)$almacen['id'] ? 'selected' : '' ?>
                             >
                                 <?= e($almacen['nombre']) ?>
                             </option>
+
                         <?php endforeach; ?>
+
                     </select>
                 </div>
+
             <?php endif; ?>
 
             <div class="existencia-field">
                 <label>Rack</label>
+
                 <select name="rack">
+
                     <option value="">Todos</option>
+
                     <?php for ($i = 1; $i <= 9; $i++): ?>
+
                         <?php $rack = 'R' . $i; ?>
-                        <option value="<?= $rack ?>" <?= $filtros['rack'] === $rack ? 'selected' : '' ?>>
+
+                        <option
+                            value="<?= $rack ?>"
+                            <?= $filtros['rack'] === $rack ? 'selected' : '' ?>
+                        >
                             <?= $rack ?>
                         </option>
+
                     <?php endfor; ?>
+
                 </select>
             </div>
 
             <div class="existencia-field">
                 <label>Estado</label>
+
                 <select name="estado_stock">
+
                     <option value="">Todos</option>
-                    <option value="normal" <?= $filtros['estado_stock'] === 'normal' ? 'selected' : '' ?>>Stock normal</option>
-                    <option value="bajo" <?= $filtros['estado_stock'] === 'bajo' ? 'selected' : '' ?>>Stock bajo</option>
-                    <option value="sin_existencia" <?= $filtros['estado_stock'] === 'sin_existencia' ? 'selected' : '' ?>>Sin existencia</option>
+
+                    <option
+                        value="stock"
+                        <?= $filtros['estado_stock'] === 'stock' ? 'selected' : '' ?>
+                    >
+                        Con stock
+                    </option>
+
+                    <option
+                        value="normal"
+                        <?= $filtros['estado_stock'] === 'normal' ? 'selected' : '' ?>
+                    >
+                        Stock normal
+                    </option>
+
+                    <option
+                        value="bajo"
+                        <?= $filtros['estado_stock'] === 'bajo' ? 'selected' : '' ?>
+                    >
+                        Stock bajo
+                    </option>
+
+                    <option
+                        value="sin_existencia"
+                        <?= $filtros['estado_stock'] === 'sin_existencia' ? 'selected' : '' ?>
+                    >
+                        Sin existencia
+                    </option>
+
+                    <option
+                        value="sin_almacen"
+                        <?= $filtros['estado_stock'] === 'sin_almacen' ? 'selected' : '' ?>
+                    >
+                        Sin almacén
+                    </option>
+
                 </select>
             </div>
 
             <div class="existencia-field">
                 <label>Categoría</label>
+
                 <select name="categoria_id">
+
                     <option value="">Todas</option>
+
                     <?php foreach ($categorias as $categoria): ?>
+
                         <option
                             value="<?= (int)$categoria['id'] ?>"
                             <?= (string)$filtros['categoria_id'] === (string)$categoria['id'] ? 'selected' : '' ?>
                         >
                             <?= e($categoria['nombre']) ?>
                         </option>
+
                     <?php endforeach; ?>
+
                 </select>
             </div>
 
             <div class="existencia-field">
                 <label>Proveedor</label>
+
                 <select name="proveedor_id">
+
                     <option value="">Todos</option>
+
                     <?php foreach ($proveedores as $proveedor): ?>
+
                         <option
                             value="<?= (int)$proveedor['id'] ?>"
                             <?= (string)$filtros['proveedor_id'] === (string)$proveedor['id'] ? 'selected' : '' ?>
                         >
                             <?= e($proveedor['nombre']) ?>
                         </option>
+
                     <?php endforeach; ?>
+
                 </select>
             </div>
 
             <div class="existencia-field">
                 <label>Ordenar</label>
+
                 <select name="orden">
-                    <option value="descripcion" <?= $filtros['orden'] === 'descripcion' ? 'selected' : '' ?>>Descripción</option>
-                    <option value="codigo" <?= $filtros['orden'] === 'codigo' ? 'selected' : '' ?>>Código</option>
-                    <option value="ubicacion" <?= $filtros['orden'] === 'ubicacion' ? 'selected' : '' ?>>Ubicación</option>
-                    <option value="existencia_mayor" <?= $filtros['orden'] === 'existencia_mayor' ? 'selected' : '' ?>>Mayor existencia</option>
-                    <option value="existencia_menor" <?= $filtros['orden'] === 'existencia_menor' ? 'selected' : '' ?>>Menor existencia</option>
+
+                    <option
+                        value="descripcion"
+                        <?= $filtros['orden'] === 'descripcion' ? 'selected' : '' ?>
+                    >
+                        Descripción
+                    </option>
+
+                    <option
+                        value="codigo"
+                        <?= $filtros['orden'] === 'codigo' ? 'selected' : '' ?>
+                    >
+                        Código
+                    </option>
+
+                    <option
+                        value="ubicacion"
+                        <?= $filtros['orden'] === 'ubicacion' ? 'selected' : '' ?>
+                    >
+                        Ubicación
+                    </option>
+
+                    <option
+                        value="existencia_mayor"
+                        <?= $filtros['orden'] === 'existencia_mayor' ? 'selected' : '' ?>
+                    >
+                        Mayor existencia
+                    </option>
+
+                    <option
+                        value="existencia_menor"
+                        <?= $filtros['orden'] === 'existencia_menor' ? 'selected' : '' ?>
+                    >
+                        Menor existencia
+                    </option>
+
                 </select>
             </div>
 
             <div class="existencias-actions">
-                <button type="submit" class="btn-primary-action">Filtrar</button>
-                <a href="existencias.php" class="btn-secondary-action">Limpiar</a>
+                <button type="submit" class="btn-primary-action">
+                    Filtrar
+                </button>
+
+                <a href="existencias.php" class="btn-secondary-action">
+                    Limpiar
+                </a>
             </div>
 
         </form>
+
     </div>
 
     <div class="erp-table-card existencias-table-card">
+
         <div class="table-topbar">
             <div>
                 <h3>Inventario actual</h3>
-                <p><?= number_format(count($productos)) ?> productos encontrados</p>
+
+                <p>
+                    <?= number_format(count($productos)) ?>
+                    productos encontrados
+                </p>
             </div>
         </div>
 
         <div class="table-responsive">
+
             <table class="erp-table tabla-existencias">
+
                 <thead>
                     <tr>
                         <th>Código</th>
@@ -201,33 +323,72 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 </thead>
 
                 <tbody>
+
                     <?php if (!empty($productos)): ?>
+
                         <?php foreach ($productos as $producto): ?>
+
                             <?php
-                                $existencia = (int)($producto['existencia'] ?? 0);
+
+                                $existencia = (int)(
+                                    $producto['existencia_con_ubicacion']
+                                    ?? $producto['existencia']
+                                    ?? 0
+                                );
+
                                 $precio = (float)($producto['precio_compra'] ?? 0);
+
                                 $valor = $existencia * $precio;
 
-                                $estadoTexto = $producto['estado_stock'] ?? 'STOCK NORMAL';
+                                $estadoTexto = strtoupper(
+                                    trim((string)($producto['estado_stock'] ?? 'STOCK NORMAL'))
+                                );
+
                                 $estadoClase = 'estado-normal';
 
                                 if ($estadoTexto === 'SIN EXISTENCIA') {
                                     $estadoClase = 'estado-sin';
+
+                                } elseif ($estadoTexto === 'SIN ALMACEN') {
+                                    $estadoClase = 'estado-dark';
+
                                 } elseif ($estadoTexto === 'STOCK BAJO') {
                                     $estadoClase = 'estado-bajo';
                                 }
+
                             ?>
 
                             <tr>
+
                                 <td><?= e($producto['codigo'] ?? '') ?></td>
+
                                 <td><?= e($producto['codigo_barras'] ?? '') ?></td>
-                                <td class="descripcion-cell"><?= e($producto['descripcion'] ?? '') ?></td>
-                                <td><?= e($producto['categoria'] ?? 'Sin categoría') ?></td>
-                                <td><?= e($producto['proveedor'] ?? 'Sin proveedor') ?></td>
+
+                                <td class="descripcion-cell">
+                                    <?= e($producto['descripcion'] ?? '') ?>
+                                </td>
+
+                                <td>
+                                    <?= e($producto['categoria'] ?? 'Sin categoría') ?>
+                                </td>
+
+                                <td>
+                                    <?= e($producto['proveedor'] ?? 'Sin proveedor') ?>
+                                </td>
+
                                 <td><?= e($producto['unidad_medida'] ?? '') ?></td>
-                                <td><?= e($producto['sucursal'] ?? 'SIN ALMACEN') ?></td>
-                                <td><?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?></td>
-                                <td class="text-right existencia-number"><?= number_format($existencia) ?></td>
+
+                                <td>
+                                    <?= e($producto['sucursal'] ?? 'SIN ALMACEN') ?>
+                                </td>
+
+                                <td>
+                                    <?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?>
+                                </td>
+
+                                <td class="text-right existencia-number">
+                                    <?= number_format($existencia) ?>
+                                </td>
 
                                 <td>
                                     <span class="stock-badge <?= e($estadoClase) ?>">
@@ -235,20 +396,34 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </span>
                                 </td>
 
-                                <td class="text-right">$<?= number_format($precio, 2) ?></td>
-                                <td class="text-right">$<?= number_format($valor, 2) ?></td>
+                                <td class="text-right">
+                                    $<?= number_format($precio, 2) ?>
+                                </td>
+
+                                <td class="text-right">
+                                    $<?= number_format($valor, 2) ?>
+                                </td>
+
                             </tr>
+
                         <?php endforeach; ?>
+
                     <?php else: ?>
+
                         <tr>
                             <td colspan="12" class="empty-table">
                                 No se encontraron productos con los filtros seleccionados.
                             </td>
                         </tr>
+
                     <?php endif; ?>
+
                 </tbody>
+
             </table>
+
         </div>
+
     </div>
 
 </div>

@@ -23,15 +23,17 @@ $moduleCss = 'dashboard';
 include __DIR__ . '/../app/views/layouts/header.php';
 
 $totalProductos = (int)($indicadores['total_productos'] ?? 0);
+$stockCorrecto = (int)($indicadores['stock_correcto'] ?? 0);
 $enStock = (int)($indicadores['en_stock'] ?? 0);
 $bajoStock = (int)($indicadores['bajo_stock'] ?? 0);
-$agotados = (int)($indicadores['agotados'] ?? 0);
+$sinExistencia = (int)($indicadores['sin_existencia'] ?? $indicadores['agotados'] ?? 0);
+$sinAlmacen = (int)($indicadores['sin_almacen'] ?? 0);
 $entradasHoy = (int)($indicadores['entradas_hoy'] ?? 0);
 $salidasHoy = (int)($indicadores['salidas_hoy'] ?? 0);
 
-$porcentajeStock = $totalProductos > 0 ? round(($enStock / $totalProductos) * 100, 1) : 0;
-$porcentajeBajo = $totalProductos > 0 ? round(($bajoStock / $totalProductos) * 100, 1) : 0;
-$porcentajeAgotado = $totalProductos > 0 ? round(($agotados / $totalProductos) * 100, 1) : 0;
+$porcentajeStock = $totalProductos > 0 ? round(($stockCorrecto / $totalProductos) * 100, 1) : 0;
+$porcentajeSinExistencia = $totalProductos > 0 ? round(($sinExistencia / $totalProductos) * 100, 1) : 0;
+$porcentajeSinAlmacen = $totalProductos > 0 ? round(($sinAlmacen / $totalProductos) * 100, 1) : 0;
 
 $ubicacionLabels = array_column($ubicaciones, 'ubicacion');
 $ubicacionData = array_map('intval', array_column($ubicaciones, 'total'));
@@ -53,9 +55,9 @@ $documentoData = array_map('intval', array_column($documentosMasUsados, 'total')
         </div>
 
         <div class="side-card blue">
-            <span>Stock</span>
-            <strong><?= number_format($enStock) ?></strong>
-            <small>Disponibles</small>
+            <span>Stock correcto</span>
+            <strong><?= number_format($stockCorrecto) ?></strong>
+            <small>Con existencia y ubicación</small>
         </div>
 
         <div class="side-card yellow">
@@ -65,9 +67,15 @@ $documentoData = array_map('intval', array_column($documentosMasUsados, 'total')
         </div>
 
         <div class="side-card red">
-            <span>Agotados</span>
-            <strong><?= number_format($agotados) ?></strong>
-            <small>Sin existencia</small>
+            <span>Sin existencia</span>
+            <strong><?= number_format($sinExistencia) ?></strong>
+            <small>Con almacén asignado</small>
+        </div>
+
+        <div class="side-card gray">
+            <span>Sin almacén</span>
+            <strong><?= number_format($sinAlmacen) ?></strong>
+            <small>Sin sucursal asignada</small>
         </div>
     </div>
 
@@ -87,21 +95,21 @@ $documentoData = array_map('intval', array_column($documentosMasUsados, 'total')
 
         <div class="metric-row">
             <div class="metric-card">
-                <span>Con stock</span>
+                <span>Stock correcto</span>
                 <strong><?= $porcentajeStock ?>%</strong>
-                <small><?= number_format($enStock) ?> productos</small>
+                <small><?= number_format($stockCorrecto) ?> productos</small>
             </div>
 
             <div class="metric-card">
-                <span>Bajo stock</span>
-                <strong><?= $porcentajeBajo ?>%</strong>
-                <small><?= number_format($bajoStock) ?> productos</small>
+                <span>Sin existencia</span>
+                <strong><?= $porcentajeSinExistencia ?>%</strong>
+                <small><?= number_format($sinExistencia) ?> productos</small>
             </div>
 
             <div class="metric-card">
-                <span>Agotados</span>
-                <strong><?= $porcentajeAgotado ?>%</strong>
-                <small><?= number_format($agotados) ?> productos</small>
+                <span>Sin almacén</span>
+                <strong><?= $porcentajeSinAlmacen ?>%</strong>
+                <small><?= number_format($sinAlmacen) ?> productos</small>
             </div>
 
             <div class="metric-card">
@@ -121,8 +129,8 @@ $documentoData = array_map('intval', array_column($documentosMasUsados, 'total')
 
             <div class="chart-window">
                 <div class="chart-head">
-                    <h3>Estado de existencias</h3>
-                    <span>Stock / Bajo / Agotado</span>
+                    <h3>Estado de inventario</h3>
+                    <span>Stock / Sin existencia / Sin almacén</span>
                 </div>
                 <div class="chart-box">
                     <canvas id="stockChart"></canvas>
@@ -370,45 +378,15 @@ function crearGraficaPuntosConFlecha(id, entradas, salidas) {
                     grid: { display: false }
                 }
             }
-        },
-        plugins: [{
-            id: 'arrowLine',
-            afterDatasetsDraw(chart) {
-                const ctx = chart.ctx;
-                const meta = chart.getDatasetMeta(0);
-                if (!meta || meta.data.length < 2) return;
-
-                const p0 = meta.data[0];
-                const p1 = meta.data[1];
-                const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(p0.x, p0.y);
-                ctx.lineTo(p1.x, p1.y);
-                ctx.strokeStyle = '#2563eb';
-                ctx.lineWidth = 4;
-                ctx.stroke();
-
-                const headlen = 12;
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p1.x - headlen * Math.cos(angle - Math.PI / 6), p1.y - headlen * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(p1.x - headlen * Math.cos(angle + Math.PI / 6), p1.y - headlen * Math.sin(angle + Math.PI / 6));
-                ctx.lineTo(p1.x, p1.y);
-                ctx.fillStyle = '#2563eb';
-                ctx.fill();
-                ctx.restore();
-            }
-        }]
+        }
     });
 }
 
 crearGraficaBarras(
     'stockChart',
-    ['En stock', 'Bajo stock', 'Agotados'],
-    [<?= $enStock ?>, <?= $bajoStock ?>, <?= $agotados ?>],
-    ['#15803d', '#facc15', '#dc2626']
+    ['Stock correcto', 'Sin existencia', 'Sin almacén'],
+    [<?= $stockCorrecto ?>, <?= $sinExistencia ?>, <?= $sinAlmacen ?>],
+    ['#15803d', '#dc2626', '#64748b']
 );
 
 crearGraficaPuntosConFlecha(

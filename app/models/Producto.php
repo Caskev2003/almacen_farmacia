@@ -105,171 +105,19 @@ class Producto
         return 'normal';
     }
 
-    public function getAll(
-        string $search = '',
-        string $sucursal = '',
-        bool $isAdmin = false,
-        string $categoriaId = '',
-        string $proveedor = '',
-        string $ubicacion = '',
-        string $estadoStock = ''
-    ): array {
-        $params = [];
+   public function getAll(
+    string $search = '',
+    string $sucursal = '',
+    bool $isAdmin = false,
+    string $categoriaId = '',
+    string $proveedor = '',
+    string $ubicacion = '',
+    string $estadoStock = ''
+): array {
+    $params = [];
 
-        if ($isAdmin) {
-            $sql = "SELECT 
-                        p.id,
-                        p.codigo,
-                        p.codigo_barras,
-                        p.descripcion,
-                        p.laboratorio,
-                        p.unidad_medida,
-                        p.precio_compra,
-                        p.precio_venta,
-                        p.stock_minimo,
-                        p.stock_maximo,
-                        p.ubicacion,
-                        p.estado,
-                        c.nombre AS categoria,
-                        pr.nombre AS proveedor,
-
-                        COALESCE(SUM(
-                            CASE 
-                                WHEN UPPER(pe.sucursal) IN ('CIUDAD HIDALGO', 'CD HIDALGO')
-                                THEN pe.existencia 
-                                ELSE 0 
-                            END
-                        ), 0) AS existencia_hidalgo,
-
-                        COALESCE(SUM(
-                            CASE 
-                                WHEN UPPER(pe.sucursal) IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')
-                                THEN pe.existencia 
-                                ELSE 0 
-                            END
-                        ), 0) AS existencia_tuxtla,
-
-                        COALESCE(SUM(pe.existencia), 0) AS existencia_total
-
-                    FROM productos p
-
-                    LEFT JOIN categorias c 
-                        ON p.categoria_id = c.id
-
-                    LEFT JOIN proveedores pr 
-                        ON p.proveedor_id = pr.id
-
-                    LEFT JOIN producto_existencias pe 
-                        ON pe.producto_id = p.id
-                        AND pe.sucursal IS NOT NULL
-                        AND TRIM(pe.sucursal) != ''
-                        AND pe.existencia > 0
-                        AND pe.ubicacion IS NOT NULL
-                        AND TRIM(pe.ubicacion) != ''
-                        AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-
-                    WHERE p.estado = 1";
-        } else {
-            $sql = "SELECT 
-                        p.id,
-                        p.codigo,
-                        p.codigo_barras,
-                        p.descripcion,
-                        p.laboratorio,
-                        p.unidad_medida,
-                        p.precio_compra,
-                        p.precio_venta,
-                        p.stock_minimo,
-                        p.stock_maximo,
-                        p.ubicacion,
-                        p.estado,
-                        c.nombre AS categoria,
-                        pr.nombre AS proveedor,
-
-                        COALESCE(SUM(pe.existencia), 0) AS existencia,
-                        COALESCE(SUM(pe.existencia), 0) AS existencia_total
-
-                    FROM productos p
-
-                    LEFT JOIN categorias c 
-                        ON p.categoria_id = c.id
-
-                    LEFT JOIN proveedores pr 
-                        ON p.proveedor_id = pr.id
-
-                    LEFT JOIN producto_existencias pe 
-                        ON pe.producto_id = p.id
-                        AND UPPER(pe.sucursal) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                        AND pe.existencia > 0
-                        AND pe.ubicacion IS NOT NULL
-                        AND TRIM(pe.ubicacion) != ''
-                        AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-
-                    WHERE p.estado = 1";
-
-            $params[':sucursal'] = $sucursal;
-        }
-
-        if ($search !== '') {
-            $sql .= " AND (
-                        p.codigo LIKE :search
-                        OR p.codigo_barras LIKE :search
-                        OR p.descripcion LIKE :search
-                        OR p.laboratorio LIKE :search
-                        OR p.ubicacion LIKE :search
-                        OR pr.nombre LIKE :search
-                        OR pe.ubicacion LIKE :search
-                    )";
-
-            $params[':search'] = "%{$search}%";
-        }
-
-        if ($categoriaId !== '') {
-            $sql .= " AND p.categoria_id = :categoria_id";
-            $params[':categoria_id'] = (int)$categoriaId;
-        }
-
-        if ($proveedor !== '') {
-            $sql .= " AND pr.nombre LIKE :proveedor";
-            $params[':proveedor'] = "%{$proveedor}%";
-        }
-
-        if ($ubicacion !== '') {
-            $sql .= " AND (
-                        p.ubicacion LIKE :ubicacion
-                        OR pe.ubicacion LIKE :ubicacion
-                    )";
-            $params[':ubicacion'] = "%{$ubicacion}%";
-        }
-
-        if ($isAdmin) {
-            $sql .= " AND EXISTS (
-                        SELECT 1
-                        FROM producto_existencias pe2
-                        WHERE pe2.producto_id = p.id
-                          AND pe2.sucursal IS NOT NULL
-                          AND TRIM(pe2.sucursal) != ''
-                          AND pe2.existencia > 0
-                          AND pe2.ubicacion IS NOT NULL
-                          AND TRIM(pe2.ubicacion) != ''
-                          AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                    )";
-        } else {
-            $sql .= " AND EXISTS (
-                        SELECT 1
-                        FROM producto_existencias pe2
-                        WHERE pe2.producto_id = p.id
-                          AND UPPER(pe2.sucursal) COLLATE utf8mb4_general_ci = UPPER(:sucursal_existencia)
-                          AND pe2.existencia > 0
-                          AND pe2.ubicacion IS NOT NULL
-                          AND TRIM(pe2.ubicacion) != ''
-                          AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                    )";
-
-            $params[':sucursal_existencia'] = $sucursal;
-        }
-
-        $sql .= " GROUP BY 
+    if ($isAdmin) {
+        $sql = "SELECT 
                     p.id,
                     p.codigo,
                     p.codigo_barras,
@@ -282,107 +130,303 @@ class Producto
                     p.stock_maximo,
                     p.ubicacion,
                     p.estado,
-                    c.nombre,
-                    pr.nombre
+                    c.nombre AS categoria,
+                    pr.nombre AS proveedor,
 
-                  ORDER BY p.descripcion ASC";
+                    COALESCE(SUM(
+                        CASE 
+                            WHEN UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci IN ('CIUDAD HIDALGO', 'CD HIDALGO')
+                            AND COALESCE(pe.existencia, 0) > 0
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.existencia 
+                            ELSE 0 
+                        END
+                    ), 0) AS existencia_hidalgo,
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+                    COALESCE(SUM(
+                        CASE 
+                            WHEN UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')
+                            AND COALESCE(pe.existencia, 0) > 0
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.existencia 
+                            ELSE 0 
+                        END
+                    ), 0) AS existencia_tuxtla,
 
-        $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    COALESCE(SUM(
+                        CASE
+                            WHEN pe.sucursal IS NOT NULL
+                            AND TRIM(pe.sucursal) != ''
+                            AND COALESCE(pe.existencia, 0) > 0
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.existencia
+                            ELSE 0
+                        END
+                    ), 0) AS existencia_total
 
-        foreach ($productos as &$producto) {
-            $productoId = (int)$producto['id'];
+                FROM productos p
 
-            if ($isAdmin) {
-                $sqlUbi = "SELECT 
-                                sucursal,
-                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                                existencia AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                             AND sucursal IS NOT NULL
-                             AND TRIM(sucursal) != ''
-                             AND existencia > 0
-                             AND ubicacion IS NOT NULL
-                             AND TRIM(ubicacion) != ''
-                             AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY sucursal ASC, ubicacion ASC";
+                LEFT JOIN categorias c 
+                    ON p.categoria_id = c.id
 
-                $stmtUbi = $this->conn->prepare($sqlUbi);
-                $stmtUbi->execute([
-                    ':producto_id' => $productoId
-                ]);
-            } else {
-                $sqlUbi = "SELECT 
-                                sucursal,
-                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                                existencia AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                             AND UPPER(sucursal) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                             AND existencia > 0
-                             AND ubicacion IS NOT NULL
-                             AND TRIM(ubicacion) != ''
-                             AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY existencia ASC, ubicacion ASC";
+                LEFT JOIN proveedores pr 
+                    ON p.proveedor_id = pr.id
 
-                $stmtUbi = $this->conn->prepare($sqlUbi);
-                $stmtUbi->execute([
-                    ':producto_id' => $productoId,
-                    ':sucursal' => $sucursal
-                ]);
-            }
+                LEFT JOIN producto_existencias pe 
+                    ON pe.producto_id = p.id
 
-            $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
+                WHERE p.estado = 1";
+    } else {
+        $sql = "SELECT 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.laboratorio,
+                    p.unidad_medida,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.stock_minimo,
+                    p.stock_maximo,
+                    p.ubicacion,
+                    p.estado,
+                    c.nombre AS categoria,
+                    pr.nombre AS proveedor,
 
-            $existencia = $isAdmin
-                ? (int)($producto['existencia_total'] ?? 0)
-                : (int)($producto['existencia'] ?? 0);
+                    COALESCE(SUM(
+                        CASE
+                            WHEN UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                            AND COALESCE(pe.existencia, 0) > 0
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.existencia
+                            ELSE 0
+                        END
+                    ), 0) AS existencia,
 
-            $producto['estado_stock'] = $this->calcularEstadoStock($existencia);
-            $producto['estado_stock_texto'] = match ($producto['estado_stock']) {
-                'agotado' => 'AGOTADO',
-                'bajo' => 'BAJO STOCK',
-                default => 'NORMAL',
-            };
-        }
+                    COALESCE(SUM(
+                        CASE
+                            WHEN UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal_total)
+                            AND COALESCE(pe.existencia, 0) > 0
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.existencia
+                            ELSE 0
+                        END
+                    ), 0) AS existencia_total
 
-        unset($producto);
+                FROM productos p
 
-        if ($estadoStock !== '') {
-            $productos = array_values(array_filter($productos, function ($producto) use ($estadoStock) {
-                return ($producto['estado_stock'] ?? '') === $estadoStock;
-            }));
-        }
+                LEFT JOIN categorias c 
+                    ON p.categoria_id = c.id
 
-        return $productos;
-    }
+                LEFT JOIN proveedores pr 
+                    ON p.proveedor_id = pr.id
 
-    public function countAll(string $search = ''): int
-    {
-        $sql = "SELECT COUNT(*) 
-                FROM productos p 
+                LEFT JOIN producto_existencias pe 
+                    ON pe.producto_id = p.id
+
                 WHERE p.estado = 1";
 
-        $params = [];
+        $params[':sucursal'] = $sucursal;
+        $params[':sucursal_total'] = $sucursal;
+    }
 
-        if ($search !== '') {
-            $sql .= " AND (
-                        p.codigo LIKE :search
-                        OR p.codigo_barras LIKE :search
-                        OR p.descripcion LIKE :search
-                    )";
+    if ($search !== '') {
+        $sql .= " AND (
+                    p.codigo LIKE :search
+                    OR p.codigo_barras LIKE :search
+                    OR p.descripcion LIKE :search
+                    OR p.laboratorio LIKE :search
+                    OR p.ubicacion LIKE :search
+                    OR pr.nombre LIKE :search
+                    OR pe.ubicacion LIKE :search
+                )";
 
-            $params[':search'] = "%{$search}%";
+        $params[':search'] = "%{$search}%";
+    }
+
+    if ($categoriaId !== '') {
+        $sql .= " AND p.categoria_id = :categoria_id";
+        $params[':categoria_id'] = (int)$categoriaId;
+    }
+
+    if ($proveedor !== '') {
+        $sql .= " AND pr.nombre LIKE :proveedor";
+        $params[':proveedor'] = "%{$proveedor}%";
+    }
+
+    if ($ubicacion !== '') {
+        $sql .= " AND (
+                    p.ubicacion LIKE :ubicacion
+                    OR pe.ubicacion LIKE :ubicacion
+                )";
+        $params[':ubicacion'] = "%{$ubicacion}%";
+    }
+
+    if ($isAdmin) {
+        $sql .= " AND EXISTS (
+                    SELECT 1
+                    FROM producto_existencias pe2
+                    WHERE pe2.producto_id = p.id
+                    AND pe2.sucursal IS NOT NULL
+                    AND TRIM(pe2.sucursal) != ''
+                    AND COALESCE(pe2.existencia, 0) > 0
+                    AND pe2.ubicacion IS NOT NULL
+                    AND TRIM(pe2.ubicacion) != ''
+                    AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                )";
+    } else {
+        $sql .= " AND EXISTS (
+                    SELECT 1
+                    FROM producto_existencias pe2
+                    WHERE pe2.producto_id = p.id
+                    AND UPPER(COALESCE(pe2.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal_existencia)
+                    AND COALESCE(pe2.existencia, 0) > 0
+                    AND pe2.ubicacion IS NOT NULL
+                    AND TRIM(pe2.ubicacion) != ''
+                    AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                )";
+
+        $params[':sucursal_existencia'] = $sucursal;
+    }
+
+    $sql .= " GROUP BY 
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.laboratorio,
+                p.unidad_medida,
+                p.precio_compra,
+                p.precio_venta,
+                p.stock_minimo,
+                p.stock_maximo,
+                p.ubicacion,
+                p.estado,
+                c.nombre,
+                pr.nombre
+
+              HAVING existencia_total > 0
+
+              ORDER BY p.descripcion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($productos as &$producto) {
+        $productoId = (int)$producto['id'];
+
+        if ($isAdmin) {
+            $sqlUbi = "SELECT 
+                            sucursal,
+                            COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                            existencia AS existencia_actual
+                       FROM producto_existencias
+                       WHERE producto_id = :producto_id
+                       AND sucursal IS NOT NULL
+                       AND TRIM(sucursal) != ''
+                       AND COALESCE(existencia, 0) > 0
+                       AND ubicacion IS NOT NULL
+                       AND TRIM(ubicacion) != ''
+                       AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                       ORDER BY sucursal ASC, ubicacion ASC";
+
+            $stmtUbi = $this->conn->prepare($sqlUbi);
+            $stmtUbi->execute([
+                ':producto_id' => $productoId
+            ]);
+        } else {
+            $sqlUbi = "SELECT 
+                            sucursal,
+                            COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                            existencia AS existencia_actual
+                       FROM producto_existencias
+                       WHERE producto_id = :producto_id
+                       AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                       AND COALESCE(existencia, 0) > 0
+                       AND ubicacion IS NOT NULL
+                       AND TRIM(ubicacion) != ''
+                       AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                       ORDER BY existencia ASC, ubicacion ASC";
+
+            $stmtUbi = $this->conn->prepare($sqlUbi);
+            $stmtUbi->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal
+            ]);
         }
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+        $producto['ubicaciones'] = $stmtUbi->fetchAll(PDO::FETCH_ASSOC);
 
-        return (int)$stmt->fetchColumn();
+        $existencia = $isAdmin
+            ? (int)($producto['existencia_total'] ?? 0)
+            : (int)($producto['existencia'] ?? 0);
+
+        $producto['estado_stock'] = $this->calcularEstadoStock($existencia);
+        $producto['estado_stock_texto'] = match ($producto['estado_stock']) {
+            'agotado' => 'AGOTADO',
+            'bajo' => 'BAJO STOCK',
+            default => 'NORMAL',
+        };
     }
+
+    unset($producto);
+
+    if ($estadoStock !== '') {
+        $productos = array_values(array_filter($productos, function ($producto) use ($estadoStock) {
+            return ($producto['estado_stock'] ?? '') === $estadoStock;
+        }));
+    }
+
+    return $productos;
+}
+    public function countAll(string $search = ''): int
+{
+    $sql = "SELECT COUNT(*) AS total
+            FROM (
+                SELECT p.id
+                FROM productos p
+                INNER JOIN producto_existencias pe
+                    ON pe.producto_id = p.id
+                WHERE p.estado = 1
+                AND pe.sucursal IS NOT NULL
+                AND TRIM(pe.sucursal) != ''
+                AND COALESCE(pe.existencia, 0) > 0
+                AND pe.ubicacion IS NOT NULL
+                AND TRIM(pe.ubicacion) != ''
+                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+
+    $params = [];
+
+    if ($search !== '') {
+        $sql .= " AND (
+                    p.codigo LIKE :search
+                    OR p.codigo_barras LIKE :search
+                    OR p.descripcion LIKE :search
+                )";
+
+        $params[':search'] = "%{$search}%";
+    }
+
+    $sql .= " GROUP BY p.id
+            ) AS t";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    return (int)$stmt->fetchColumn();
+}
 
     public function findById(int $id): ?array
     {

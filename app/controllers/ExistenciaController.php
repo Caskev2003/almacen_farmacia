@@ -78,7 +78,7 @@ class ExistenciaController
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER({$alias}.sucursal) IN (" . implode(',', $marks) . ") ";
+        $sql .= " AND UPPER(COALESCE({$alias}.sucursal, '')) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ") ";
     }
 
     public function index(array $filtros): array
@@ -94,13 +94,70 @@ class ExistenciaController
 
         $subquery = "SELECT
                         pe.producto_id,
-                        SUM(COALESCE(pe.existencia, 0)) AS existencia,
+
+                        SUM(
+                            CASE
+                                WHEN pe.sucursal IS NOT NULL
+                                AND TRIM(pe.sucursal) != ''
+                                THEN COALESCE(pe.existencia, 0)
+                                ELSE 0
+                            END
+                        ) AS existencia,
+
+                        SUM(
+                            CASE
+                                WHEN pe.sucursal IS NOT NULL
+                                AND TRIM(pe.sucursal) != ''
+                                THEN 1
+                                ELSE 0
+                            END
+                        ) AS filas_con_sucursal,
+
+                        SUM(
+                            CASE
+                                WHEN pe.sucursal IS NULL
+                                OR TRIM(pe.sucursal) = ''
+                                THEN 1
+                                ELSE 0
+                            END
+                        ) AS filas_sin_almacen,
+
+                        SUM(
+                            CASE
+                                WHEN pe.sucursal IS NOT NULL
+                                AND TRIM(pe.sucursal) != ''
+                                AND COALESCE(pe.existencia, 0) > 0
+                                AND pe.ubicacion IS NOT NULL
+                                AND TRIM(pe.ubicacion) != ''
+                                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                                THEN COALESCE(pe.existencia, 0)
+                                ELSE 0
+                            END
+                        ) AS existencia_con_ubicacion,
+
                         GROUP_CONCAT(
-                            DISTINCT COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
+                            DISTINCT CASE
+                                WHEN pe.sucursal IS NOT NULL
+                                AND TRIM(pe.sucursal) != ''
+                                AND COALESCE(pe.existencia, 0) > 0
+                                AND pe.ubicacion IS NOT NULL
+                                AND TRIM(pe.ubicacion) != ''
+                                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                                THEN pe.ubicacion
+                                ELSE NULL
+                            END
                             ORDER BY pe.ubicacion ASC
                             SEPARATOR ', '
                         ) AS ubicacion,
-                        MIN(pe.sucursal) AS sucursal
+
+                        GROUP_CONCAT(
+                            DISTINCT COALESCE(NULLIF(TRIM(pe.sucursal), ''), 'SIN ALMACEN')
+                            ORDER BY pe.sucursal ASC
+                            SEPARATOR ', '
+                        ) AS sucursales,
+
+                        MIN(NULLIF(TRIM(pe.sucursal), '')) AS sucursal
+
                     FROM producto_existencias pe
                     WHERE 1 = 1";
 
@@ -125,14 +182,33 @@ class ExistenciaController
                     p.laboratorio,
                     p.unidad_medida,
                     p.precio_compra,
+
                     COALESCE(stock.sucursal, 'SIN ALMACEN') AS sucursal,
-                    COALESCE(stock.ubicacion, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                    COALESCE(stock.sucursales, 'SIN ALMACEN') AS sucursales,
+                    COALESCE(stock.ubicacion, 'SIN UBICACION') AS ubicacion,
+
                     COALESCE(stock.existencia, 0) AS existencia,
+                    COALESCE(stock.existencia_con_ubicacion, 0) AS existencia_con_ubicacion,
+                    COALESCE(stock.filas_con_sucursal, 0) AS filas_con_sucursal,
+                    COALESCE(stock.filas_sin_almacen, 0) AS filas_sin_almacen,
+
                     CASE
-                        WHEN COALESCE(stock.existencia, 0) <= 0 THEN 'SIN EXISTENCIA'
-                        WHEN COALESCE(stock.existencia, 0) <= {$this->limiteBajoStock} THEN 'STOCK BAJO'
+                        WHEN stock.producto_id IS NULL
+                             OR COALESCE(stock.filas_con_sucursal, 0) = 0
+                        THEN 'SIN ALMACEN'
+
+                        WHEN COALESCE(stock.existencia, 0) <= 0
+                        THEN 'SIN EXISTENCIA'
+
+                        WHEN COALESCE(stock.existencia_con_ubicacion, 0) <= 0
+                        THEN 'SIN UBICACION'
+
+                        WHEN COALESCE(stock.existencia_con_ubicacion, 0) <= {$this->limiteBajoStock}
+                        THEN 'STOCK BAJO'
+
                         ELSE 'STOCK NORMAL'
                     END AS estado_stock
+
                 FROM productos p
                 LEFT JOIN categorias c ON p.categoria_id = c.id
                 LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
@@ -152,6 +228,7 @@ class ExistenciaController
                 OR pr.nombre LIKE :buscar
                 OR p.laboratorio LIKE :buscar
                 OR stock.ubicacion LIKE :buscar
+                OR stock.sucursales LIKE :buscar
             )";
             $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
         }
@@ -167,12 +244,22 @@ class ExistenciaController
         }
 
         if (!empty($filtros['estado_stock'])) {
-            if ($filtros['estado_stock'] === 'sin_existencia') {
-                $sql .= " AND COALESCE(stock.existencia, 0) <= 0";
+            if ($filtros['estado_stock'] === 'sin_almacen') {
+                $sql .= " AND (
+                    stock.producto_id IS NULL
+                    OR COALESCE(stock.filas_con_sucursal, 0) = 0
+                )";
+            } elseif ($filtros['estado_stock'] === 'sin_existencia') {
+                $sql .= " AND stock.producto_id IS NOT NULL
+                          AND COALESCE(stock.filas_con_sucursal, 0) > 0
+                          AND COALESCE(stock.existencia, 0) <= 0";
             } elseif ($filtros['estado_stock'] === 'bajo') {
-                $sql .= " AND COALESCE(stock.existencia, 0) > 0 AND COALESCE(stock.existencia, 0) <= {$this->limiteBajoStock}";
+                $sql .= " AND COALESCE(stock.existencia_con_ubicacion, 0) > 0
+                          AND COALESCE(stock.existencia_con_ubicacion, 0) <= {$this->limiteBajoStock}";
             } elseif ($filtros['estado_stock'] === 'normal') {
-                $sql .= " AND COALESCE(stock.existencia, 0) > {$this->limiteBajoStock}";
+                $sql .= " AND COALESCE(stock.existencia_con_ubicacion, 0) > {$this->limiteBajoStock}";
+            } elseif ($filtros['estado_stock'] === 'stock') {
+                $sql .= " AND COALESCE(stock.existencia_con_ubicacion, 0) > 0";
             }
         }
 
@@ -181,8 +268,8 @@ class ExistenciaController
         $ordenes = [
             'codigo' => 'p.codigo ASC',
             'descripcion' => 'p.descripcion ASC',
-            'existencia_mayor' => 'existencia DESC',
-            'existencia_menor' => 'existencia ASC',
+            'existencia_mayor' => 'existencia_con_ubicacion DESC',
+            'existencia_menor' => 'existencia_con_ubicacion ASC',
             'ubicacion' => 'ubicacion ASC',
         ];
 
@@ -199,23 +286,31 @@ class ExistenciaController
         $totalProductos = count($productos);
         $totalUnidades = 0;
         $sinExistencia = 0;
+        $sinAlmacen = 0;
         $stockBajo = 0;
         $stockNormal = 0;
+        $stockCorrecto = 0;
         $valorInventario = 0;
 
         foreach ($productos as $p) {
             $existencia = (int)($p['existencia'] ?? 0);
+            $existenciaConUbicacion = (int)($p['existencia_con_ubicacion'] ?? 0);
             $precio = (float)($p['precio_compra'] ?? 0);
+            $estado = strtoupper(trim((string)($p['estado_stock'] ?? '')));
 
-            $totalUnidades += $existencia;
-            $valorInventario += $existencia * $precio;
+            $totalUnidades += $existenciaConUbicacion;
+            $valorInventario += $existenciaConUbicacion * $precio;
 
-            if ($existencia <= 0) {
+            if ($estado === 'SIN ALMACEN') {
+                $sinAlmacen++;
+            } elseif ($estado === 'SIN EXISTENCIA') {
                 $sinExistencia++;
-            } elseif ($existencia <= $this->limiteBajoStock) {
+            } elseif ($existenciaConUbicacion > 0 && $existenciaConUbicacion <= $this->limiteBajoStock) {
                 $stockBajo++;
-            } else {
+                $stockCorrecto++;
+            } elseif ($existenciaConUbicacion > $this->limiteBajoStock) {
                 $stockNormal++;
+                $stockCorrecto++;
             }
         }
 
@@ -223,8 +318,10 @@ class ExistenciaController
             'totalProductos',
             'totalUnidades',
             'sinExistencia',
+            'sinAlmacen',
             'stockBajo',
             'stockNormal',
+            'stockCorrecto',
             'valorInventario'
         );
     }

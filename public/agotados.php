@@ -156,10 +156,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     <?php endif; ?>
 
     <div class="tabs-agotados">
-        <a href="<?= e(urlTab('sin_ubicacion', $filtros)) ?>" class="<?= e(activeTab($tipo, 'sin_ubicacion')) ?>">
-            <span>Sin ubicación</span>
-            <strong><?= number_format((int)$resumen['sin_ubicacion']) ?></strong>
-        </a>
 
         <a href="<?= e(urlTab('sin_existencia', $filtros)) ?>" class="<?= e(activeTab($tipo, 'sin_existencia')) ?>">
             <span>Sin existencia</span>

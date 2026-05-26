@@ -199,116 +199,136 @@ class AgotadoController
         return $subquery;
     }
 
-    public function listar(array $filtros): array
-    {
-        $params = [];
+    public function listar(array $filtros = []): array
+{
+    $buscar = trim($filtros['buscar'] ?? '');
+    $tipo = trim($filtros['tipo'] ?? 'sin_existencia');
+    $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
 
-        $almacenId = (int)($filtros['almacen_id'] ?? 0);
-        $filtroAlmacen = trim($filtros['filtro_almacen'] ?? '');
-        $tipo = trim($filtros['tipo'] ?? 'sin_existencia');
+    $sql = "SELECT
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                COALESCE(c.nombre, 'Sin categoría') AS categoria,
+                COALESCE(pr.nombre, 'Sin proveedor') AS proveedor,
+                COALESCE(p.laboratorio, 'Sin laboratorio') AS laboratorio,
 
-        $pagina = max((int)($filtros['pagina'] ?? 1), 1);
-        $porPagina = max((int)($filtros['por_pagina'] ?? 25), 1);
+                CASE
+                    WHEN COALESCE(stock.filas_con_sucursal, 0) = 0
+                    THEN 'SIN ALMACEN'
+                    ELSE stock.sucursal_principal
+                END AS almacen,
 
-        if (!$this->esAdmin()) {
-            $almacenId = $this->almacenIdSesion();
-        }
+                CASE
+                    WHEN COALESCE(stock.existencia_total, 0) <= 0
+                    THEN 'SIN UBICACION'
+                    ELSE stock.ubicacion_principal
+                END AS ubicacion,
 
-        $subquery = $this->subqueryInventario($params, $almacenId, $filtroAlmacen, true);
+                COALESCE(stock.existencia_total, 0) AS existencia,
 
-        $sql = "SELECT
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-                    p.laboratorio,
-                    p.unidad_medida,
+                CASE
+                    WHEN COALESCE(stock.filas_con_sucursal, 0) = 0
+                    THEN 'SIN ALMACEN'
 
-                    COALESCE(stock.sucursal, 'SIN ALMACEN') AS sucursal,
-                    COALESCE(stock.sucursales, 'SIN ALMACEN') AS sucursales,
-                    COALESCE(stock.ubicaciones, 'SIN UBICACION') AS ubicacion,
-                    COALESCE(stock.existencia_total, 0) AS existencia,
+                    WHEN COALESCE(stock.existencia_total, 0) <= 0
+                    THEN 'SIN EXISTENCIA'
 
-                    COALESCE(stock.filas_con_sucursal, 0) AS filas_con_sucursal,
-                    COALESCE(stock.filas_sin_almacen, 0) AS filas_sin_almacen,
-                    COALESCE(stock.filas_sin_existencia, 0) AS filas_sin_existencia,
+                    ELSE 'OK'
+                END AS motivo
 
-                    CASE
-                        WHEN stock.producto_id IS NULL
-                             OR COALESCE(stock.filas_con_sucursal, 0) = 0
-                        THEN 'SIN ALMACEN'
+            FROM productos p
 
-                        WHEN COALESCE(stock.filas_sin_existencia, 0) > 0
-                        THEN 'SIN EXISTENCIA'
+            LEFT JOIN categorias c
+                ON p.categoria_id = c.id
 
-                        ELSE 'EN STOCK'
-                    END AS motivo
+            LEFT JOIN proveedores pr
+                ON p.proveedor_id = pr.id
 
-                FROM productos p
+            LEFT JOIN (
 
-                LEFT JOIN categorias c 
-                    ON p.categoria_id = c.id
+                SELECT
+                    pe.producto_id,
 
-                LEFT JOIN proveedores pr 
-                    ON p.proveedor_id = pr.id
+                    SUM(pe.existencia) AS existencia_total,
 
-                LEFT JOIN ({$subquery}) AS stock 
-                    ON stock.producto_id = p.id
+                    SUM(
+                        CASE
+                            WHEN pe.sucursal IS NOT NULL
+                            AND TRIM(pe.sucursal) <> ''
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS filas_con_sucursal,
 
-                WHERE p.estado = 1";
+                    MAX(
+                        CASE
+                            WHEN pe.sucursal IS NOT NULL
+                            AND TRIM(pe.sucursal) <> ''
+                            THEN pe.sucursal
+                            ELSE NULL
+                        END
+                    ) AS sucursal_principal,
 
-        if ($tipo === 'sin_existencia') {
-            $sql .= " AND stock.producto_id IS NOT NULL
-                      AND COALESCE(stock.filas_con_sucursal, 0) > 0
-                      AND COALESCE(stock.filas_sin_existencia, 0) > 0";
-        } else {
-            $sql .= " AND (
-                        stock.producto_id IS NULL
-                        OR COALESCE(stock.filas_con_sucursal, 0) = 0
-                      )";
-        }
+                    MAX(
+                        CASE
+                            WHEN pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) <> ''
+                            AND UPPER(TRIM(pe.ubicacion)) NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            THEN pe.ubicacion
+                            ELSE NULL
+                        END
+                    ) AS ubicacion_principal
 
-        if (!empty($filtros['buscar'])) {
-            $sql .= " AND (
-                        p.codigo COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.codigo_barras COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.descripcion COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR c.nombre COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR pr.nombre COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.laboratorio COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR stock.ubicaciones COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR stock.sucursales COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR stock.sucursal COLLATE utf8mb4_general_ci LIKE :buscar
-                    )";
+                FROM producto_existencias pe
+                GROUP BY pe.producto_id
 
-            $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
-        }
+            ) stock ON stock.producto_id = p.id
 
-        $sqlCount = "SELECT COUNT(*) AS total FROM ({$sql}) AS tabla";
+            WHERE p.estado = 1";
 
-        $stmtCount = $this->conn->prepare($sqlCount);
-        $stmtCount->execute($params);
+    $params = [];
 
-        $total = (int)($stmtCount->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+    if ($buscar !== '') {
+        $sql .= " AND (
+                    p.codigo LIKE :buscar
+                    OR p.codigo_barras LIKE :buscar
+                    OR p.descripcion LIKE :buscar
+                    OR p.laboratorio LIKE :buscar
+                  )";
 
-        $offset = ($pagina - 1) * $porPagina;
-
-        $sql .= " ORDER BY p.descripcion COLLATE utf8mb4_general_ci ASC
-                  LIMIT {$offset}, {$porPagina}";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-
-        return [
-            'items' => $stmt->fetchAll(PDO::FETCH_ASSOC),
-            'total' => $total,
-            'pagina' => $pagina,
-            'por_pagina' => $porPagina,
-            'total_paginas' => max((int)ceil($total / $porPagina), 1),
-        ];
+        $params[':buscar'] = '%' . $buscar . '%';
     }
+
+    if ($tipo === 'sin_existencia') {
+
+        $sql .= " AND COALESCE(stock.filas_con_sucursal, 0) > 0
+                  AND COALESCE(stock.existencia_total, 0) <= 0";
+
+        if ($filtroAlmacen === 'tuxtla') {
+
+            $sql .= " AND UPPER(TRIM(stock.sucursal_principal))
+                      IN ('TUXTLA', 'TUXTLA GUTIERREZ')";
+
+        } elseif ($filtroAlmacen === 'hidalgo') {
+
+            $sql .= " AND UPPER(TRIM(stock.sucursal_principal))
+                      IN ('CIUDAD HIDALGO', 'CD HIDALGO')";
+        }
+
+    } elseif ($tipo === 'sin_almacen') {
+
+        $sql .= " AND COALESCE(stock.filas_con_sucursal, 0) = 0";
+    }
+
+    $sql .= " ORDER BY p.descripcion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
    public function resumen(array $filtros): array
 {

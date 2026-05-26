@@ -157,9 +157,14 @@ class AgotadoController
                     FROM producto_existencias pe
                     WHERE 1 = 1";
 
-        if ($almacenId > 0) {
-            $this->aplicarFiltroSucursal($subquery, $params, $almacenId);
-        } elseif (!$incluirSinAlmacen) {
+        $filtroAlmacen = trim($_GET['filtro_almacen'] ?? '');
+
+if ($filtroAlmacen !== '') {
+    $this->aplicarFiltroAlmacenAgotados($subquery, $params, $filtroAlmacen);
+} elseif ($almacenId > 0) {
+    $this->aplicarFiltroSucursal($subquery, $params, $almacenId);
+}
+        elseif (!$incluirSinAlmacen) {
             $subquery .= " AND pe.sucursal IS NOT NULL AND TRIM(pe.sucursal) != '' ";
         }
 
@@ -353,6 +358,35 @@ return [
 ];
     }
 
+
+    private function aplicarFiltroAlmacenAgotados(string &$sql, array &$params, string $filtroAlmacen): void
+{
+    $filtroAlmacen = strtolower(trim($filtroAlmacen));
+
+    if ($filtroAlmacen === 'sin_almacen') {
+        $sql .= " AND (
+            pe.sucursal IS NULL
+            OR TRIM(pe.sucursal) = ''
+        )";
+        return;
+    }
+
+    if ($filtroAlmacen === 'ciudad_hidalgo') {
+        $sql .= " AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
+                  IN ('CIUDAD HIDALGO', 'CD HIDALGO')";
+        return;
+    }
+
+    if ($filtroAlmacen === 'tuxtla') {
+        $sql .= " AND (
+            pe.sucursal IS NULL
+            OR TRIM(pe.sucursal) = ''
+            OR UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci 
+               IN ('TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ')
+        )";
+        return;
+    }
+}
     public function actualizarUbicacion(array $data): array
     {
         $productoId = (int)($data['producto_id'] ?? 0);

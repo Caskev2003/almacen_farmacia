@@ -31,9 +31,28 @@ if (!in_array($tipo, ['sin_ubicacion', 'sin_existencia', 'ambas'], true)) {
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 15;
 
+$filtroAlmacen = trim($_GET['filtro_almacen'] ?? '');
+
+if (!$esAdmin) {
+    $permitidos = ['sin_almacen'];
+
+    if ($almacenSesionNombre === 'CIUDAD HIDALGO') {
+        $permitidos[] = 'ciudad_hidalgo';
+    }
+
+    if ($almacenSesionNombre === 'TUXTLA') {
+        $permitidos[] = 'tuxtla';
+    }
+
+    if ($filtroAlmacen !== '' && !in_array($filtroAlmacen, $permitidos, true)) {
+        $filtroAlmacen = '';
+    }
+}
+
 $filtros = [
     'buscar' => trim($_GET['buscar'] ?? ''),
     'almacen_id' => isset($_GET['almacen_id']) ? (int)$_GET['almacen_id'] : 0,
+    'filtro_almacen' => $filtroAlmacen,
     'tipo' => $tipo,
     'pagina' => $page,
     'por_pagina' => $perPage,
@@ -119,7 +138,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <p>
                 Control de productos sin ubicación, sin existencia y sin almacén.
                 <?php if (!$esAdmin && $almacenSesionNombre !== ''): ?>
-                    <strong>Almacén actual: <?= e($almacenSesionNombre) ?></strong>
+                    <strong>Almacén actual: <?= e($almacenSesionNombre === 'TUXTLA' ? 'TUXTLA GUTIÉRREZ' : $almacenSesionNombre) ?></strong>
                 <?php endif; ?>
             </p>
         </div>
@@ -168,9 +187,34 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 >
             </div>
 
+            <div>
+                <label>Filtrar por almacén</label>
+                <select name="filtro_almacen">
+                    <option value="" <?= $filtros['filtro_almacen'] === '' ? 'selected' : '' ?>>
+                        Todos permitidos
+                    </option>
+
+                    <option value="sin_almacen" <?= $filtros['filtro_almacen'] === 'sin_almacen' ? 'selected' : '' ?>>
+                        Sin almacén
+                    </option>
+
+                    <?php if ($esAdmin || $almacenSesionNombre === 'CIUDAD HIDALGO'): ?>
+                        <option value="ciudad_hidalgo" <?= $filtros['filtro_almacen'] === 'ciudad_hidalgo' ? 'selected' : '' ?>>
+                            Ciudad Hidalgo
+                        </option>
+                    <?php endif; ?>
+
+                    <?php if ($esAdmin || $almacenSesionNombre === 'TUXTLA'): ?>
+                        <option value="tuxtla" <?= $filtros['filtro_almacen'] === 'tuxtla' ? 'selected' : '' ?>>
+                            Tuxtla Gutiérrez
+                        </option>
+                    <?php endif; ?>
+                </select>
+            </div>
+
             <?php if ($esAdmin): ?>
                 <div>
-                    <label>Almacén</label>
+                    <label>Almacén de sesión</label>
                     <select name="almacen_id">
                         <option value="0">Todos los almacenes</option>
 
@@ -236,7 +280,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 $existencia = (int)($producto['existencia'] ?? 0);
                                 $sucursal = trim((string)($producto['sucursal'] ?? ''));
                                 $sucursales = trim((string)($producto['sucursales'] ?? ''));
-                                $almacenMostrar = $sucursal !== '' && $sucursal !== 'SIN ALMACEN'
+                                $almacenMostrar = $sucursal !== '' && strtoupper($sucursal) !== 'SIN ALMACEN'
                                     ? $sucursal
                                     : ($sucursales !== '' ? $sucursales : 'SIN ALMACEN');
 

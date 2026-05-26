@@ -199,11 +199,12 @@ class AgotadoController
         return $subquery;
     }
 
-    public function listar(array $filtros): array
+public function listar(array $filtros): array
 {
     $params = [];
 
     $almacenId = (int)($filtros['almacen_id'] ?? 0);
+    $filtroAlmacen = strtolower(trim($filtros['filtro_almacen'] ?? ''));
     $tipo = trim($filtros['tipo'] ?? 'sin_existencia');
 
     if (!in_array($tipo, ['sin_existencia', 'sin_almacen'], true)) {
@@ -217,7 +218,13 @@ class AgotadoController
         $almacenId = $this->almacenIdSesion();
     }
 
-    $sucursales = $this->sucursalesPorAlmacen($almacenId);
+    if ($filtroAlmacen === 'ciudad_hidalgo') {
+        $sucursales = ['CIUDAD HIDALGO', 'CD HIDALGO'];
+    } elseif ($filtroAlmacen === 'tuxtla') {
+        $sucursales = ['TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ'];
+    } else {
+        $sucursales = $this->sucursalesPorAlmacen($almacenId);
+    }
 
     $sql = "SELECT
                 p.id,
@@ -237,14 +244,20 @@ class AgotadoController
                     WHEN stock.producto_id IS NULL
                          OR COALESCE(stock.filas_con_sucursal, 0) = 0
                     THEN 'SIN ALMACEN'
+
                     WHEN COALESCE(stock.existencia_total, 0) <= 0
                     THEN 'SIN EXISTENCIA'
+
                     ELSE 'OK'
                 END AS motivo
 
             FROM productos p
-            LEFT JOIN categorias c ON p.categoria_id = c.id
-            LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+
+            LEFT JOIN categorias c 
+                ON p.categoria_id = c.id
+
+            LEFT JOIN proveedores pr 
+                ON p.proveedor_id = pr.id
 
             LEFT JOIN (
                 SELECT
@@ -274,12 +287,14 @@ class AgotadoController
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER(TRIM(pe.sucursal)) COLLATE utf8mb4_general_ci IN (" . implode(',', $marks) . ")";
+        $sql .= " AND UPPER(TRIM(pe.sucursal)) COLLATE utf8mb4_general_ci
+                  IN (" . implode(',', $marks) . ")";
     }
 
     $sql .= "
                 GROUP BY pe.producto_id
-            ) stock ON stock.producto_id = p.id
+            ) stock 
+                ON stock.producto_id = p.id
 
             WHERE p.estado = 1";
 

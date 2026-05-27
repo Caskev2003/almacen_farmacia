@@ -212,11 +212,25 @@ public function getProductosParaSalida(): array
                 p.precio_compra,
                 p.precio_venta,
                 p.unidad_medida,
-                COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+
+                COALESCE(
+                    MAX(
+                        CASE
+                            WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                            AND pe.ubicacion IS NOT NULL
+                            AND TRIM(pe.ubicacion) != ''
+                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            AND COALESCE(pe.existencia, 0) > 0
+                            THEN pe.ubicacion
+                            ELSE NULL
+                        END
+                    ),
+                    'SIN UBICACION'
+                ) AS ubicacion,
 
                 COALESCE(SUM(
                     CASE
-                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal2)
                         THEN COALESCE(pe.existencia, 0)
                         ELSE 0
                     END
@@ -224,7 +238,7 @@ public function getProductosParaSalida(): array
 
                 COALESCE(SUM(
                     CASE
-                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal2)
+                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal3)
                         THEN COALESCE(pe.existencia, 0)
                         ELSE 0
                     END
@@ -244,15 +258,15 @@ public function getProductosParaSalida(): array
                 p.descripcion,
                 p.precio_compra,
                 p.precio_venta,
-                p.unidad_medida,
-                p.ubicacion
+                p.unidad_medida
 
             ORDER BY p.descripcion ASC";
 
     $stmt = $this->conn->prepare($sql);
     $stmt->execute([
         ':sucursal' => $sucursal,
-        ':sucursal2' => $sucursal
+        ':sucursal2' => $sucursal,
+        ':sucursal3' => $sucursal
     ]);
 
     $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -266,6 +280,9 @@ public function getProductosParaSalida(): array
                            FROM producto_existencias
                            WHERE producto_id = :producto_id
                            AND UPPER(TRIM(COALESCE(sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                           AND ubicacion IS NOT NULL
+                           AND TRIM(ubicacion) != ''
+                           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
                            ORDER BY 
                                 CASE WHEN COALESCE(existencia, 0) > 0 THEN 0 ELSE 1 END,
                                 existencia ASC,
@@ -284,6 +301,8 @@ public function getProductosParaSalida(): array
                 'ubicacion' => 'SIN UBICACION',
                 'existencia_actual' => 0
             ]];
+
+            $producto['ubicacion'] = 'SIN UBICACION';
         }
     }
 

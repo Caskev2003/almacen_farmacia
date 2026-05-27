@@ -46,17 +46,26 @@ date_default_timezone_set('America/Mexico_City');
 $ubicacionesGenerales = [];
 
 foreach ($productos as $producto) {
-    $ubicacionProducto = trim((string)($producto['ubicacion'] ?? ''));
-
-    if ($ubicacionProducto !== '' && strtoupper($ubicacionProducto) !== 'SIN UBICACION') {
-        $ubicacionesGenerales[$ubicacionProducto] = $ubicacionProducto;
-    }
 
     if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
-        foreach ($producto['ubicaciones'] as $ubicacionItem) {
-            $ubicacionMultiple = trim((string)($ubicacionItem['ubicacion'] ?? ''));
 
-            if ($ubicacionMultiple !== '' && strtoupper($ubicacionMultiple) !== 'SIN UBICACION') {
+        foreach ($producto['ubicaciones'] as $ubicacionItem) {
+
+            $ubicacionMultiple = strtoupper(
+                trim((string)($ubicacionItem['ubicacion'] ?? ''))
+            );
+
+            $existenciaMultiple = (int)(
+                $ubicacionItem['existencia_actual']
+                ?? $ubicacionItem['existencia']
+                ?? 0
+            );
+
+            if (
+                $ubicacionMultiple !== '' &&
+                $ubicacionMultiple !== 'SIN UBICACION' &&
+                $existenciaMultiple > 0
+            ) {
                 $ubicacionesGenerales[$ubicacionMultiple] = $ubicacionMultiple;
             }
         }
@@ -500,36 +509,21 @@ function limpiarUbicacion(valor) {
 
 function cargarCatalogoUbicacionesSalida() {
     const datalist = document.getElementById('lista_ubicaciones_salida');
-    if (!datalist) return;
 
-    const ubicaciones = [];
-
-    function add(rack, nivel, zona) {
-        const z = String(zona).padStart(2, '0');
-        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    if (!datalist) {
+        return;
     }
 
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(1, n, z);
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(2, n, z);
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(3, n, z);
-    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 16; z++) add(4, n, z);
-    for (let z = 10; z <= 16; z++) add(4, 3, z);
-    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 15; z++) add(5, n, z);
-    for (let z = 10; z <= 15; z++) add(5, 3, z);
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
-
-    ubicaciones.push('R7N1Z01 - PASILLO 3');
-    ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 1');
-    ubicaciones.push('BODEGA PEDYALITE');
+    // IMPORTANTE:
+    // Ya no cargamos ubicaciones generales porque
+    // estaban mezclando ubicaciones de Ciudad Hidalgo
+    // con Tuxtla Gutiérrez.
+    //
+    // Ahora únicamente se mostrarán las ubicaciones
+    // reales del producto seleccionado desde:
+    // producto.ubicaciones
 
     datalist.innerHTML = '';
-
-    ubicaciones.forEach(ubicacion => {
-        const option = document.createElement('option');
-        option.value = ubicacion;
-        datalist.appendChild(option);
-    });
 }
 
 function obtenerOptionProductoActual() {

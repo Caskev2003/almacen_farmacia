@@ -27,7 +27,7 @@ $messageType = '';
 
 $search = trim($_GET['search'] ?? '');
 $filtroCategoria = trim($_GET['categoria_id'] ?? '');
-$filtroProveedor = trim($_GET['proveedor'] ?? '');
+$filtroProveedor = '';
 $filtroUbicacion = trim($_GET['ubicacion'] ?? '');
 $filtroStock = trim($_GET['estado_stock'] ?? '');
 
@@ -102,7 +102,6 @@ $productos = array_slice($productosTodos, $offset, $perPage);
 $queryBase = http_build_query([
     'search' => $search,
     'categoria_id' => $filtroCategoria,
-    'proveedor' => $filtroProveedor,
     'ubicacion' => $filtroUbicacion,
     'estado_stock' => $filtroStock
 ]);
@@ -505,27 +504,18 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label>Proveedor</label>
-                    <input
-                        type="text"
-                        name="proveedor"
-                        list="listaProveedores"
-                        placeholder="Proveedor"
-                        value="<?= e($filtroProveedor) ?>"
-                    >
-                </div>
 
                 <div class="form-group">
-                    <label>Ubicación</label>
-                    <input
-                        type="text"
-                        name="ubicacion"
-                        list="listaUbicaciones"
-                        placeholder="R1N1Z01"
-                        value="<?= e($filtroUbicacion) ?>"
-                    >
-                </div>
+    <label>Rack</label>
+    <select name="ubicacion" class="auto-filter">
+        <option value="">Todos</option>
+        <?php for ($r = 1; $r <= 9; $r++): ?>
+            <option value="R<?= $r ?>" <?= $filtroUbicacion === 'R' . $r ? 'selected' : '' ?>>
+                R<?= $r ?>
+            </option>
+        <?php endfor; ?>
+    </select>
+</div>
 
                 <div class="form-group">
                     <label>Estado stock</label>
@@ -540,7 +530,6 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                 <div class="form-group">
                     <label>&nbsp;</label>
                     <div style="display:flex; gap:8px;">
-                        <button type="submit" class="btn-search">Filtrar</button>
                         <a href="productos.php" class="btn-clear">Limpiar</a>
                     </div>
                 </div>
@@ -562,7 +551,6 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         <th>Cód. barras</th>
                         <th>Descripción</th>
                         <th>Categoría</th>
-                        <th>Proveedor</th>
                         <th>Marca</th>
                         <th>Unidad</th>
                         <th>Precio Unitario</th>
@@ -685,7 +673,7 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
+                            <td colspan="<?= $esAdmin ? '13' : '12' ?>" class="empty-table">
                                 No hay productos registrados con esos filtros.
                             </td>
                         </tr>
@@ -915,6 +903,31 @@ function abrirModalEditarUbicacion(productoId, descripcion, sucursal, ubicacion,
 
 function cerrarModalEditarUbicacion() {
     document.getElementById('modalEditarUbicacion').style.display = 'none';
+}
+
+const formFiltrosProductos = document.querySelector('.filters-card');
+
+if (formFiltrosProductos) {
+    const searchInput = formFiltrosProductos.querySelector('input[name="search"]');
+    const selects = formFiltrosProductos.querySelectorAll('select');
+
+    let timerFiltro = null;
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            clearTimeout(timerFiltro);
+
+            timerFiltro = setTimeout(() => {
+                formFiltrosProductos.submit();
+            }, 500);
+        });
+    }
+
+    selects.forEach(select => {
+        select.addEventListener('change', function () {
+            formFiltrosProductos.submit();
+        });
+    });
 }
 </script>
 

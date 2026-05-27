@@ -116,6 +116,8 @@ class Producto
 ): array {
     $params = [];
 
+    $ubicacion = strtoupper(trim($ubicacion));
+
     if ($isAdmin) {
         $sql = "SELECT 
                     p.id,
@@ -171,16 +173,9 @@ class Producto
                     ), 0) AS existencia_total
 
                 FROM productos p
-
-                LEFT JOIN categorias c 
-                    ON p.categoria_id = c.id
-
-                LEFT JOIN proveedores pr 
-                    ON p.proveedor_id = pr.id
-
-                LEFT JOIN producto_existencias pe 
-                    ON pe.producto_id = p.id
-
+                LEFT JOIN categorias c ON p.categoria_id = c.id
+                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                LEFT JOIN producto_existencias pe ON pe.producto_id = p.id
                 WHERE p.estado = 1";
     } else {
         $sql = "SELECT 
@@ -224,16 +219,9 @@ class Producto
                     ), 0) AS existencia_total
 
                 FROM productos p
-
-                LEFT JOIN categorias c 
-                    ON p.categoria_id = c.id
-
-                LEFT JOIN proveedores pr 
-                    ON p.proveedor_id = pr.id
-
-                LEFT JOIN producto_existencias pe 
-                    ON pe.producto_id = p.id
-
+                LEFT JOIN categorias c ON p.categoria_id = c.id
+                LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                LEFT JOIN producto_existencias pe ON pe.producto_id = p.id
                 WHERE p.estado = 1";
 
         $params[':sucursal'] = $sucursal;
@@ -247,7 +235,6 @@ class Producto
                     OR p.descripcion LIKE :search
                     OR p.laboratorio LIKE :search
                     OR p.ubicacion LIKE :search
-                    OR pr.nombre LIKE :search
                     OR pe.ubicacion LIKE :search
                 )";
 
@@ -259,17 +246,22 @@ class Producto
         $params[':categoria_id'] = (int)$categoriaId;
     }
 
-    if ($proveedor !== '') {
-        $sql .= " AND pr.nombre LIKE :proveedor";
-        $params[':proveedor'] = "%{$proveedor}%";
-    }
-
     if ($ubicacion !== '') {
-        $sql .= " AND (
-                    p.ubicacion LIKE :ubicacion
-                    OR pe.ubicacion LIKE :ubicacion
-                )";
-        $params[':ubicacion'] = "%{$ubicacion}%";
+        if (preg_match('/^R[1-9]$/', $ubicacion)) {
+            $sql .= " AND (
+                        UPPER(p.ubicacion) LIKE :ubicacion_rack
+                        OR UPPER(pe.ubicacion) LIKE :ubicacion_rack
+                    )";
+
+            $params[':ubicacion_rack'] = $ubicacion . 'N%';
+        } else {
+            $sql .= " AND (
+                        UPPER(p.ubicacion) LIKE :ubicacion
+                        OR UPPER(pe.ubicacion) LIKE :ubicacion
+                    )";
+
+            $params[':ubicacion'] = "%{$ubicacion}%";
+        }
     }
 
     if ($isAdmin) {
@@ -314,9 +306,7 @@ class Producto
                 p.estado,
                 c.nombre,
                 pr.nombre
-
               HAVING existencia_total > 0
-
               ORDER BY p.descripcion ASC";
 
     $stmt = $this->conn->prepare($sql);

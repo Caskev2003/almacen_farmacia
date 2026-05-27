@@ -51,29 +51,29 @@ class ProductoController
     }
 
     public function index(
-        string $search = '',
-        string $sucursal = '',
-        string $categoriaId = '',
-        string $proveedor = '',
-        string $ubicacion = '',
-        string $estadoStock = ''
-    ): array {
-        $isAdmin = $this->esAdministrador();
+    string $search = '',
+    string $sucursal = '',
+    string $categoriaId = '',
+    string $proveedor = '',
+    string $ubicacion = '',
+    string $estadoStock = ''
+): array {
+    $isAdmin = $this->esAdministrador();
 
-        if (!$isAdmin) {
-            $sucursal = $this->sucursalUsuario();
-        }
-
-        return $this->productoModel->getAll(
-            trim($search),
-            trim($sucursal),
-            $isAdmin,
-            trim($categoriaId),
-            trim($proveedor),
-            trim($ubicacion),
-            trim($estadoStock)
-        );
+    if (!$isAdmin) {
+        $sucursal = $this->sucursalUsuario();
     }
+
+    return $this->productoModel->getAll(
+        trim($search),
+        trim($sucursal),
+        $isAdmin,
+        trim($categoriaId),
+        '',
+        strtoupper(trim($ubicacion)),
+        trim($estadoStock)
+    );
+}
 
     public function count(string $search = '', string $sucursal = ''): int
     {

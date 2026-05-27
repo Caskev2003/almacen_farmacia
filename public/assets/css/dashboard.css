@@ -595,7 +595,9 @@
     .panel-link {
         width: max-content;
     }
-    .top-products-panel {
+    
+}
+.top-products-panel {
     margin-top: 2px;
 }
 
@@ -676,5 +678,4 @@
         grid-template-columns: 1fr;
     }
 
-}
 }

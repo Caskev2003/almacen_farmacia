@@ -36,7 +36,7 @@ class SalidaController
 
     public function productos(): array
     {
-        return $this->movimientoModel->getProductosActivos();
+        return $this->movimientoModel->getProductosParaSalida();
     }
 
     public function generarFolio(?int $almacenId = null): string

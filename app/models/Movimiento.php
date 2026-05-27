@@ -199,6 +199,98 @@ class Movimiento
     return $productos;
 }
 
+public function getProductosParaSalida(): array
+{
+    $sesion = $this->obtenerAlmacenSesion();
+    $sucursal = $sesion['sucursal'];
+
+    $sql = "SELECT 
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.precio_compra,
+                p.precio_venta,
+                p.unidad_medida,
+                COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                        THEN COALESCE(pe.existencia, 0)
+                        ELSE 0
+                    END
+                ), 0) AS existencia_actual,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal2)
+                        THEN COALESCE(pe.existencia, 0)
+                        ELSE 0
+                    END
+                ), 0) AS existencia_bodega
+
+            FROM productos p
+
+            LEFT JOIN producto_existencias pe
+                ON pe.producto_id = p.id
+
+            WHERE p.estado = 1
+
+            GROUP BY 
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
+                p.precio_compra,
+                p.precio_venta,
+                p.unidad_medida,
+                p.ubicacion
+
+            ORDER BY p.descripcion ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute([
+        ':sucursal' => $sucursal,
+        ':sucursal2' => $sucursal
+    ]);
+
+    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($productos as &$producto) {
+        $productoId = (int)$producto['id'];
+
+        $sqlUbicaciones = "SELECT 
+                                COALESCE(NULLIF(TRIM(ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                                COALESCE(existencia, 0) AS existencia_actual
+                           FROM producto_existencias
+                           WHERE producto_id = :producto_id
+                           AND UPPER(TRIM(COALESCE(sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                           ORDER BY 
+                                CASE WHEN COALESCE(existencia, 0) > 0 THEN 0 ELSE 1 END,
+                                existencia ASC,
+                                ubicacion ASC";
+
+        $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
+        $stmtUbicaciones->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
+        ]);
+
+        $producto['ubicaciones'] = $stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($producto['ubicaciones'])) {
+            $producto['ubicaciones'] = [[
+                'ubicacion' => 'SIN UBICACION',
+                'existencia_actual' => 0
+            ]];
+        }
+    }
+
+    unset($producto);
+
+    return $productos;
+}
     private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
     {
         $tipoMovimiento = strtoupper(trim($tipoMovimiento));

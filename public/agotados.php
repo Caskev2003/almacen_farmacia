@@ -34,7 +34,7 @@ $perPage = 15;
 $filtroAlmacen = trim($_GET['filtro_almacen'] ?? '');
 
 if (!$esAdmin) {
-    $permitidos = ['sin_almacen'];
+    $permitidos = [];
 
     if ($almacenSesionNombre === 'CIUDAD HIDALGO') {
         $permitidos[] = 'ciudad_hidalgo';
@@ -187,10 +187,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <select name="filtro_almacen">
                     <option value="" <?= $filtros['filtro_almacen'] === '' ? 'selected' : '' ?>>
                         Todos permitidos
-                    </option>
-
-                    <option value="sin_almacen" <?= $filtros['filtro_almacen'] === 'sin_almacen' ? 'selected' : '' ?>>
-                        Sin almacén
                     </option>
 
                     <?php if ($esAdmin || $almacenSesionNombre === 'CIUDAD HIDALGO'): ?>

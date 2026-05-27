@@ -289,102 +289,127 @@ class Movimiento
         return $row ? $row['folio'] : '';
     }
 
-    private function aumentarExistencia(
-        int $productoId,
-        string $sucursal,
-        int $cantidad,
-        string $ubicacion = ''
-    ): void {
-        $ubicacion = $this->limpiarUbicacion($ubicacion);
+   private function aumentarExistencia(
+    int $productoId,
+    string $sucursal,
+    int $cantidad,
+    string $ubicacion = ''
+): void {
+    $sucursal = strtoupper(trim($sucursal));
+    $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-        if ($cantidad <= 0) {
-            return;
-        }
+    if ($productoId <= 0 || $sucursal === '' || $cantidad <= 0) {
+        return;
+    }
 
-        $sqlExisteExacta = "SELECT id
-                            FROM producto_existencias
-                            WHERE producto_id = :producto_id
-                            AND sucursal = :sucursal
-                            AND ubicacion = :ubicacion
-                            LIMIT 1";
+    /*
+    1. Si ya existe la misma ubicación exacta,
+       suma la cantidad.
+    */
+    $sqlExisteExacta = "SELECT id
+                        FROM producto_existencias
+                        WHERE producto_id = :producto_id
+                        AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                        AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
+                        LIMIT 1";
 
-        $stmtExisteExacta = $this->conn->prepare($sqlExisteExacta);
-        $stmtExisteExacta->execute([
-            ':producto_id' => $productoId,
-            ':sucursal' => $sucursal,
-            ':ubicacion' => $ubicacion
-        ]);
+    $stmtExisteExacta = $this->conn->prepare($sqlExisteExacta);
+    $stmtExisteExacta->execute([
+        ':producto_id' => $productoId,
+        ':sucursal' => $sucursal,
+        ':ubicacion' => $ubicacion
+    ]);
 
-        $existenciaExacta = $stmtExisteExacta->fetch(PDO::FETCH_ASSOC);
+    $existenciaExacta = $stmtExisteExacta->fetch(PDO::FETCH_ASSOC);
 
-        if ($existenciaExacta) {
-            $sqlUpdate = "UPDATE producto_existencias
-                          SET existencia = existencia + :cantidad,
-                              updated_at = CURRENT_TIMESTAMP
-                          WHERE id = :id";
+    if ($existenciaExacta) {
+        $sqlUpdate = "UPDATE producto_existencias
+                      SET existencia = COALESCE(existencia, 0) + :cantidad,
+                          sucursal = :sucursal,
+                          ubicacion = :ubicacion,
+                          updated_at = CURRENT_TIMESTAMP
+                      WHERE id = :id";
 
-            $stmtUpdate = $this->conn->prepare($sqlUpdate);
-            $stmtUpdate->execute([
-                ':cantidad' => $cantidad,
-                ':id' => $existenciaExacta['id']
-            ]);
-
-            return;
-        }
-
-        $sqlSinUbicacion = "SELECT id
-                            FROM producto_existencias
-                            WHERE producto_id = :producto_id
-                            AND sucursal = :sucursal
-                            AND ubicacion IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                            AND existencia <= 0
-                            LIMIT 1";
-
-        $stmtSinUbicacion = $this->conn->prepare($sqlSinUbicacion);
-        $stmtSinUbicacion->execute([
-            ':producto_id' => $productoId,
-            ':sucursal' => $sucursal
-        ]);
-
-        $sinUbicacion = $stmtSinUbicacion->fetch(PDO::FETCH_ASSOC);
-
-        if ($sinUbicacion && $ubicacion !== 'SIN UBICACION') {
-            $sqlUpdateSin = "UPDATE producto_existencias
-                             SET ubicacion = :ubicacion,
-                                 existencia = :cantidad,
-                                 updated_at = CURRENT_TIMESTAMP
-                             WHERE id = :id";
-
-            $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
-            $stmtUpdateSin->execute([
-                ':ubicacion' => $ubicacion,
-                ':cantidad' => $cantidad,
-                ':id' => $sinUbicacion['id']
-            ]);
-
-            return;
-        }
-
-        $sqlInsert = "INSERT INTO producto_existencias (
-                        producto_id,
-                        sucursal,
-                        ubicacion,
-                        existencia
-                    ) VALUES (
-                        :producto_id,
-                        :sucursal,
-                        :ubicacion,
-                        :cantidad
-                    )";
-
-        $stmtInsert = $this->conn->prepare($sqlInsert);
-        $stmtInsert->execute([
-            ':producto_id' => $productoId,
+        $stmtUpdate = $this->conn->prepare($sqlUpdate);
+        $stmtUpdate->execute([
+            ':cantidad' => $cantidad,
             ':sucursal' => $sucursal,
             ':ubicacion' => $ubicacion,
-            ':cantidad' => $cantidad
+            ':id' => $existenciaExacta['id']
         ]);
+
+        return;
     }
+
+    /*
+    2. Si existe fila basura:
+       SIN UBICACION + 0 en la misma sucursal,
+       la reutiliza y NO crea una nueva.
+    */
+    $sqlSinUbicacion = "SELECT id
+                        FROM producto_existencias
+                        WHERE producto_id = :producto_id
+                        AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                        AND (
+                            ubicacion IS NULL
+                            OR TRIM(ubicacion) = ''
+                            OR UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                        )
+                        AND COALESCE(existencia, 0) <= 0
+                        ORDER BY id ASC
+                        LIMIT 1";
+
+    $stmtSinUbicacion = $this->conn->prepare($sqlSinUbicacion);
+    $stmtSinUbicacion->execute([
+        ':producto_id' => $productoId,
+        ':sucursal' => $sucursal
+    ]);
+
+    $sinUbicacion = $stmtSinUbicacion->fetch(PDO::FETCH_ASSOC);
+
+    if ($sinUbicacion && $ubicacion !== 'SIN UBICACION') {
+        $sqlUpdateSin = "UPDATE producto_existencias
+                         SET sucursal = :sucursal,
+                             ubicacion = :ubicacion,
+                             existencia = :cantidad,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE id = :id";
+
+        $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
+        $stmtUpdateSin->execute([
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion,
+            ':cantidad' => $cantidad,
+            ':id' => $sinUbicacion['id']
+        ]);
+
+        return;
+    }
+
+    /*
+    3. Si no existe nada reutilizable,
+       crea una fila nueva.
+    */
+    $sqlInsert = "INSERT INTO producto_existencias (
+                    producto_id,
+                    sucursal,
+                    ubicacion,
+                    existencia
+                ) VALUES (
+                    :producto_id,
+                    :sucursal,
+                    :ubicacion,
+                    :cantidad
+                )";
+
+    $stmtInsert = $this->conn->prepare($sqlInsert);
+    $stmtInsert->execute([
+        ':producto_id' => $productoId,
+        ':sucursal' => $sucursal,
+        ':ubicacion' => $ubicacion,
+        ':cantidad' => $cantidad
+    ]);
+}
 
     private function disminuirExistencia(
         int $productoId,

@@ -614,39 +614,47 @@ public function getMetricasInteligentes(): array
     }
 
 
-    public function getTopProductosVendidos(int $limite = 10): array
+public function getTopProductosVendidos(int $limite = 10): array
 {
-    $params = [];
+    try {
 
-    $sql = "SELECT
-                p.codigo,
-                p.descripcion,
-                SUM(COALESCE(md.cantidad, 0)) AS total
-            FROM movimiento_detalles md
-            INNER JOIN movimientos m
-                ON m.id = md.movimiento_id
-            INNER JOIN productos p
-                ON p.id = md.producto_id
-            WHERE m.tipo_movimiento = 'SALIDA'
-            AND m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        $params = [];
 
-    $this->agregarFiltroMovimientos($sql, $params);
+        $sql = "SELECT
+                    p.codigo,
+                    p.descripcion,
+                    SUM(COALESCE(md.cantidad, 0)) AS total
+                FROM movimiento_detalle md
+                INNER JOIN movimientos m
+                    ON m.id = md.movimiento_id
+                INNER JOIN productos p
+                    ON p.id = md.producto_id
+                WHERE m.tipo_movimiento = 'SALIDA'
+                AND m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
 
-    $sql .= " GROUP BY p.id, p.codigo, p.descripcion
-              ORDER BY total DESC
-              LIMIT :limite";
+        $this->agregarFiltroMovimientos($sql, $params);
 
-    $stmt = $this->conn->prepare($sql);
+        $sql .= " GROUP BY p.id, p.codigo, p.descripcion
+                  ORDER BY total DESC
+                  LIMIT :limite";
 
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
+        $stmt = $this->conn->prepare($sql);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    } catch (Throwable $e) {
+
+        return [];
+
     }
-
-    $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
-
-    $stmt->execute();
-
-    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
     public function getEstadoProducto(array $item): array
     {

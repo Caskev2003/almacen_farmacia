@@ -22,10 +22,10 @@ if ($almacenIdSesion === 1) {
     $almacenSesionNombre = '';
 }
 
-$tipo = trim($_GET['tipo'] ?? 'sin_ubicacion');
+$tipo = trim($_GET['tipo'] ?? 'sin_existencia');
 
-if (!in_array($tipo, ['sin_ubicacion', 'sin_existencia', 'ambas'], true)) {
-    $tipo = 'sin_ubicacion';
+if (!in_array($tipo, ['sin_existencia', 'sin_almacen'], true)) {
+    $tipo = 'sin_existencia';
 }
 
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -118,9 +118,8 @@ function jsValue($value): string
 }
 
 $tituloTabla = match ($tipo) {
-    'sin_existencia' => 'Productos sin existencia',
-    'ambas' => 'Productos sin almacén',
-    default => 'Productos sin ubicación',
+    'sin_almacen' => 'Productos sin almacén',
+    default => 'Productos sin existencia',
 };
 
 $queryPaginacion = $filtros;
@@ -162,9 +161,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <strong><?= number_format((int)$resumen['sin_existencia']) ?></strong>
         </a>
 
-        <a href="<?= e(urlTab('ambas', $filtros)) ?>" class="<?= e(activeTab($tipo, 'ambas')) ?>">
+        <a href="<?= e(urlTab('sin_almacen', $filtros)) ?>" class="<?= e(activeTab($tipo, 'sin_almacen')) ?>">
             <span>Sin almacén</span>
-            <strong><?= number_format((int)$resumen['ambas']) ?></strong>
+            <strong><?= number_format((int)$resumen['sin_almacen']) ?></strong>
         </a>
     </div>
 
@@ -229,7 +228,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <div class="actions">
                 <button type="submit">Filtrar</button>
 
-                <a href="agotados.php?tipo=<?= e($tipo) ?>">
+                <a href="agotados.php?tipo=sin_existencia">
                     Limpiar
                 </a>
 

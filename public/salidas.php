@@ -199,7 +199,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' && $existenciaTmp > 0) {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' ) {
                                         $ubicacionesProducto[] = [
                                             'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
@@ -212,7 +212,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
                                 $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
 
-                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' && $existenciaNormal > 0) {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' ) {
                                     $ubicacionesProducto[] = [
                                         'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => $existenciaNormal,
@@ -392,7 +392,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
                                     $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' && $existenciaTmp > 0) {
+                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' ) {
                                         $ubicacionesProductoModal[] = [
                                             'ubicacion' => $ubicacionTmp,
                                             'existencia_actual' => $existenciaTmp,
@@ -405,7 +405,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
                                 $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
 
-                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' && $existenciaNormal > 0) {
+                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' ) {
                                     $ubicacionesProductoModal[] = [
                                         'ubicacion' => $ubicacionNormal,
                                         'existencia_actual' => $existenciaNormal,
@@ -429,7 +429,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             $textoUbicacionesPlano = implode(', ', $textoUbicaciones);
                         ?>
 
-                        <?php if ($existenciaTotalModal > 0): ?>
+                        
                             <tr 
                                 data-busqueda="<?= e(strtolower($producto['codigo'] . ' ' . $producto['descripcion'] . ' ' . $producto['unidad_medida'] . ' ' . $ubicacionSugerida . ' ' . $textoUbicacionesPlano)) ?>"
                             >
@@ -450,8 +450,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </button>
                                 </td>
                             </tr>
-                        <?php endif; ?>
-                    <?php endforeach; ?>
+                        
+                     <?php endforeach; ?>
 
                     <?php if (empty($productos)): ?>
                         <tr>

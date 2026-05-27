@@ -408,7 +408,7 @@ class Movimiento
         ':sucursal' => $sucursal,
         ':ubicacion' => $ubicacion,
         ':cantidad' => $cantidad
-    ]);
+    ]); 
 }
 
     private function disminuirExistencia(

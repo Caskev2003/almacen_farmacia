@@ -32,6 +32,21 @@ class DashboardController
         return in_array($this->rol, ['ADMINISTRADOR', 'ADMIN'], true);
     }
 
+    public function getRolActual(): string
+    {
+        return $this->rol;
+    }
+
+    public function getAlmacenIdActual(): int
+    {
+        return $this->almacenId;
+    }
+
+    public function getStockMinimoDashboard(): int
+    {
+        return $this->stockMinimoDashboard;
+    }
+
     private function sucursalesPermitidas(): array
     {
         if ($this->esAdmin()) {
@@ -76,15 +91,75 @@ class DashboardController
         }
     }
 
-    public function getIndicadores(): array
+    private function rangoFechas(string $periodo): array
+    {
+        $periodo = strtolower(trim($periodo));
+
+        $hoy = new DateTime('now', new DateTimeZone('America/Mexico_City'));
+
+        if ($periodo === 'semana') {
+            $inicio = clone $hoy;
+            $inicio->modify('monday this week');
+            $inicio->setTime(0, 0, 0);
+
+            $fin = clone $hoy;
+            $fin->modify('sunday this week');
+            $fin->setTime(23, 59, 59);
+
+            return [
+                'inicio' => $inicio->format('Y-m-d H:i:s'),
+                'fin' => $fin->format('Y-m-d H:i:s'),
+                'texto' => 'Esta semana'
+            ];
+        }
+
+        if ($periodo === 'mes') {
+            $inicio = clone $hoy;
+            $inicio->modify('first day of this month');
+            $inicio->setTime(0, 0, 0);
+
+            $fin = clone $hoy;
+            $fin->modify('last day of this month');
+            $fin->setTime(23, 59, 59);
+
+            return [
+                'inicio' => $inicio->format('Y-m-d H:i:s'),
+                'fin' => $fin->format('Y-m-d H:i:s'),
+                'texto' => 'Este mes'
+            ];
+        }
+
+        if ($periodo === 'anio' || $periodo === 'año') {
+            $inicio = new DateTime($hoy->format('Y') . '-01-01 00:00:00', new DateTimeZone('America/Mexico_City'));
+            $fin = new DateTime($hoy->format('Y') . '-12-31 23:59:59', new DateTimeZone('America/Mexico_City'));
+
+            return [
+                'inicio' => $inicio->format('Y-m-d H:i:s'),
+                'fin' => $fin->format('Y-m-d H:i:s'),
+                'texto' => 'Este año'
+            ];
+        }
+
+        $inicio = clone $hoy;
+        $inicio->setTime(0, 0, 0);
+
+        $fin = clone $hoy;
+        $fin->setTime(23, 59, 59);
+
+        return [
+            'inicio' => $inicio->format('Y-m-d H:i:s'),
+            'fin' => $fin->format('Y-m-d H:i:s'),
+            'texto' => 'Hoy'
+        ];
+    }
+
+    public function getIndicadores(string $periodo = 'hoy'): array
     {
         $stockMinimo = $this->stockMinimoDashboard;
 
         $stmtTotal = $this->conn->prepare("SELECT COUNT(*) AS total FROM productos WHERE estado = 1");
         $stmtTotal->execute();
         $totalProductos = (int)($stmtTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
-
-        $paramsSinAlmacen = [];
 
         $sqlSinAlmacen = "SELECT COUNT(DISTINCT p.id) AS total
                           FROM productos p
@@ -98,7 +173,7 @@ class DashboardController
                           )";
 
         $stmtSinAlmacen = $this->conn->prepare($sqlSinAlmacen);
-        $stmtSinAlmacen->execute($paramsSinAlmacen);
+        $stmtSinAlmacen->execute();
         $sinAlmacen = (int)($stmtSinAlmacen->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $paramsSinExistencia = [];
@@ -146,7 +221,7 @@ class DashboardController
 
         $stmtStock = $this->conn->prepare($sqlStock);
         $stmtStock->execute($paramsStock);
-        $conStockCorrecto = (int)($stmtStock->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+        $stockCorrecto = (int)($stmtStock->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $paramsBajo = [];
 
@@ -173,42 +248,41 @@ class DashboardController
         $stmtBajo->execute($paramsBajo);
         $bajoStock = (int)($stmtBajo->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
-        $enStock = max($conStockCorrecto - $bajoStock, 0);
+        $enStock = max($stockCorrecto - $bajoStock, 0);
 
-        $inicioHoy = date('Y-m-d') . ' 00:00:00';
-        $finHoy = date('Y-m-d') . ' 23:59:59';
+        $rango = $this->rangoFechas($periodo);
 
         $paramsEntrada = [
-            ':inicio' => $inicioHoy,
-            ':fin' => $finHoy
+            ':inicio' => $rango['inicio'],
+            ':fin' => $rango['fin']
         ];
 
-        $sqlEntradasHoy = "SELECT COUNT(*) AS total
-                           FROM movimientos m
-                           WHERE m.tipo_movimiento = 'ENTRADA'
-                           AND m.fecha BETWEEN :inicio AND :fin";
+        $sqlEntradas = "SELECT COUNT(*) AS total
+                        FROM movimientos m
+                        WHERE m.tipo_movimiento = 'ENTRADA'
+                        AND m.fecha BETWEEN :inicio AND :fin";
 
-        $this->agregarFiltroMovimientos($sqlEntradasHoy, $paramsEntrada);
+        $this->agregarFiltroMovimientos($sqlEntradas, $paramsEntrada);
 
-        $stmtEntradasHoy = $this->conn->prepare($sqlEntradasHoy);
-        $stmtEntradasHoy->execute($paramsEntrada);
-        $entradasHoy = (int)($stmtEntradasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+        $stmtEntradas = $this->conn->prepare($sqlEntradas);
+        $stmtEntradas->execute($paramsEntrada);
+        $entradas = (int)($stmtEntradas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         $paramsSalida = [
-            ':inicio' => $inicioHoy,
-            ':fin' => $finHoy
+            ':inicio' => $rango['inicio'],
+            ':fin' => $rango['fin']
         ];
 
-        $sqlSalidasHoy = "SELECT COUNT(*) AS total
-                          FROM movimientos m
-                          WHERE m.tipo_movimiento = 'SALIDA'
-                          AND m.fecha BETWEEN :inicio AND :fin";
+        $sqlSalidas = "SELECT COUNT(*) AS total
+                       FROM movimientos m
+                       WHERE m.tipo_movimiento = 'SALIDA'
+                       AND m.fecha BETWEEN :inicio AND :fin";
 
-        $this->agregarFiltroMovimientos($sqlSalidasHoy, $paramsSalida);
+        $this->agregarFiltroMovimientos($sqlSalidas, $paramsSalida);
 
-        $stmtSalidasHoy = $this->conn->prepare($sqlSalidasHoy);
-        $stmtSalidasHoy->execute($paramsSalida);
-        $salidasHoy = (int)($stmtSalidasHoy->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+        $stmtSalidas = $this->conn->prepare($sqlSalidas);
+        $stmtSalidas->execute($paramsSalida);
+        $salidas = (int)($stmtSalidas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         return [
             'total_productos' => $totalProductos,
@@ -217,13 +291,211 @@ class DashboardController
             'sin_almacen' => $sinAlmacen,
             'bajo_stock' => $bajoStock,
             'en_stock' => $enStock,
-            'stock_correcto' => $conStockCorrecto,
-            'entradas_hoy' => $entradasHoy,
-            'salidas_hoy' => $salidasHoy,
+            'stock_correcto' => $stockCorrecto,
+            'entradas_hoy' => $entradas,
+            'salidas_hoy' => $salidas,
+            'entradas_periodo' => $entradas,
+            'salidas_periodo' => $salidas,
+            'periodo_texto' => $rango['texto'],
         ];
     }
 
-    public function getProductosCriticos(): array
+    public function getComparativoIndicadores(): array
+    {
+        $hoy = new DateTime('now', new DateTimeZone('America/Mexico_City'));
+
+        $inicioHoy = clone $hoy;
+        $inicioHoy->setTime(0, 0, 0);
+
+        $finHoy = clone $hoy;
+        $finHoy->setTime(23, 59, 59);
+
+        $inicioAyer = clone $hoy;
+        $inicioAyer->modify('-1 day');
+        $inicioAyer->setTime(0, 0, 0);
+
+        $finAyer = clone $hoy;
+        $finAyer->modify('-1 day');
+        $finAyer->setTime(23, 59, 59);
+
+        return [
+            'entradas' => [
+                'hoy' => $this->contarMovimientosPorRango('ENTRADA', $inicioHoy->format('Y-m-d H:i:s'), $finHoy->format('Y-m-d H:i:s')),
+                'ayer' => $this->contarMovimientosPorRango('ENTRADA', $inicioAyer->format('Y-m-d H:i:s'), $finAyer->format('Y-m-d H:i:s')),
+            ],
+            'salidas' => [
+                'hoy' => $this->contarMovimientosPorRango('SALIDA', $inicioHoy->format('Y-m-d H:i:s'), $finHoy->format('Y-m-d H:i:s')),
+                'ayer' => $this->contarMovimientosPorRango('SALIDA', $inicioAyer->format('Y-m-d H:i:s'), $finAyer->format('Y-m-d H:i:s')),
+            ],
+        ];
+    }
+
+    private function contarMovimientosPorRango(string $tipo, string $inicio, string $fin): int
+    {
+        $params = [
+            ':tipo' => $tipo,
+            ':inicio' => $inicio,
+            ':fin' => $fin
+        ];
+
+        $sql = "SELECT COUNT(*) AS total
+                FROM movimientos m
+                WHERE m.tipo_movimiento = :tipo
+                AND m.fecha BETWEEN :inicio AND :fin";
+
+        $this->agregarFiltroMovimientos($sql, $params);
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        return (int)($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+    }
+
+    public function getAlertasInteligentes(): array
+    {
+        $indicadores = $this->getIndicadores();
+
+        $alertas = [];
+
+        if ((int)$indicadores['bajo_stock'] > 0) {
+            $alertas[] = [
+                'tipo' => 'warning',
+                'icono' => '⚠️',
+                'titulo' => 'Productos con bajo stock',
+                'texto' => number_format((int)$indicadores['bajo_stock']) . ' productos tienen existencia de 1 a ' . $this->stockMinimoDashboard . ' piezas.',
+                'link' => 'existencias.php'
+            ];
+        }
+
+        if ((int)$indicadores['sin_existencia'] > 0) {
+            $alertas[] = [
+                'tipo' => 'danger',
+                'icono' => '🚫',
+                'titulo' => 'Productos sin existencia',
+                'texto' => number_format((int)$indicadores['sin_existencia']) . ' productos tienen almacén asignado pero no tienen piezas disponibles.',
+                'link' => 'agotados.php'
+            ];
+        }
+
+        if ((int)$indicadores['sin_almacen'] > 0) {
+            $alertas[] = [
+                'tipo' => 'info',
+                'icono' => '📦',
+                'titulo' => 'Productos sin almacén',
+                'texto' => number_format((int)$indicadores['sin_almacen']) . ' productos no tienen sucursal asignada.',
+                'link' => 'agotados.php'
+            ];
+        }
+
+        if ((int)$indicadores['entradas_hoy'] === 0 && (int)$indicadores['salidas_hoy'] === 0) {
+            $alertas[] = [
+                'tipo' => 'neutral',
+                'icono' => '🕒',
+                'titulo' => 'Sin movimientos hoy',
+                'texto' => 'Aún no se han registrado entradas ni salidas durante el día.',
+                'link' => 'reportes.php'
+            ];
+        }
+
+        return $alertas;
+    }
+
+    public function getMetricasInteligentes(): array
+    {
+        $params = [];
+
+        $sqlUbicacion = "SELECT
+                            COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                            SUM(COALESCE(pe.existencia, 0)) AS total
+                         FROM producto_existencias pe
+                         INNER JOIN productos p
+                            ON p.id = pe.producto_id
+                         WHERE p.estado = 1
+                         AND COALESCE(pe.existencia, 0) > 0
+                         AND pe.sucursal IS NOT NULL
+                         AND TRIM(pe.sucursal) != ''
+                         AND pe.ubicacion IS NOT NULL
+                         AND TRIM(pe.ubicacion) != ''
+                         AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+
+        $this->agregarFiltroSucursal($sqlUbicacion, $params, 'pe');
+
+        $sqlUbicacion .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
+                           ORDER BY total DESC
+                           LIMIT 1";
+
+        $stmtUbicacion = $this->conn->prepare($sqlUbicacion);
+        $stmtUbicacion->execute($params);
+        $ubicacion = $stmtUbicacion->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $paramsUsuario = [];
+
+        $sqlUsuario = "SELECT
+                            u.nombre AS usuario,
+                            COUNT(*) AS total
+                       FROM movimientos m
+                       INNER JOIN usuarios u
+                            ON u.id = m.usuario_id
+                       WHERE m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+
+        $this->agregarFiltroMovimientos($sqlUsuario, $paramsUsuario);
+
+        $sqlUsuario .= " GROUP BY u.id, u.nombre
+                         ORDER BY total DESC
+                         LIMIT 1";
+
+        $stmtUsuario = $this->conn->prepare($sqlUsuario);
+        $stmtUsuario->execute($paramsUsuario);
+        $usuario = $stmtUsuario->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $paramsProducto = [];
+
+        $sqlProducto = "SELECT
+                            p.codigo,
+                            p.descripcion,
+                            SUM(COALESCE(md.cantidad, 0)) AS total
+                        FROM movimiento_detalles md
+                        INNER JOIN movimientos m
+                            ON m.id = md.movimiento_id
+                        INNER JOIN productos p
+                            ON p.id = md.producto_id
+                        WHERE m.tipo_movimiento = 'SALIDA'
+                        AND m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+
+        $this->agregarFiltroMovimientos($sqlProducto, $paramsProducto);
+
+        $sqlProducto .= " GROUP BY p.id, p.codigo, p.descripcion
+                          ORDER BY total DESC
+                          LIMIT 1";
+
+        try {
+            $stmtProducto = $this->conn->prepare($sqlProducto);
+            $stmtProducto->execute($paramsProducto);
+            $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            $producto = [];
+        }
+
+        return [
+            'ubicacion_mas_usada' => [
+                'titulo' => 'Ubicación con más stock',
+                'principal' => $ubicacion['ubicacion'] ?? 'Sin datos',
+                'detalle' => isset($ubicacion['total']) ? number_format((int)$ubicacion['total']) . ' piezas' : 'Sin movimientos'
+            ],
+            'usuario_mas_activo' => [
+                'titulo' => 'Usuario más activo',
+                'principal' => $usuario['usuario'] ?? 'Sin datos',
+                'detalle' => isset($usuario['total']) ? number_format((int)$usuario['total']) . ' movimientos últimos 30 días' : 'Sin movimientos'
+            ],
+            'producto_mas_movido' => [
+                'titulo' => 'Producto más vendido',
+                'principal' => $producto['descripcion'] ?? 'Sin datos',
+                'detalle' => isset($producto['total']) ? number_format((int)$producto['total']) . ' piezas en salidas' : 'Sin movimientos'
+            ],
+        ];
+    }
+
+    public function getProductosCriticos(int $limite = 12): array
     {
         $params = [];
         $stockMinimo = $this->stockMinimoDashboard;
@@ -250,15 +522,21 @@ class DashboardController
         $sql .= " GROUP BY p.id, p.codigo, p.descripcion
                   HAVING SUM(COALESCE(pe.existencia, 0)) BETWEEN 1 AND {$stockMinimo}
                   ORDER BY existencia_actual ASC, p.descripcion ASC
-                  LIMIT 12";
+                  LIMIT :limite";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+        $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
-    public function getMovimientosRecientes(): array
+    public function getMovimientosRecientes(int $limite = 8): array
     {
         $params = [];
 
@@ -266,6 +544,7 @@ class DashboardController
                     m.id,
                     m.folio,
                     m.tipo_movimiento,
+                    m.tipo_operacion,
                     m.fecha,
                     a.nombre AS almacen,
                     u.nombre AS usuario
@@ -278,15 +557,26 @@ class DashboardController
 
         $this->agregarFiltroMovimientos($sql, $params);
 
-        $sql .= " ORDER BY m.fecha DESC, m.id DESC LIMIT 8";
+        $sql .= " ORDER BY m.fecha DESC, m.id DESC LIMIT :limite";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+        $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
-    public function getProductosPorUbicacion(): array
+    public function getProductosPorUbicacion(int $limite = 10): array
+    {
+        return $this->getTopUbicaciones($limite);
+    }
+
+    public function getTopUbicaciones(int $limite = 10): array
     {
         $params = [];
 
@@ -307,15 +597,22 @@ class DashboardController
         $this->agregarFiltroSucursal($sql, $params, 'pe');
 
         $sql .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
-                  ORDER BY total DESC";
+                  ORDER BY total DESC
+                  LIMIT :limite";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+        $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
-    public function getDocumentosMasUsados(): array
+    public function getDocumentosMasUsados(int $limite = 5): array
     {
         $params = [];
 
@@ -328,10 +625,17 @@ class DashboardController
         $this->agregarFiltroMovimientos($sql, $params);
 
         $sql .= " GROUP BY COALESCE(NULLIF(TRIM(m.tipo_operacion), ''), 'SIN DOCUMENTO')
-                  ORDER BY total DESC";
+                  ORDER BY total DESC
+                  LIMIT :limite";
 
         $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+        $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
@@ -358,5 +662,19 @@ class DashboardController
             'texto' => 'EN STOCK',
             'clase' => 'badge-success'
         ];
+    }
+
+    public function getPorcentajeStockProducto(array $item): int
+    {
+        $existencia = (int)($item['existencia_actual'] ?? 0);
+        $minimo = (int)($item['stock_minimo'] ?? $this->stockMinimoDashboard);
+
+        if ($minimo <= 0) {
+            return 0;
+        }
+
+        $porcentaje = (int)round(($existencia / $minimo) * 100);
+
+        return max(0, min($porcentaje, 100));
     }
 }

@@ -514,16 +514,113 @@ function cargarCatalogoUbicacionesSalida() {
         return;
     }
 
+    const ubicaciones = [];
+
+    function add(rack, nivel, zona) {
+        const z = String(zona).padStart(2, '0');
+        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    }
+
+    // RACKS
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 22; z++) {
+            add(1, n, z);
+        }
+    }
+
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 20; z++) {
+            add(2, n, z);
+        }
+    }
+
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 20; z++) {
+            add(3, n, z);
+        }
+    }
+
+    for (let n = 1; n <= 2; n++) {
+        for (let z = 1; z <= 16; z++) {
+            add(4, n, z);
+        }
+    }
+
+    for (let z = 10; z <= 16; z++) {
+        add(4, 3, z);
+    }
+
+    for (let n = 1; n <= 2; n++) {
+        for (let z = 1; z <= 15; z++) {
+            add(5, n, z);
+        }
+    }
+
+    for (let z = 10; z <= 15; z++) {
+        add(5, 3, z);
+    }
+
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 22; z++) {
+            add(6, n, z);
+        }
+    }
+
+    // PASILLOS
+    ubicaciones.push('R7N1Z01 - PASILLO 3');
+    ubicaciones.push('R8N1Z01 - PASILLO 2');
+    ubicaciones.push('R9N1Z01 - PASILLO 1');
+
+    // BODEGAS
+    ubicaciones.push('BODEGA PEDYALITE');
+
     // IMPORTANTE:
-    // Ya no cargamos ubicaciones generales porque
-    // estaban mezclando ubicaciones de Ciudad Hidalgo
-    // con Tuxtla Gutiérrez.
-    //
-    // Ahora únicamente se mostrarán las ubicaciones
-    // reales del producto seleccionado desde:
-    // producto.ubicaciones
+    // SOLO AGREGA LAS UBICACIONES DEL PRODUCTO ACTUAL
+    // QUE YA VIENEN FILTRADAS POR SUCURSAL EN PHP
+
+    document.querySelectorAll('.producto-option').forEach(option => {
+
+        let ubicacionesProducto = [];
+
+        try {
+            ubicacionesProducto = JSON.parse(option.dataset.ubicaciones || '[]');
+        } catch (e) {
+            ubicacionesProducto = [];
+        }
+
+        if (!Array.isArray(ubicacionesProducto)) {
+            ubicacionesProducto = [];
+        }
+
+        ubicacionesProducto.forEach(item => {
+
+            const ubicacion = limpiarUbicacion(item.ubicacion || '');
+
+            const existencia = parseInt(
+                item.existencia_actual || item.existencia || 0,
+                10
+            );
+
+            if (
+                ubicacion !== '' &&
+                ubicacion !== 'SIN UBICACION' &&
+                existencia > 0
+            ) {
+                ubicaciones.push(ubicacion);
+            }
+        });
+    });
+
+    // QUITAR DUPLICADOS
+    const unicas = [...new Set(ubicaciones)].sort();
 
     datalist.innerHTML = '';
+
+    unicas.forEach(ubicacion => {
+        const option = document.createElement('option');
+        option.value = ubicacion;
+        datalist.appendChild(option);
+    });
 }
 
 function obtenerOptionProductoActual() {

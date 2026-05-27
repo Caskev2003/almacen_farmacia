@@ -20,6 +20,8 @@ $alertas = $controller->getAlertasInteligentes();
 
 $metricasInteligentes = $controller->getMetricasInteligentes();
 
+$topProductosVendidos = $controller->getTopProductosVendidos(10);
+
 $productosCriticos = $controller->getProductosCriticos(12);
 
 $movimientos = $controller->getMovimientosRecientes(10);
@@ -243,21 +245,21 @@ $documentoData = array_map(
 
             </div>
 
-            <?php foreach ($metricasInteligentes as $metrica): ?>
+           <?php foreach ($metricasInteligentes as $metrica): ?>
 
-                <div class="metric-card intelligent hover-card">
+    <div class="metric-card intelligent hover-card">
 
-                    <span><?= e($metrica['titulo']) ?></span>
+        <span><?= e($metrica['titulo']) ?></span>
 
-                    <strong class="metric-smart-text">
-                        <?= e($metrica['principal']) ?>
-                    </strong>
+        <strong class="metric-smart-text">
+            <?= e($metrica['principal']) ?>
+        </strong>
 
-                    <small><?= e($metrica['detalle']) ?></small>
+        <small><?= e($metrica['detalle']) ?></small>
 
-                </div>
+    </div>
 
-            <?php endforeach; ?>
+<?php endforeach; ?>
 
         </div>
 
@@ -316,7 +318,67 @@ $documentoData = array_map(
             </div>
 
         </div>
+<div class="panel-card top-products-panel">
 
+    <div class="panel-header">
+
+        <div>
+            <h3>Top 10 productos más vendidos</h3>
+
+            <p>
+                Productos con más salidas registradas.
+            </p>
+        </div>
+
+    </div>
+
+    <div class="top-products-list">
+
+        <?php if (!empty($topProductosVendidos)): ?>
+
+            <?php foreach ($topProductosVendidos as $index => $producto): ?>
+
+                <div class="top-product-item">
+
+                    <div class="top-product-number">
+                        <?= $index + 1 ?>
+                    </div>
+
+                    <div class="top-product-info">
+
+                        <strong>
+                            <?= e($producto['descripcion'] ?? '') ?>
+                        </strong>
+
+                        <span>
+                            <?= e($producto['codigo'] ?? '') ?>
+                        </span>
+
+                    </div>
+
+                    <div class="top-product-total">
+
+                        <?= number_format((int)($producto['total'] ?? 0)) ?>
+
+                        <small>piezas</small>
+
+                    </div>
+
+                </div>
+
+            <?php endforeach; ?>
+
+        <?php else: ?>
+
+            <p class="empty-panel">
+                No hay productos vendidos.
+            </p>
+
+        <?php endif; ?>
+
+    </div>
+
+</div>
         <div class="dashboard-panels">
 
             <div class="panel-card">

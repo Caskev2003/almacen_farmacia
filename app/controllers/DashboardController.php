@@ -400,101 +400,74 @@ class DashboardController
         return $alertas;
     }
 
-    public function getMetricasInteligentes(): array
-    {
-        $params = [];
+public function getMetricasInteligentes(): array
+{
+    $params = [];
 
-        $sqlUbicacion = "SELECT
-                            COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
-                            SUM(COALESCE(pe.existencia, 0)) AS total
-                         FROM producto_existencias pe
-                         INNER JOIN productos p
-                            ON p.id = pe.producto_id
-                         WHERE p.estado = 1
-                         AND COALESCE(pe.existencia, 0) > 0
-                         AND pe.sucursal IS NOT NULL
-                         AND TRIM(pe.sucursal) != ''
-                         AND pe.ubicacion IS NOT NULL
-                         AND TRIM(pe.ubicacion) != ''
-                         AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+    $sqlUbicacion = "SELECT
+                        COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                        SUM(COALESCE(pe.existencia, 0)) AS total
+                     FROM producto_existencias pe
+                     INNER JOIN productos p
+                        ON p.id = pe.producto_id
+                     WHERE p.estado = 1
+                     AND COALESCE(pe.existencia, 0) > 0
+                     AND pe.sucursal IS NOT NULL
+                     AND TRIM(pe.sucursal) != ''
+                     AND pe.ubicacion IS NOT NULL
+                     AND TRIM(pe.ubicacion) != ''
+                     AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
 
-        $this->agregarFiltroSucursal($sqlUbicacion, $params, 'pe');
+    $this->agregarFiltroSucursal($sqlUbicacion, $params, 'pe');
 
-        $sqlUbicacion .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
-                           ORDER BY total DESC
-                           LIMIT 1";
+    $sqlUbicacion .= " GROUP BY COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
+                       ORDER BY total DESC
+                       LIMIT 1";
 
-        $stmtUbicacion = $this->conn->prepare($sqlUbicacion);
-        $stmtUbicacion->execute($params);
-        $ubicacion = $stmtUbicacion->fetch(PDO::FETCH_ASSOC) ?: [];
+    $stmtUbicacion = $this->conn->prepare($sqlUbicacion);
+    $stmtUbicacion->execute($params);
 
-        $paramsUsuario = [];
+    $ubicacion = $stmtUbicacion->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        $sqlUsuario = "SELECT
-                            u.nombre AS usuario,
-                            COUNT(*) AS total
-                       FROM movimientos m
-                       INNER JOIN usuarios u
-                            ON u.id = m.usuario_id
-                       WHERE m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    $paramsUsuario = [];
 
-        $this->agregarFiltroMovimientos($sqlUsuario, $paramsUsuario);
+    $sqlUsuario = "SELECT
+                        u.nombre AS usuario,
+                        COUNT(*) AS total
+                   FROM movimientos m
+                   INNER JOIN usuarios u
+                        ON u.id = m.usuario_id
+                   WHERE m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
 
-        $sqlUsuario .= " GROUP BY u.id, u.nombre
-                         ORDER BY total DESC
-                         LIMIT 1";
+    $this->agregarFiltroMovimientos($sqlUsuario, $paramsUsuario);
 
-        $stmtUsuario = $this->conn->prepare($sqlUsuario);
-        $stmtUsuario->execute($paramsUsuario);
-        $usuario = $stmtUsuario->fetch(PDO::FETCH_ASSOC) ?: [];
+    $sqlUsuario .= " GROUP BY u.id, u.nombre
+                     ORDER BY total DESC
+                     LIMIT 1";
 
-        $paramsProducto = [];
+    $stmtUsuario = $this->conn->prepare($sqlUsuario);
+    $stmtUsuario->execute($paramsUsuario);
 
-        $sqlProducto = "SELECT
-                            p.codigo,
-                            p.descripcion,
-                            SUM(COALESCE(md.cantidad, 0)) AS total
-                        FROM movimiento_detalles md
-                        INNER JOIN movimientos m
-                            ON m.id = md.movimiento_id
-                        INNER JOIN productos p
-                            ON p.id = md.producto_id
-                        WHERE m.tipo_movimiento = 'SALIDA'
-                        AND m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    $usuario = $stmtUsuario->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        $this->agregarFiltroMovimientos($sqlProducto, $paramsProducto);
+    return [
+        'ubicacion_mas_usada' => [
+            'titulo' => 'Ubicación con más stock',
+            'principal' => $ubicacion['ubicacion'] ?? 'Sin datos',
+            'detalle' => isset($ubicacion['total'])
+                ? number_format((int)$ubicacion['total']) . ' piezas'
+                : 'Sin movimientos'
+        ],
 
-        $sqlProducto .= " GROUP BY p.id, p.codigo, p.descripcion
-                          ORDER BY total DESC
-                          LIMIT 1";
-
-        try {
-            $stmtProducto = $this->conn->prepare($sqlProducto);
-            $stmtProducto->execute($paramsProducto);
-            $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC) ?: [];
-        } catch (Throwable $e) {
-            $producto = [];
-        }
-
-        return [
-            'ubicacion_mas_usada' => [
-                'titulo' => 'Ubicación con más stock',
-                'principal' => $ubicacion['ubicacion'] ?? 'Sin datos',
-                'detalle' => isset($ubicacion['total']) ? number_format((int)$ubicacion['total']) . ' piezas' : 'Sin movimientos'
-            ],
-            'usuario_mas_activo' => [
-                'titulo' => 'Usuario más activo',
-                'principal' => $usuario['usuario'] ?? 'Sin datos',
-                'detalle' => isset($usuario['total']) ? number_format((int)$usuario['total']) . ' movimientos últimos 30 días' : 'Sin movimientos'
-            ],
-            'producto_mas_movido' => [
-                'titulo' => 'Producto más vendido',
-                'principal' => $producto['descripcion'] ?? 'Sin datos',
-                'detalle' => isset($producto['total']) ? number_format((int)$producto['total']) . ' piezas en salidas' : 'Sin movimientos'
-            ],
-        ];
-    }
-
+        'usuario_mas_activo' => [
+            'titulo' => 'Usuario más activo',
+            'principal' => $usuario['usuario'] ?? 'Sin datos',
+            'detalle' => isset($usuario['total'])
+                ? number_format((int)$usuario['total']) . ' movimientos últimos 30 días'
+                : 'Sin movimientos'
+        ]
+    ];
+}
     public function getProductosCriticos(int $limite = 12): array
     {
         $params = [];
@@ -640,6 +613,41 @@ class DashboardController
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+
+    public function getTopProductosVendidos(int $limite = 10): array
+{
+    $params = [];
+
+    $sql = "SELECT
+                p.codigo,
+                p.descripcion,
+                SUM(COALESCE(md.cantidad, 0)) AS total
+            FROM movimiento_detalles md
+            INNER JOIN movimientos m
+                ON m.id = md.movimiento_id
+            INNER JOIN productos p
+                ON p.id = md.producto_id
+            WHERE m.tipo_movimiento = 'SALIDA'
+            AND m.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+
+    $this->agregarFiltroMovimientos($sql, $params);
+
+    $sql .= " GROUP BY p.id, p.codigo, p.descripcion
+              ORDER BY total DESC
+              LIMIT :limite";
+
+    $stmt = $this->conn->prepare($sql);
+
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+
+    $stmt->bindValue(':limite', $limite, PDO::PARAM_INT);
+
+    $stmt->execute();
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
     public function getEstadoProducto(array $item): array
     {
         $existencia = (int)($item['existencia_actual'] ?? 0);

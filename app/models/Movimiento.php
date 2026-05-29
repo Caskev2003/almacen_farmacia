@@ -1182,59 +1182,63 @@ public function getProductosParaSalida(): array
         return $movimiento;
     }
 
-    public function obtenerSalidaPorId(int $movimientoId): ?array
-    {
-        $sql = "SELECT 
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.tipo_movimiento,
-                    m.referencia,
-                    m.tipo_operacion,
-                    m.observaciones,
-                    a.nombre AS almacen_nombre,
-                    u.nombre AS usuario_nombre
-                FROM movimientos m
-                LEFT JOIN almacenes a ON m.almacen_id = a.id
-                INNER JOIN usuarios u ON m.usuario_id = u.id
-                WHERE m.id = :id
-                AND m.tipo_movimiento = 'SALIDA'
-                LIMIT 1";
+   public function obtenerSalidaPorId(int $movimientoId): ?array
+{
+    $sql = "SELECT 
+                m.id,
+                m.folio,
+                m.fecha,
+                m.tipo_movimiento,
+                m.almacen_id,
+                m.referencia,
+                m.tipo_operacion,
+                m.observaciones,
+                m.cancelado,
+                m.fecha_cancelacion,
+                m.motivo_cancelacion,
+                a.nombre AS almacen_nombre,
+                u.nombre AS usuario_nombre
+            FROM movimientos m
+            LEFT JOIN almacenes a ON m.almacen_id = a.id
+            INNER JOIN usuarios u ON m.usuario_id = u.id
+            WHERE m.id = :id
+            AND m.tipo_movimiento = 'SALIDA'
+            LIMIT 1";
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':id' => $movimientoId
-        ]);
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute([
+        ':id' => $movimientoId
+    ]);
 
-        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+    $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$movimiento) {
-            return null;
-        }
-
-        $sqlDetalle = "SELECT 
-                            md.cantidad,
-                            md.costo_unitario,
-                            md.precio_unitario,
-                            md.ubicacion,
-                            p.codigo,
-                            p.descripcion,
-                            p.unidad_medida
-                       FROM movimiento_detalle md
-                       INNER JOIN productos p ON md.producto_id = p.id
-                       WHERE md.movimiento_id = :movimiento_id
-                       ORDER BY md.id ASC";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([
-            ':movimiento_id' => $movimientoId
-        ]);
-
-        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
-
-        return $movimiento;
+    if (!$movimiento) {
+        return null;
     }
 
+    $sqlDetalle = "SELECT 
+                        md.producto_id,
+                        md.cantidad,
+                        md.costo_unitario,
+                        md.precio_unitario,
+                        md.ubicacion,
+                        p.codigo,
+                        p.descripcion,
+                        p.unidad_medida
+                   FROM movimiento_detalle md
+                   INNER JOIN productos p ON md.producto_id = p.id
+                   WHERE md.movimiento_id = :movimiento_id
+                   ORDER BY md.id ASC";
+
+    $stmtDetalle = $this->conn->prepare($sqlDetalle);
+    $stmtDetalle->execute([
+        ':movimiento_id' => $movimientoId
+    ]);
+
+    $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+    return $movimiento;
+}
    public function historialSalidas(
     string $buscar = '',
     int $almacenId = 0,
@@ -1637,6 +1641,204 @@ public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motiv
         return [
             'success' => false,
             'message' => $e->getMessage()
+        ];
+    }
+}
+
+public function editarSalida(int $movimientoId, array $data, array $detalle, int $usuarioId): array
+{
+    try {
+        $this->conn->beginTransaction();
+
+        $sqlMov = "SELECT id, folio, almacen_id, cancelado
+                   FROM movimientos
+                   WHERE id = :id
+                   AND tipo_movimiento = 'SALIDA'
+                   LIMIT 1
+                   FOR UPDATE";
+
+        $stmtMov = $this->conn->prepare($sqlMov);
+        $stmtMov->execute([':id' => $movimientoId]);
+        $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
+
+        if (!$movimiento) {
+            throw new Exception('La salida no existe.');
+        }
+
+        if ((int)$movimiento['cancelado'] === 1) {
+            throw new Exception('No puedes editar una salida cancelada.');
+        }
+
+        $almacenId = (int)$movimiento['almacen_id'];
+        $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
+
+        if ($sucursal === '') {
+            throw new Exception('No se pudo identificar la sucursal.');
+        }
+
+        /*
+         * 1. REGRESAR STOCK DE LA SALIDA ORIGINAL
+         */
+        $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion
+                               FROM movimiento_detalle
+                               WHERE movimiento_id = :movimiento_id";
+
+        $stmtDetalleOriginal = $this->conn->prepare($sqlDetalleOriginal);
+        $stmtDetalleOriginal->execute([':movimiento_id' => $movimientoId]);
+        $detallesOriginales = $stmtDetalleOriginal->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($detallesOriginales as $item) {
+            $productoId = (int)$item['producto_id'];
+            $cantidad = (int)$item['cantidad'];
+            $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+            $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+            $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacion);
+        }
+
+        /*
+         * 2. BORRAR DETALLE ANTERIOR
+         */
+        $sqlDeleteDetalle = "DELETE FROM movimiento_detalle
+                             WHERE movimiento_id = :movimiento_id";
+
+        $stmtDeleteDetalle = $this->conn->prepare($sqlDeleteDetalle);
+        $stmtDeleteDetalle->execute([':movimiento_id' => $movimientoId]);
+
+        /*
+         * 3. ACTUALIZAR ENCABEZADO CONSERVANDO EL MISMO FOLIO
+         */
+        $sqlUpdateMov = "UPDATE movimientos
+                         SET fecha = :fecha,
+                             almacen_id = :almacen_id,
+                             usuario_id = :usuario_id,
+                             referencia = :referencia,
+                             tipo_operacion = :tipo_operacion,
+                             observaciones = :observaciones
+                         WHERE id = :id";
+
+        $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);
+        $stmtUpdateMov->execute([
+            ':fecha' => $data['fecha'],
+            ':almacen_id' => $almacenId,
+            ':usuario_id' => $usuarioId,
+            ':referencia' => $data['referencia'] ?: null,
+            ':tipo_operacion' => $data['tipo_operacion'] ?: null,
+            ':observaciones' => $data['observaciones'] ?: null,
+            ':id' => $movimientoId
+        ]);
+
+        /*
+         * 4. VOLVER A HACER LA SALIDA CON EL NUEVO DETALLE
+         */
+        $sqlProducto = "SELECT id, descripcion, precio_compra, precio_venta, ubicacion
+                        FROM productos
+                        WHERE id = :id
+                        AND estado = 1
+                        LIMIT 1";
+
+        $stmtProducto = $this->conn->prepare($sqlProducto);
+
+        $sqlDetalle = "INSERT INTO movimiento_detalle (
+                            movimiento_id, producto_id, lote_id, cantidad,
+                            costo_unitario, precio_unitario, ubicacion
+                       ) VALUES (
+                            :movimiento_id, :producto_id, NULL, :cantidad,
+                            :costo_unitario, :precio_unitario, :ubicacion
+                       )";
+
+        $stmtDetalle = $this->conn->prepare($sqlDetalle);
+
+        foreach ($detalle as $item) {
+            $productoId = (int)$item['producto_id'];
+            $cantidadSolicitada = (int)$item['cantidad'];
+            $ubicacionPreferida = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+            $stmtProducto->execute([':id' => $productoId]);
+            $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC);
+
+            if (!$producto) {
+                throw new Exception('Producto no encontrado.');
+            }
+
+            if ($ubicacionPreferida === 'SIN UBICACION') {
+                throw new Exception('Debes seleccionar una ubicación válida para: ' . $producto['descripcion']);
+            }
+
+            if ($cantidadSolicitada <= 0) {
+                throw new Exception('La cantidad debe ser mayor a 0.');
+            }
+
+            $ubicacionesDisponibles = $this->obtenerUbicacionesDisponiblesProducto(
+                $productoId,
+                $sucursal,
+                $ubicacionPreferida
+            );
+
+            $existenciaTotal = 0;
+
+            foreach ($ubicacionesDisponibles as $ubi) {
+                $existenciaTotal += (int)$ubi['existencia'];
+            }
+
+            if ($existenciaTotal < $cantidadSolicitada) {
+                throw new Exception(
+                    'Stock insuficiente para ' . $producto['descripcion'] .
+                    '. Solicitado: ' . $cantidadSolicitada .
+                    '. Disponible: ' . $existenciaTotal
+                );
+            }
+
+            $cantidadPendiente = $cantidadSolicitada;
+
+            foreach ($ubicacionesDisponibles as $ubi) {
+                if ($cantidadPendiente <= 0) {
+                    break;
+                }
+
+                $ubicacionActual = $this->limpiarUbicacion($ubi['ubicacion'] ?? '');
+                $existenciaUbicacion = (int)$ubi['existencia'];
+
+                if ($existenciaUbicacion <= 0) {
+                    continue;
+                }
+
+                $cantidadADescontar = min($cantidadPendiente, $existenciaUbicacion);
+
+                $stmtDetalle->execute([
+                    ':movimiento_id' => $movimientoId,
+                    ':producto_id' => $productoId,
+                    ':cantidad' => $cantidadADescontar,
+                    ':costo_unitario' => $item['costo_unitario'],
+                    ':precio_unitario' => $item['precio_unitario'],
+                    ':ubicacion' => $ubicacionActual
+                ]);
+
+                $this->disminuirExistencia($productoId, $sucursal, $cantidadADescontar, $ubicacionActual);
+                $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacionActual);
+                $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
+
+                $cantidadPendiente -= $cantidadADescontar;
+            }
+        }
+
+        $this->conn->commit();
+
+        return [
+            'success' => true,
+            'message' => 'Salida actualizada correctamente.',
+            'movimiento_id' => $movimientoId,
+            'folio' => $movimiento['folio']
+        ];
+
+    } catch (Throwable $e) {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Error al editar la salida: ' . $e->getMessage()
         ];
     }
 }

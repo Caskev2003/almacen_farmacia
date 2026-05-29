@@ -12,8 +12,53 @@ $controller = new SalidaController();
 $message = '';
 $messageType = 'danger';
 
+$folioOperacionEditar = '';
+$observacionesLimpiasEditar = '';
+
+$editarId = isset($_GET['editar']) ? (int)$_GET['editar'] : 0;
+$modoEdicion = $editarId > 0;
+$salidaEditar = null;
+
+if ($modoEdicion) {
+    $salidaEditar = $controller->obtenerSalida($editarId);
+
+    if (!$salidaEditar) {
+        $message = 'La salida que intentas editar no existe.';
+        $messageType = 'danger';
+        $modoEdicion = false;
+
+    } elseif ((int)($salidaEditar['cancelado'] ?? 0) === 1) {
+        $message = 'No puedes editar una salida cancelada.';
+        $messageType = 'danger';
+        $modoEdicion = false;
+
+    } else {
+        $observacionesEditar = (string)($salidaEditar['observaciones'] ?? '');
+$observacionesLimpiasEditar = $observacionesEditar;
+
+if (preg_match('/Folio\s+ticket:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
+    $folioOperacionEditar = trim($matches[1]);
+    $observacionesLimpiasEditar = trim($matches[2] ?? '');
+
+} elseif (preg_match('/Folio\s+resurtido:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
+    $folioOperacionEditar = trim($matches[1]);
+    $observacionesLimpiasEditar = trim($matches[2] ?? '');
+
+} elseif (preg_match('/Folio\s+nota_remision:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
+    $folioOperacionEditar = trim($matches[1]);
+    $observacionesLimpiasEditar = trim($matches[2] ?? '');
+}
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $result = $controller->guardar($_POST, (int)$user['id']);
+    $editarPostId = (int)($_POST['editar_id'] ?? 0);
+
+    if ($editarPostId > 0) {
+        $result = $controller->actualizar($editarPostId, $_POST, (int)$user['id']);
+    } else {
+        $result = $controller->guardar($_POST, (int)$user['id']);
+    }
 
     if ($result['success']) {
         $movimientoId = (int)($result['movimiento_id'] ?? 0);
@@ -23,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $message = 'La salida se guardó, pero no se pudo abrir la vista previa.';
-        $messageType = 'danger';
+        $message = 'La salida se guardó correctamente.';
+        $messageType = 'success';
     } else {
         $message = $result['message'];
         $messageType = 'danger';
@@ -33,12 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $almacenes = $controller->almacenes();
 $productos = $controller->productos();
+$productosPorId = [];
+
+foreach ($productos as $productoTmp) {
+    $productosPorId[(int)$productoTmp['id']] = $productoTmp;
+}
 $tiposSalida = $controller->tiposSalida();
 
 $almacenSesion = (int)($user['almacen_id'] ?? 0);
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
 $folio = $controller->generarFolio($almacenSesion);
+if ($modoEdicion && $salidaEditar) {
+    $folio = $salidaEditar['folio'];
+}
 $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 date_default_timezone_set('America/Mexico_City');
@@ -75,13 +128,19 @@ foreach ($productos as $producto) {
 ksort($ubicacionesGenerales);
 
 $moduleCss = 'salidas';
+
+
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
 <div class="module-header">
     <div>
-        <h2>Salidas de Almacén</h2>
-        <p>Registro de salidas con vista previa e impresión.</p>
+        <h2><?= $modoEdicion ? 'Editar Salida' : 'Salidas de Almacén' ?></h2>
+<p>
+    <?= $modoEdicion
+        ? 'Modifica la salida seleccionada. Se usará el mismo folio.'
+        : 'Registro de salidas con vista previa e impresión.' ?>
+</p>
     </div>
 </div>
 
@@ -91,7 +150,17 @@ include __DIR__ . '/../app/views/layouts/header.php';
     </div>
 <?php endif; ?>
 
+<?php if ($modoEdicion && $salidaEditar): ?>
+    <div class="alert alert-warning">
+        Estás editando la salida:
+        <strong><?= e($salidaEditar['folio']) ?></strong>
+    </div>
+<?php endif; ?>
+
 <form method="POST" action="" id="formSalida">
+    <?php if ($modoEdicion && $salidaEditar): ?>
+    <input type="hidden" name="editar_id" value="<?= (int)$salidaEditar['id'] ?>">
+<?php endif; ?>
     <div class="salida-encabezado-card">
         <div class="salida-encabezado-grid">
 
@@ -102,7 +171,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field">
                 <label>Fecha</label>
-                <input type="datetime-local" name="fecha" id="fecha_salida" required>
+                <input 
+    type="datetime-local" 
+    name="fecha" 
+    id="fecha_salida" 
+    required
+    value="<?= $modoEdicion && !empty($salidaEditar['fecha'])
+        ? e(date('Y-m-d\TH:i', strtotime($salidaEditar['fecha'])))
+        : '' ?>"
+>
             </div>
 
             <div class="salida-field folio-anterior-field">
@@ -120,9 +197,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <select name="tipo_salida" required>
                     <option value="">Seleccione el tipo de salida</option>
                     <?php foreach ($tiposSalida as $tipo): ?>
-                        <option value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>">
-                            <?= e($tipo['clave']) ?> <?= e($tipo['descripcion']) ?>
-                        </option>
+                        <option 
+    value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>"
+    <?= $modoEdicion && (($salidaEditar['referencia'] ?? '') === ($tipo['clave'] . ' - ' . $tipo['descripcion'])) ? 'selected' : '' ?>
+>
+    <?= e($tipo['clave']) ?> <?= e($tipo['descripcion']) ?>
+</option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -131,22 +211,23 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <label>Tipo de documento *</label>
                 <select name="tipo_operacion" id="tipo_operacion" required>
                     <option value="">Seleccione...</option>
-                    <option value="TICKET">Ticket</option>
-                    <option value="RESURTIDO">Resurtido</option>
-                    <option value="AJUSTE">Ajuste</option>
-                    <option value="TRASPASO">Traspaso</option>
-                    <option value="NOTA_REMISION">Nota de Remision</option>
+<option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>Ticket</option>
+<option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>Resurtido</option>
+<option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>Ajuste</option>
+<option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>Traspaso</option>
+<option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>Nota de Remision</option>
                 </select>
             </div>
 
             <div class="salida-field" id="folioOperacionBox" style="display:none;">
                 <label id="folioOperacionLabel">Folio</label>
-                <input 
-                    type="text" 
-                    name="folio_operacion" 
-                    id="folio_operacion" 
-                    placeholder="Ingrese folio"
-                >
+                <input
+    type="text"
+    name="folio_operacion"
+    id="folio_operacion"
+    placeholder="Ingrese folio"
+    value="<?= e($folioOperacionEditar) ?>"
+>
             </div>
 
             <div class="salida-field almacen-field">
@@ -179,7 +260,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="salida-field observaciones-field">
                 <label>Observaciones</label>
-                <textarea name="observaciones" rows="4" placeholder="Escribe observaciones de la salida."></textarea>
+                <textarea name="observaciones" rows="4" placeholder="Escribe observaciones de la salida."><?= $modoEdicion ? e($observacionesLimpiasEditar) : '' ?></textarea>
             </div>
 
         </div>
@@ -249,18 +330,19 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             );
                         ?>
                         <option
-                            value="<?= (int)$producto['id'] ?>"
-                            data-codigo="<?= e($producto['codigo']) ?>"
-                            data-descripcion="<?= e($producto['descripcion']) ?>"
-                            data-costo="<?= e((string)$producto['precio_compra']) ?>"
-                            data-precio="<?= e((string)$producto['precio_compra']) ?>"
-                            data-existencia="<?= e((string)$existenciaTotalProducto) ?>"
-                            data-unidad="<?= e($producto['unidad_medida']) ?>"
-                            data-ubicacion="<?= e($ubicacionSugerida) ?>"
-                            data-ubicaciones="<?= $ubicacionesJson ?>"
-                        >
-                            <?= e($producto['codigo']) ?>
-                        </option>
+    class="producto-option"
+    value="<?= (int)$producto['id'] ?>"
+    data-codigo="<?= e($producto['codigo']) ?>"
+    data-descripcion="<?= e($producto['descripcion']) ?>"
+    data-costo="<?= e((string)$producto['precio_compra']) ?>"
+    data-precio="<?= e((string)$producto['precio_compra']) ?>"
+    data-existencia="<?= e((string)$existenciaTotalProducto) ?>"
+    data-unidad="<?= e($producto['unidad_medida']) ?>"
+    data-ubicacion="<?= e($ubicacionSugerida) ?>"
+    data-ubicaciones="<?= $ubicacionesJson ?>"
+>
+    <?= e($producto['codigo']) ?>
+</option>
                     <?php endforeach; ?>
                 </select>
 
@@ -335,10 +417,68 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     </tr>
                 </thead>
                 <tbody id="detalleBody">
-                    <tr id="filaVaciaDetalle">
-                        <td colspan="9" class="empty-table">No has agregado productos.</td>
-                    </tr>
-                </tbody>
+    <?php if ($modoEdicion && !empty($salidaEditar['detalles'])): ?>
+        <?php foreach ($salidaEditar['detalles'] as $item): ?>
+            <?php
+                $cantidad = (int)($item['cantidad'] ?? 0);
+                $precio = (float)($item['precio_unitario'] ?? 0);
+                $costo = (float)($item['costo_unitario'] ?? 0);
+                $importe = $cantidad * $precio;
+                $productoId = (int)($item['producto_id'] ?? 0);
+                $codigo = $item['codigo'] ?? '';
+                $descripcion = $item['descripcion'] ?? '';
+                $unidad = $item['unidad_medida'] ?? '';
+                $ubicacion = $item['ubicacion'] ?? '';
+            ?>
+            <tr>
+                <td>
+                    <input
+                        type="number"
+                        min="1"
+                        value="<?= e((string)$cantidad) ?>"
+                        class="input-cantidad-detalle"
+                        style="width:70px;"
+                        oninput="actualizarCantidadFila(this)"
+                    >
+
+                    <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
+                    <input type="hidden" name="cantidad[]" value="<?= e((string)$cantidad) ?>">
+                    <input type="hidden" name="costo_unitario[]" value="<?= e((string)$costo) ?>">
+                    <input type="hidden" name="precio_unitario[]" value="<?= e((string)$precio) ?>">
+                    <input type="hidden" name="ubicacion[]" value="<?= e($ubicacion) ?>">
+                </td>
+                <td><?= e($codigo) ?></td>
+                <td><?= e($descripcion) ?></td>
+                <td><?= e($unidad) ?></td>
+                <?php
+    $existenciaActualProducto = 0;
+
+    if (isset($productosPorId[$productoId])) {
+        $existenciaActualProducto = (int)($productosPorId[$productoId]['existencia_actual'] ?? 0);
+    }
+
+    $existenciaDisponibleEdicion = $existenciaActualProducto + $cantidad;
+?>
+
+<td><?= number_format($existenciaDisponibleEdicion) ?></td>
+                <td>$<?= number_format($precio, 2) ?></td>
+                <td><?= e($ubicacion) ?></td>
+                <td class="importe-fila" data-importe="<?= e((string)$importe) ?>">
+                    $<?= number_format($importe, 2) ?>
+                </td>
+                <td>
+                    <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
+                        Eliminar
+                    </button>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    <?php else: ?>
+        <tr id="filaVaciaDetalle">
+            <td colspan="9" class="empty-table">No has agregado productos.</td>
+        </tr>
+    <?php endif; ?>
+</tbody>
                 <tfoot>
                     <tr>
                         <th colspan="7" style="text-align:right;">Total:</th>
@@ -350,7 +490,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
         </div>
 
         <div class="form-actions" style="margin-top:20px;">
-            <button type="submit" class="btn-primary-action">Guardar y ver vista previa</button>
+            <button type="submit" class="btn-primary-action">
+    <?= $modoEdicion ? 'Actualizar salida' : 'Guardar y ver vista previa' ?>
+</button>
             <a href="salidas.php" class="btn-secondary-action">Nueva captura</a>
         </div>
     </div>
@@ -737,20 +879,26 @@ function controlarFolioOperacion() {
         folioOperacionLabel.textContent = 'Folio de Ticket';
         folioOperacionInput.placeholder = 'Ingrese folio del ticket';
         folioOperacionInput.required = true;
+
     } else if (valor === 'RESURTIDO') {
         folioOperacionBox.style.display = 'flex';
         folioOperacionLabel.textContent = 'Folio de Resurtido';
         folioOperacionInput.placeholder = 'Ingrese folio del resurtido';
         folioOperacionInput.required = true;
-    }else if (valor === 'NOTA_REMISION') {
+
+    } else if (valor === 'NOTA_REMISION') {
         folioOperacionBox.style.display = 'flex';
         folioOperacionLabel.textContent = 'N# de Nota de Remision';
         folioOperacionInput.placeholder = 'Ingrese N# de Nota de Remision';
         folioOperacionInput.required = true;
+
     } else {
         folioOperacionBox.style.display = 'none';
-        folioOperacionInput.value = '';
         folioOperacionInput.required = false;
+
+        if (!MODO_EDICION) {
+            folioOperacionInput.value = '';
+        }
     }
 
     guardarBorradorSalida();
@@ -932,7 +1080,10 @@ function actualizarCantidadFila(input) {
     }
 
     const cantidad = parseInt(cantidadTexto, 10);
-    const existenciaTotal = parseInt(tr.children[4].textContent || '0', 10);
+    const existenciaTotal = parseInt(
+    (tr.children[4].textContent || '0').replace(/,/g, ''),
+    10
+);
 
     const precioTexto = tr.children[5]
         .textContent
@@ -1045,10 +1196,18 @@ function ponerFechaActualSalida() {
     inputFecha.value = `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+const MODO_EDICION = <?= $modoEdicion ? 'true' : 'false' ?>;
+
 document.addEventListener('DOMContentLoaded', function () {
     localStorage.removeItem('borradorSalida');
     cargarCatalogoUbicacionesSalida();
-    ponerFechaActualSalida();
+
+    if (!MODO_EDICION) {
+        ponerFechaActualSalida();
+    } else {
+        actualizarTotalSalida();
+        controlarFolioOperacion();
+    }
 });
 
 document.querySelectorAll('input, select, textarea').forEach(campo => {

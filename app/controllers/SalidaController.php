@@ -247,4 +247,85 @@ class SalidaController
 {
     return $this->movimientoModel->cancelarSalida($movimientoId, $usuarioId, $motivo);
 }
+public function actualizar(int $movimientoId, array $postData, int $usuarioId): array
+{
+    $fecha = trim($postData['fecha'] ?? '');
+    $tipoSalida = trim($postData['tipo_salida'] ?? '');
+    $tipoOperacion = trim($postData['tipo_operacion'] ?? '');
+    $folioOperacion = trim($postData['folio_operacion'] ?? '');
+    $observaciones = trim($postData['observaciones'] ?? '');
+
+    if ($movimientoId <= 0) {
+        return ['success' => false, 'message' => 'Salida inválida para editar.'];
+    }
+
+    if ($fecha === '') {
+        return ['success' => false, 'message' => 'La fecha es obligatoria.'];
+    }
+
+    if ($tipoSalida === '') {
+        return ['success' => false, 'message' => 'Debes seleccionar el tipo de salida.'];
+    }
+
+    if ($tipoOperacion === '') {
+        return ['success' => false, 'message' => 'Debes seleccionar el tipo de documento.'];
+    }
+
+    $productoIds = $postData['producto_id'] ?? [];
+    $cantidades = $postData['cantidad'] ?? [];
+    $costos = $postData['costo_unitario'] ?? [];
+    $precios = $postData['precio_unitario'] ?? [];
+    $ubicaciones = $postData['ubicacion'] ?? [];
+
+    if (empty($productoIds)) {
+        return ['success' => false, 'message' => 'Debes agregar al menos un producto.'];
+    }
+
+    $detalle = [];
+
+    foreach ($productoIds as $i => $productoId) {
+        $productoId = (int)$productoId;
+        $cantidad = isset($cantidades[$i]) ? (int)$cantidades[$i] : 0;
+        $costo = isset($costos[$i]) ? (float)$costos[$i] : 0;
+        $precio = isset($precios[$i]) ? (float)$precios[$i] : 0;
+        $ubicacion = $this->limpiarUbicacion($ubicaciones[$i] ?? '');
+
+        if ($productoId <= 0) {
+            continue;
+        }
+
+        if ($cantidad <= 0) {
+            return ['success' => false, 'message' => 'La cantidad debe ser mayor a 0.'];
+        }
+
+        if ($ubicacion === 'SIN UBICACION') {
+            return ['success' => false, 'message' => 'Debes seleccionar una ubicación válida.'];
+        }
+
+        $detalle[] = [
+            'producto_id' => $productoId,
+            'cantidad' => $cantidad,
+            'costo_unitario' => $costo,
+            'precio_unitario' => $precio,
+            'ubicacion' => $ubicacion,
+        ];
+    }
+
+    $observacionesFinales = $observaciones;
+
+    if ($folioOperacion !== '') {
+        $textoFolio = 'Folio ' . strtolower($tipoOperacion) . ': ' . $folioOperacion;
+
+        $observacionesFinales = $observacionesFinales !== ''
+            ? $textoFolio . ' | ' . $observacionesFinales
+            : $textoFolio;
+    }
+
+    return $this->movimientoModel->editarSalida($movimientoId, [
+        'fecha' => $fecha,
+        'referencia' => $tipoSalida,
+        'tipo_operacion' => $tipoOperacion,
+        'observaciones' => $observacionesFinales,
+    ], $detalle, $usuarioId);
+}
 }

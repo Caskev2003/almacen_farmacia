@@ -588,16 +588,14 @@ function obtenerUbicacionSugerida(option) {
 }
 
 function limpiarSinUbicacionEntrada() {
-    const valor = limpiarUbicacion(ubicacionInput.value);
+    const valorReal = String(ubicacionInput.value || '').trim().toUpperCase();
 
-    if (valor === 'SIN UBICACION') {
+    if (valorReal === 'SIN UBICACION' || valorReal === 'SIN UBICACIÓN') {
         ubicacionInput.value = '';
-        cargarCatalogoUbicacionesEntrada();
     }
 }
 
 ubicacionInput.addEventListener('focus', limpiarSinUbicacionEntrada);
-ubicacionInput.addEventListener('click', limpiarSinUbicacionEntrada);
 
 productoSelect.addEventListener('change', cargarDatosProductoSeleccionado);
 

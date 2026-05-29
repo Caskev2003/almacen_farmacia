@@ -242,4 +242,9 @@ class SalidaController
             trim($fechaFinal)
         );
     }
+
+    public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo = ''): array
+{
+    return $this->movimientoModel->cancelarSalida($movimientoId, $usuarioId, $motivo);
+}
 }

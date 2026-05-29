@@ -9,6 +9,7 @@ requireLogin();
 $user = currentUser();
 $controller = new SalidaController();
 
+
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 $almacenSesion = (int)($user['almacen_id'] ?? 0);
 
@@ -42,6 +43,42 @@ foreach ($salidas as $salida) {
 
 $moduleCss = 'historial_entradas';
 
+
+$mensaje = '';
+$tipoMensaje = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && ($_POST['accion'] ?? '') === 'cancelar_salida'
+) {
+    $movimientoId = (int)($_POST['movimiento_id'] ?? 0);
+
+    $motivo = trim(
+        $_POST['motivo_cancelacion']
+        ?? 'Cancelado desde historial de salidas'
+    );
+
+    $resultado = $controller->cancelarSalida(
+        $movimientoId,
+        (int)$user['id'],
+        $motivo
+    );
+
+    $mensaje = $resultado['message'] ?? '';
+
+    $tipoMensaje = !empty($resultado['success'])
+        ? 'success'
+        : 'error';
+
+    if (!empty($resultado['success'])) {
+
+        $salidas = $controller->historialSalidas(
+            $buscar,
+            $almacenId,
+            $fechaInicio,
+            $fechaFinal
+        );
+    }
+}
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
@@ -96,9 +133,54 @@ include __DIR__ . '/../app/views/layouts/header.php';
     gap: 8px;
     flex-wrap: wrap;
 }
+.btn-cancel {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-cancel:hover {
+    background: #b91c1c;
+}
+
+.badge-cancelado {
+    background: #991b1b;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.alert {
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
 </style>
 
 <div class="module-header">
+    <?php if ($mensaje !== ''): ?>
+    <div class="alert <?= $tipoMensaje === 'success'
+        ? 'alert-success'
+        : 'alert-error' ?>">
+        <?= e($mensaje) ?>
+    </div>
+<?php endif; ?>
     <div>
         <h2>Historial de Salidas</h2>
         <p>Consulta, filtra y reimprime salidas registradas en el almacén.</p>
@@ -217,7 +299,19 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         ?>
 
                         <tr>
-                            <td class="folio-cell"><?= e($salida['folio']) ?></td>
+                            <td class="folio-cell">
+                            
+                                <div>
+                                <?= e($salida['folio']) ?>
+                                </div>
+                                <?php if ((int)($salida['cancelado'] ?? 0) === 1): ?>
+                                     <br>
+                                    <span class="badge-cancelado">
+                                        CANCELADO
+                                    </span>
+                                <?php endif; ?>
+
+                            </td>
 
                             <td>
                                 <?= !empty($salida['fecha']) ? date('d/m/Y H:i', strtotime($salida['fecha'])) : '' ?>
@@ -245,22 +339,69 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                             <td>
                                 <div class="table-actions">
-                                    <button
-                                        type="button"
-                                        class="btn-small btn-detail"
-                                        onclick="toggleDetalle('<?= e($detalleId) ?>')"
-                                    >
-                                        Ver detalle
-                                    </button>
 
-                                    <a
-                                        href="imprimir_salida.php?id=<?= (int)$salida['id'] ?>&preview=1"
-                                        class="btn-small btn-print"
-                                        target="_blank"
-                                    >
-                                        Reimprimir
-                                    </a>
-                                </div>
+    <button
+        type="button"
+        class="btn-small btn-detail"
+        onclick="toggleDetalle('<?= e($detalleId) ?>')"
+    >
+        Ver detalle
+    </button>
+
+    <a
+        href="imprimir_salida.php?id=<?= (int)$salida['id'] ?>&preview=1"
+        class="btn-small btn-print"
+        target="_blank"
+    >
+        Reimprimir
+    </a>
+
+    <?php if ((int)($salida['cancelado'] ?? 0) === 0): ?>
+
+        <form
+            method="POST"
+            style="display:inline"
+            onsubmit="return confirm(
+                '¿Seguro que deseas cancelar esta salida?\n\nEl stock regresará a las ubicaciones originales.'
+            );"
+        >
+
+            <input
+                type="hidden"
+                name="accion"
+                value="cancelar_salida"
+            >
+
+            <input
+                type="hidden"
+                name="movimiento_id"
+                value="<?= (int)$salida['id'] ?>"
+            >
+
+            <input
+                type="hidden"
+                name="motivo_cancelacion"
+                value="Cancelado desde historial de salidas"
+            >
+
+            <button
+                type="submit"
+                class="btn-small btn-cancel"
+            >
+                Cancelar
+            </button>
+
+        </form>
+
+    <?php else: ?>
+
+        <span class="badge-cancelado">
+            CANCELADO
+        </span>
+
+    <?php endif; ?>
+
+</div>
                             </td>
                         </tr>
 

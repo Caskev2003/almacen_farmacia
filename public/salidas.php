@@ -135,6 +135,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <option value="RESURTIDO">Resurtido</option>
                     <option value="AJUSTE">Ajuste</option>
                     <option value="TRASPASO">Traspaso</option>
+                    <option value="NOTA_REMISION">Nota de Remision</option>
                 </select>
             </div>
 
@@ -717,15 +718,14 @@ function actualizarExistenciaPorUbicacion() {
 }
 
 function limpiarSinUbicacionAlClick() {
-    const valor = limpiarUbicacion(ubicacionInput.value);
+    const valorReal = String(ubicacionInput.value || '').trim().toUpperCase();
 
-    if (valor === 'SIN UBICACION') {
+    if (valorReal === 'SIN UBICACION' || valorReal === 'SIN UBICACIÓN') {
         ubicacionInput.value = '';
     }
 }
 
 ubicacionInput.addEventListener('focus', limpiarSinUbicacionAlClick);
-ubicacionInput.addEventListener('click', limpiarSinUbicacionAlClick);
 ubicacionInput.addEventListener('input', actualizarExistenciaPorUbicacion);
 ubicacionInput.addEventListener('change', actualizarExistenciaPorUbicacion);
 
@@ -741,6 +741,11 @@ function controlarFolioOperacion() {
         folioOperacionBox.style.display = 'flex';
         folioOperacionLabel.textContent = 'Folio de Resurtido';
         folioOperacionInput.placeholder = 'Ingrese folio del resurtido';
+        folioOperacionInput.required = true;
+    }else if (valor === 'NOTA_REMISION') {
+        folioOperacionBox.style.display = 'flex';
+        folioOperacionLabel.textContent = 'N# de Nota de Remision';
+        folioOperacionInput.placeholder = 'Ingrese N# de Nota de Remision';
         folioOperacionInput.required = true;
     } else {
         folioOperacionBox.style.display = 'none';

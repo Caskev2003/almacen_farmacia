@@ -10,11 +10,33 @@ if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params([
         'lifetime' => $tiempoSesion,
         'path' => '/',
+        'domain' => '',
+        'secure' => false,
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
 
     session_start();
+}
+
+function renovarCookieSesion(): void
+{
+    global $tiempoSesion;
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        setcookie(
+            session_name(),
+            session_id(),
+            [
+                'expires' => time() + $tiempoSesion,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]
+        );
+    }
 }
 
 function isLoggedIn(): bool
@@ -29,8 +51,8 @@ function requireLogin(): void
         exit;
     }
 
-    // Renueva la actividad sin cerrar sesión por inactividad
     $_SESSION['ultimo_acceso'] = time();
+    renovarCookieSesion();
 }
 
 function currentUser(): ?array
@@ -48,11 +70,14 @@ function logoutUser(): void
         setcookie(
             session_name(),
             '',
-            time() - 42000,
-            $params["path"],
-            $params["domain"] ?? '',
-            $params["secure"] ?? false,
-            $params["httponly"] ?? true
+            [
+                'expires' => time() - 42000,
+                'path' => $params["path"] ?? '/',
+                'domain' => $params["domain"] ?? '',
+                'secure' => $params["secure"] ?? false,
+                'httponly' => $params["httponly"] ?? true,
+                'samesite' => $params["samesite"] ?? 'Lax',
+            ]
         );
     }
 

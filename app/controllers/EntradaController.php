@@ -216,4 +216,8 @@ class EntradaController
             'usuario_id' => $usuarioId,
         ], $detalle);
     }
+    public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motivo = ''): array
+{
+    return $this->movimientoModel->cancelarEntrada($movimientoId, $usuarioId, $motivo);
+}
 }

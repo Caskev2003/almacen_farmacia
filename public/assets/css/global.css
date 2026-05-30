@@ -370,3 +370,269 @@ textarea {
         width: 100%;
     }
 }
+/* ===== MEJORAS MODERNAS PARA EL SISTEMA ===== */
+
+/* Mejoras en el topbar */
+.topbar {
+    background: linear-gradient(135deg, #1e3a5f, #0f4c81) !important;
+    padding: 12px 24px !important;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.topbar h1 {
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.topbar h1::before {
+    content: "📦";
+    font-size: 24px;
+}
+
+.btn-top {
+    background: rgba(255,255,255,0.15) !important;
+    backdrop-filter: blur(10px);
+    border-radius: 40px !important;
+    transition: all 0.2s ease;
+}
+
+.btn-top:hover {
+    background: rgba(255,255,255,0.25) !important;
+    transform: translateY(-2px);
+}
+
+/* Mejoras en navbar */
+.navbar {
+    background: white !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 8px 20px !important;
+    position: sticky;
+    top: 60px;
+    z-index: 999;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.navbar a {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 40px !important;
+    padding: 8px 18px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease;
+}
+
+.navbar a:hover {
+    background: #eef2ff !important;
+    color: #2563eb !important;
+}
+
+/* Mejoras en tarjetas */
+.page-card,
+.card-module,
+.erp-form-card,
+.erp-table-card,
+.entrada-top-card,
+.entrada-captura-card,
+.salida-encabezado-card,
+.salida-captura-card {
+    border-radius: 20px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+    transition: all 0.2s ease;
+}
+
+.page-card:hover,
+.card-module:hover,
+.erp-form-card:hover,
+.erp-table-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important;
+    transform: translateY(-2px);
+}
+
+/* Mejoras en botones */
+.btn-primary-action,
+.btn-primary,
+.btn-module {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+    border-radius: 40px !important;
+    padding: 10px 24px !important;
+    transition: all 0.2s ease;
+}
+
+.btn-primary-action:hover,
+.btn-primary:hover,
+.btn-module:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+
+.btn-secondary-action,
+.btn-clear {
+    border-radius: 40px !important;
+    padding: 10px 24px !important;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary-action:hover,
+.btn-clear:hover {
+    transform: translateY(-2px);
+}
+
+.btn-delete {
+    border-radius: 40px !important;
+    padding: 6px 16px !important;
+    transition: all 0.2s ease;
+}
+
+.btn-delete:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239,68,68,0.3);
+}
+
+/* Mejoras en inputs */
+.form-group input,
+.form-group select,
+.form-group textarea,
+.entrada-field input,
+.entrada-field select,
+.salida-field input,
+.salida-field select {
+    border-radius: 12px !important;
+    border: 1.5px solid #e5e7eb !important;
+    transition: all 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus,
+.entrada-field input:focus,
+.salida-field input:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
+}
+
+/* Mejoras en tabla */
+.erp-table thead {
+    background: linear-gradient(135deg, #1f2937, #111827) !important;
+}
+
+.erp-table th {
+    padding: 12px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.erp-table td {
+    padding: 12px 12px !important;
+    font-size: 13px !important;
+}
+
+.erp-table tbody tr:hover {
+    background: #f8fafc !important;
+}
+
+/* Mejoras en alertas */
+.alert {
+    border-radius: 12px !important;
+    border-left: 4px solid !important;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.alert-success {
+    background: #ecfdf5 !important;
+    border-left-color: #10b981 !important;
+}
+
+.alert-danger {
+    background: #fef2f2 !important;
+    border-left-color: #ef4444 !important;
+}
+
+/* Mejoras en module header */
+.module-header h2 {
+    font-size: 24px !important;
+    font-weight: 700 !important;
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    display: inline-block;
+}
+
+/* Mejoras en badges */
+.product-badge,
+.badge {
+    background: #eef2ff !important;
+    color: #2563eb !important;
+    border-radius: 40px !important;
+    padding: 4px 12px !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
+/* Responsive mejorado */
+@media (max-width: 768px) {
+    .topbar {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .navbar {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .navbar a {
+        white-space: nowrap;
+    }
+    
+    .btn-primary-action,
+    .btn-secondary-action {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+}

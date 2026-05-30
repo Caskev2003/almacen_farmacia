@@ -33,6 +33,27 @@ $fechaImpresa = '';
 if (!empty($salida['fecha'])) {
     $fechaImpresa = date('d/m/Y', strtotime($salida['fecha']));
 }
+function obtenerIniciales(string $nombreCompleto): string
+{
+    $nombreCompleto = trim($nombreCompleto);
+
+    if ($nombreCompleto === '') {
+        return '';
+    }
+
+    $partes = preg_split('/\s+/', $nombreCompleto);
+
+    if (count($partes) >= 2) {
+        $primeraInicial = strtoupper(substr($partes[0], 0, 1));
+        $segundaInicial = strtoupper(substr($partes[1], 0, 1));
+
+        return $primeraInicial . '.' . $segundaInicial . '.';
+    }
+
+    return strtoupper(substr($partes[0], 0, 1)) . '.';
+}
+
+$aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -215,7 +236,35 @@ if (!empty($salida['fecha'])) {
             font-size: 13px;
             font-weight: bold;
         }
+.firmas-box {
+    margin-top: 45px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    align-items: end;
+}
 
+.firma-item {
+    text-align: center;
+    font-size: 10px;
+}
+
+.firma-linea {
+    border-top: 1px solid #111;
+    height: 1px;
+    margin-bottom: 6px;
+}
+
+.firma-titulo {
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+
+.firma-nombre {
+    font-size: 9px;
+    color: #333;
+}
         @media print {
             .no-print {
                 display: none !important;
@@ -316,12 +365,12 @@ function imprimirYLimpiar() {
         </div>
 
         <div class="info-grid">
-            <div class="label">Almacén:</div>
-            <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
+    <div class="label">Almacén:</div>
+    <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
 
-            <div class="label">Usuario:</div>
-            <div><?= e($salida['usuario_nombre'] ?? '') ?></div>
-        </div>
+    <div class="label">Usuario:</div>
+    <div><?= e($aliasUsuario) ?></div>
+</div>
 
         <div class="info-grid">
             <div class="label">Observaciones:</div>
@@ -368,9 +417,29 @@ function imprimirYLimpiar() {
             </tbody>
         </table>
 
-        <div class="footer-note">
-            Movimiento Realizado !!!
-        </div>
+       <div class="firmas-box">
+    <div class="firma-item">
+        <div class="firma-linea"></div>
+        <div class="firma-titulo">Surtió</div>
+        <div class="firma-nombre">Nombre y firma</div>
+    </div>
+
+    <div class="firma-item">
+        <div class="firma-linea"></div>
+        <div class="firma-titulo">Verificó</div>
+        <div class="firma-nombre">Nombre y firma</div>
+    </div>
+
+    <div class="firma-item">
+        <div class="firma-linea"></div>
+        <div class="firma-titulo">Recibió</div>
+        <div class="firma-nombre">Nombre y firma</div>
+    </div>
+</div>
+
+<div class="footer-note">
+    Movimiento Realizado !!!
+</div>
 
     </div>
 

@@ -818,11 +818,11 @@ body {
                 <label>📑 Tipo de documento</label>
                 <select name="tipo_operacion" id="tipoOperacionSelect" required>
                     <option value="">Seleccione...</option>
-                    <option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>Ticket</option>
-                    <option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>Resurtido</option>
-                    <option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>Ajuste</option>
-                    <option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>Traspaso</option>
-                    <option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>Nota de Remisión</option>
+                    <option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
+                    <option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>🔄 Resurtido</option>
+                    <option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
+                    <option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
+                    <option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>📝 Nota de Remisión</option>
                 </select>
             </div>
 
@@ -1121,7 +1121,7 @@ function cargarProductosEnModal(productosList) {
     modalResultCount.textContent = productosList.length;
     
     if (productosList.length === 0) {
-        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+        modalTableBody.innerHTML = '<td><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
         return;
     }
     
@@ -1260,7 +1260,7 @@ function agregarProducto() {
             <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
             <input type="hidden" name="precio_unitario[]" value="${precio}">
             <input type="hidden" name="ubicacion[]" value="${ubicacion}">
-        </td>
+         </td>
         <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
         <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
         <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
@@ -1395,11 +1395,14 @@ document.addEventListener('DOMContentLoaded', () => {
     controlarFolioOperacion();
     ponerFechaActual(); // <-- FECHA AUTOMÁTICA AL CARGAR
     
-    // Ctrl+B para abrir modal
+    // Ctrl+B para abrir modal - CORREGIDO
     document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'b') {
+        if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
             e.preventDefault();
+            e.stopPropagation();
+            console.log('Ctrl+B presionado - Abriendo modal');
             abrirModal();
+            return false;
         }
     });
     

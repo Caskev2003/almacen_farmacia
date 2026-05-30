@@ -12,9 +12,9 @@ $controller = new SalidaController();
 $message = '';
 $messageType = 'danger';
 
+// Variables para edición
 $folioOperacionEditar = '';
 $observacionesLimpiasEditar = '';
-
 $editarId = isset($_GET['editar']) ? (int)$_GET['editar'] : 0;
 $modoEdicion = $editarId > 0;
 $salidaEditar = null;
@@ -26,31 +26,31 @@ if ($modoEdicion) {
         $message = 'La salida que intentas editar no existe.';
         $messageType = 'danger';
         $modoEdicion = false;
-
     } elseif ((int)($salidaEditar['cancelado'] ?? 0) === 1) {
         $message = 'No puedes editar una salida cancelada.';
         $messageType = 'danger';
         $modoEdicion = false;
-
     } else {
         $observacionesEditar = (string)($salidaEditar['observaciones'] ?? '');
-$observacionesLimpiasEditar = $observacionesEditar;
+        $observacionesLimpiasEditar = $observacionesEditar;
 
-if (preg_match('/Folio\s+ticket:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
-    $folioOperacionEditar = trim($matches[1]);
-    $observacionesLimpiasEditar = trim($matches[2] ?? '');
+        $patterns = [
+            '/Folio\s+ticket:\s*([^|]+)\|?(.*)/i',
+            '/Folio\s+resurtido:\s*([^|]+)\|?(.*)/i',
+            '/Folio\s+nota_remision:\s*([^|]+)\|?(.*)/i'
+        ];
 
-} elseif (preg_match('/Folio\s+resurtido:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
-    $folioOperacionEditar = trim($matches[1]);
-    $observacionesLimpiasEditar = trim($matches[2] ?? '');
-
-} elseif (preg_match('/Folio\s+nota_remision:\s*([^|]+)\|?(.*)/i', $observacionesEditar, $matches)) {
-    $folioOperacionEditar = trim($matches[1]);
-    $observacionesLimpiasEditar = trim($matches[2] ?? '');
-}
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $observacionesEditar, $matches)) {
+                $folioOperacionEditar = trim($matches[1]);
+                $observacionesLimpiasEditar = trim($matches[2] ?? '');
+                break;
+            }
+        }
     }
 }
 
+// Procesar formulario
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
 
@@ -68,14 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $message = 'La salida se guardó correctamente.';
+        $message = '✅ La salida se guardó correctamente.';
         $messageType = 'success';
+        echo "<script>localStorage.removeItem('borradorSalida');</script>";
     } else {
-        $message = $result['message'];
+        $message = '❌ ' . ($result['message'] ?? 'Error al guardar la salida');
         $messageType = 'danger';
     }
 }
 
+// Datos necesarios para la vista
 $almacenes = $controller->almacenes();
 $productos = $controller->productos();
 $productosPorId = [];
@@ -83,8 +85,8 @@ $productosPorId = [];
 foreach ($productos as $productoTmp) {
     $productosPorId[(int)$productoTmp['id']] = $productoTmp;
 }
-$tiposSalida = $controller->tiposSalida();
 
+$tiposSalida = $controller->tiposSalida();
 $almacenSesion = (int)($user['almacen_id'] ?? 0);
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
@@ -96,1124 +98,1371 @@ $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 date_default_timezone_set('America/Mexico_City');
 
+// ===== FECHA AUTOMÁTICA =====
+$fechaActual = date('Y-m-d\TH:i');
+
 $ubicacionesGenerales = [];
-
 foreach ($productos as $producto) {
-
     if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
-
         foreach ($producto['ubicaciones'] as $ubicacionItem) {
+            $ubicacionMultiple = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
+            $existenciaMultiple = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
 
-            $ubicacionMultiple = strtoupper(
-                trim((string)($ubicacionItem['ubicacion'] ?? ''))
-            );
-
-            $existenciaMultiple = (int)(
-                $ubicacionItem['existencia_actual']
-                ?? $ubicacionItem['existencia']
-                ?? 0
-            );
-
-            if (
-                $ubicacionMultiple !== '' &&
-                $ubicacionMultiple !== 'SIN UBICACION' &&
-                $existenciaMultiple > 0
-            ) {
+            if ($ubicacionMultiple !== '' && $ubicacionMultiple !== 'SIN UBICACION' && $existenciaMultiple > 0) {
                 $ubicacionesGenerales[$ubicacionMultiple] = $ubicacionMultiple;
             }
         }
     }
 }
-
 ksort($ubicacionesGenerales);
 
 $moduleCss = 'salidas';
-
-
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
-<div class="module-header">
-    <div>
-        <h2><?= $modoEdicion ? 'Editar Salida' : 'Salidas de Almacén' ?></h2>
-<p>
-    <?= $modoEdicion
-        ? 'Modifica la salida seleccionada. Se usará el mismo folio.'
-        : 'Registro de salidas con vista previa e impresión.' ?>
-</p>
-    </div>
+<style>
+/* =========================================================
+   DISEÑO CLARO Y ESPACIOSO CON MODAL GRANDE ESTILO EXCEL
+   ========================================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #eef2f7;
+    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+    padding: 24px;
+    min-height: 100vh;
+}
+
+/* ===== HEADER SIMPLE ===== */
+.page-header {
+    margin-bottom: 28px;
+}
+
+.page-header h1 {
+    font-size: 26px;
+    font-weight: 600;
+    color: #1a2c3e;
+}
+
+/* ===== CONTENEDOR PRINCIPAL ===== */
+.main-container {
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+/* ===== SECCIÓN DE DATOS DEL DOCUMENTO ===== */
+.doc-section {
+    background: white;
+    border-radius: 20px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border: 1px solid #e4e7eb;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px 24px;
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a5b6e;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+    padding: 12px 14px;
+    border: 1px solid #d0d5dd;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #1a2c3e;
+    background: white;
+    transition: all 0.2s;
+}
+
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+}
+
+.form-field input:read-only {
+    background: #f8f9fa;
+    color: #6c7a8a;
+}
+
+.form-field textarea {
+    resize: vertical;
+    min-height: 70px;
+}
+
+.folio-previous {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 16px;
+    border: 1px solid #e4e7eb;
+}
+
+.folio-previous span {
+    font-size: 13px;
+    color: #2c7a4d;
+    font-weight: 500;
+}
+
+/* ===== SECCIÓN DE CAPTURA RÁPIDA ===== */
+.capture-section {
+    background: white;
+    border-radius: 20px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border: 1px solid #e4e7eb;
+}
+
+.capture-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a2c3e;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e4e7eb;
+}
+
+.capture-grid {
+    display: grid;
+    grid-template-columns: 1fr 180px 200px 180px 140px;
+    gap: 16px;
+    align-items: end;
+}
+
+.capture-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.capture-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a5b6e;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.capture-field input {
+    padding: 12px 14px;
+    border: 1px solid #d0d5dd;
+    border-radius: 12px;
+    font-size: 14px;
+    background: white;
+}
+
+.capture-field input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+}
+
+/* Botones rápidos cantidad */
+.qty-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.qty-btn {
+    flex: 1;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    padding: 6px 0;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.1s;
+    color: #4a5b6e;
+}
+
+.qty-btn:hover {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+.btn-add {
+    background: #3b82f6;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 40px;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.btn-add:hover {
+    background: #2563eb;
+    transform: scale(1.01);
+}
+
+/* Producto seleccionado */
+.selected-info {
+    background: #eff6ff;
+    border-radius: 14px;
+    padding: 16px;
+    margin: 16px 0 0 0;
+    border: 1px solid #bfdbfe;
+}
+
+.selected-info .row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.selected-info .label {
+    color: #4a5b6e;
+}
+
+.selected-info .value {
+    color: #1a2c3e;
+    font-weight: 600;
+}
+
+/* ===== MODAL GRANDE ESTILO EXCEL ===== */
+.modal-excel {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.modal-excel.active {
+    display: flex;
+}
+
+.modal-excel-content {
+    background: white;
+    border-radius: 24px;
+    width: 90%;
+    max-width: 1100px;
+    height: 80vh;
+    max-height: 700px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+    animation: modalZoom 0.2s ease;
+}
+
+@keyframes modalZoom {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.modal-excel-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e4e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-radius: 24px 24px 0 0;
+}
+
+.modal-excel-header h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a2c3e;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.modal-excel-header .shortcut {
+    font-size: 12px;
+    color: #6c7a8a;
+    background: #eef2f7;
+    padding: 4px 10px;
+    border-radius: 40px;
+}
+
+.modal-excel-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #6c7a8a;
+    transition: all 0.1s;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.modal-excel-close:hover {
+    background: #eef2f7;
+    color: #1a2c3e;
+}
+
+.modal-excel-search {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e4e7eb;
+    background: white;
+}
+
+.modal-excel-search input {
+    width: 100%;
+    padding: 14px 18px;
+    border: 2px solid #e4e7eb;
+    border-radius: 14px;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.modal-excel-search input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+}
+
+.modal-excel-table-container {
+    flex: 1;
+    overflow: auto;
+    padding: 0 20px 20px 20px;
+}
+
+.modal-excel-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.modal-excel-table th {
+    position: sticky;
+    top: 0;
+    background: #f8f9fa;
+    padding: 14px 12px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #4a5b6e;
+    border-bottom: 2px solid #e4e7eb;
+    z-index: 10;
+}
+
+.modal-excel-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid #eef2f6;
+    font-size: 14px;
+    color: #1a2c3e;
+}
+
+.modal-excel-table tr {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.modal-excel-table tr:hover td {
+    background: #f0f7ff;
+}
+
+.modal-excel-table tr.selected td {
+    background: #dbeafe;
+}
+
+.modal-excel-table .product-code {
+    font-weight: 700;
+    color: #2563eb;
+}
+
+.modal-excel-table .product-stock {
+    font-weight: 600;
+    color: #059669;
+}
+
+.modal-excel-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e4e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-radius: 0 0 24px 24px;
+    font-size: 13px;
+    color: #6c7a8a;
+}
+
+.modal-excel-footer kbd {
+    background: white;
+    border: 1px solid #d0d5dd;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-family: monospace;
+    margin: 0 4px;
+}
+
+/* ===== TABLA DE PRODUCTOS ===== */
+.products-section {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border: 1px solid #e4e7eb;
+    overflow: hidden;
+}
+
+.products-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #eef2f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.products-header h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: #1a2c3e;
+}
+
+.product-badge {
+    background: #eef2ff;
+    padding: 5px 14px;
+    border-radius: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #3b82f6;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    padding: 0 20px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 14px 12px;
+    color: #6c7a8a;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-bottom: 1px solid #eef2f6;
+}
+
+.data-table td {
+    padding: 14px 12px;
+    color: #1a2c3e;
+    font-size: 14px;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+.data-table tr:hover td {
+    background: #fafbfc;
+}
+
+.qty-input {
+    width: 70px;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    transition: all 0.1s;
+}
+
+.delete-btn:hover {
+    background: #fef2f2;
+}
+
+.table-footer {
+    padding: 20px 24px;
+    border-top: 1px solid #eef2f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.total-amount {
+    font-size: 28px;
+    font-weight: 700;
+    color: #059669;
+}
+
+.btn-save {
+    background: #059669;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 40px;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-save:hover {
+    background: #047857;
+}
+
+.btn-clear {
+    background: none;
+    border: 1px solid #ef4444;
+    padding: 12px 24px;
+    border-radius: 40px;
+    color: #ef4444;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Shortcuts bar */
+.shortcuts-bar {
+    margin-top: 20px;
+    padding: 12px 20px;
+    background: #f8f9fa;
+    border-radius: 60px;
+    text-align: center;
+    font-size: 12px;
+    color: #6c7a8a;
+}
+
+.shortcuts-bar kbd {
+    background: white;
+    border: 1px solid #d0d5dd;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-family: monospace;
+    margin: 0 4px;
+    font-size: 11px;
+}
+
+/* Toast */
+.toast-message {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: white;
+    border-left: 4px solid #059669;
+    padding: 14px 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    z-index: 1100;
+    animation: slideIn 0.3s ease;
+    font-size: 14px;
+    color: #1a2c3e;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+    .capture-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .btn-add {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        padding: 16px;
+    }
+    
+    .doc-section, .capture-section {
+        padding: 18px;
+    }
+    
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .capture-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .btn-add {
+        grid-column: span 1;
+    }
+    
+    .table-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .btn-save, .btn-clear {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .modal-excel-content {
+        width: 95%;
+        height: 85vh;
+    }
+}
+</style>
+
+<!-- HEADER -->
+<div class="page-header">
+    <h1>Salida de Almacén</h1>
 </div>
 
+<div class="main-container">
+
 <?php if ($message): ?>
-    <div class="alert alert-<?= e($messageType) ?>">
+    <div class="alert alert-<?= e($messageType) ?>" style="margin-bottom: 20px; padding: 14px 20px; border-radius: 12px; background: <?= $messageType === 'success' ? '#ecfdf5' : '#fef2f2' ?>; color: <?= $messageType === 'success' ? '#065f46' : '#991b1b' ?>; border-left: 4px solid <?= $messageType === 'success' ? '#059669' : '#ef4444' ?>;">
         <?= e($message) ?>
     </div>
 <?php endif; ?>
 
-<?php if ($modoEdicion && $salidaEditar): ?>
-    <div class="alert alert-warning">
-        Estás editando la salida:
-        <strong><?= e($salidaEditar['folio']) ?></strong>
-    </div>
-<?php endif; ?>
-
-<form method="POST" action="" id="formSalida">
+<form method="POST" id="formSalida">
     <?php if ($modoEdicion && $salidaEditar): ?>
-    <input type="hidden" name="editar_id" value="<?= (int)$salidaEditar['id'] ?>">
-<?php endif; ?>
-    <div class="salida-encabezado-card">
-        <div class="salida-encabezado-grid">
+        <input type="hidden" name="editar_id" value="<?= (int)$salidaEditar['id'] ?>">
+    <?php endif; ?>
 
-            <div class="salida-field">
-                <label>Folio</label>
+    <!-- SECCIÓN 1: DATOS DEL DOCUMENTO -->
+    <div class="doc-section">
+        <div class="form-grid">
+            <div class="form-field">
+                <label>📄 Folio</label>
                 <input type="text" name="folio" value="<?= e($folio) ?>" readonly>
             </div>
 
-            <div class="salida-field">
-                <label>Fecha</label>
-                <input 
-    type="datetime-local" 
-    name="fecha" 
-    id="fecha_salida" 
-    required
-    value="<?= $modoEdicion && !empty($salidaEditar['fecha'])
-        ? e(date('Y-m-d\TH:i', strtotime($salidaEditar['fecha'])))
-        : '' ?>"
->
+            <div class="form-field">
+                <label>📅 Fecha y hora</label>
+                <input type="datetime-local" 
+                       name="fecha" 
+                       id="fechaInput" 
+                       required
+                       value="<?= $modoEdicion && !empty($salidaEditar['fecha']) 
+                                  ? e(date('Y-m-d\TH:i', strtotime($salidaEditar['fecha']))) 
+                                  : $fechaActual ?>">
             </div>
 
-            <div class="salida-field folio-anterior-field">
-                <label>Folio anterior</label>
-                <input 
-                    type="text" 
-                    value="<?= e($folioAnterior ?: 'Sin salidas anteriores') ?>" 
-                    readonly
-                    class="input-readonly"
-                >
-            </div>
-
-            <div class="salida-field tipo-field">
-                <label>Tipo de salida *</label>
+            <div class="form-field">
+                <label>📋 Tipo de salida</label>
                 <select name="tipo_salida" required>
-                    <option value="">Seleccione el tipo de salida</option>
+                    <option value="">Seleccione...</option>
                     <?php foreach ($tiposSalida as $tipo): ?>
-                        <option 
-    value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>"
-    <?= $modoEdicion && (($salidaEditar['referencia'] ?? '') === ($tipo['clave'] . ' - ' . $tipo['descripcion'])) ? 'selected' : '' ?>
->
-    <?= e($tipo['clave']) ?> <?= e($tipo['descripcion']) ?>
-</option>
+                        <option value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>"
+                            <?= $modoEdicion && (($salidaEditar['referencia'] ?? '') === ($tipo['clave'] . ' - ' . $tipo['descripcion'])) ? 'selected' : '' ?>>
+                            <?= e($tipo['clave']) ?> - <?= e($tipo['descripcion']) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
-            <div class="salida-field">
-                <label>Tipo de documento *</label>
-                <select name="tipo_operacion" id="tipo_operacion" required>
+            <div class="form-field">
+                <label>📑 Tipo de documento</label>
+                <select name="tipo_operacion" id="tipoOperacionSelect" required>
                     <option value="">Seleccione...</option>
-<option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>Ticket</option>
-<option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>Resurtido</option>
-<option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>Ajuste</option>
-<option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>Traspaso</option>
-<option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>Nota de Remision</option>
+                    <option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>Ticket</option>
+                    <option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>Resurtido</option>
+                    <option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>Ajuste</option>
+                    <option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>Traspaso</option>
+                    <option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>Nota de Remisión</option>
                 </select>
             </div>
 
-            <div class="salida-field" id="folioOperacionBox" style="display:none;">
-                <label id="folioOperacionLabel">Folio</label>
-                <input
-    type="text"
-    name="folio_operacion"
-    id="folio_operacion"
-    placeholder="Ingrese folio"
-    value="<?= e($folioOperacionEditar) ?>"
->
+            <div class="form-field" id="folioOperacionBox" style="display:none;">
+                <label id="folioOperacionLabel">🔢 Folio de operación</label>
+                <input type="text" name="folio_operacion" id="folioOperacionInput" 
+                    placeholder="Ingrese el folio" value="<?= e($folioOperacionEditar) ?>">
             </div>
 
-            <div class="salida-field almacen-field">
-                <label>Almacén *</label>
-                <select 
-                    name="almacen_id" 
-                    required
-                    <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>
-                >
-                    <option value="">Seleccione un almacén</option>
-
+            <div class="form-field">
+                <label>🏪 Almacén</label>
+                <select name="almacen_id" required <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
+                    <option value="">Seleccione...</option>
                     <?php foreach ($almacenes as $almacen): ?>
-                        <option 
-                            value="<?= (int)$almacen['id'] ?>"
-                            <?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>
-                        >
+                        <option value="<?= (int)$almacen['id'] ?>" <?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>>
                             <?= e($almacen['nombre']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
-
                 <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
-                    <input 
-                        type="hidden" 
-                        name="almacen_id" 
-                        value="<?= (int)$almacenSesion ?>"
-                    >
+                    <input type="hidden" name="almacen_id" value="<?= (int)$almacenSesion ?>">
                 <?php endif; ?>
             </div>
 
-            <div class="salida-field observaciones-field">
-                <label>Observaciones</label>
-                <textarea name="observaciones" rows="4" placeholder="Escribe observaciones de la salida."><?= $modoEdicion ? e($observacionesLimpiasEditar) : '' ?></textarea>
+            <div class="form-field">
+                <label>📝 Observaciones</label>
+                <textarea name="observaciones" placeholder="Información adicional..."><?= $modoEdicion ? e($observacionesLimpiasEditar) : '' ?></textarea>
             </div>
-
+        </div>
+        
+        <div class="folio-previous">
+            <span>📋 Último folio registrado: <?= e($folioAnterior ?: 'Sin salidas anteriores') ?></span>
         </div>
     </div>
 
-    <div class="salida-captura-card">
-        <h3>Captura de Partidas</h3>
-
-        <div class="salida-captura-grid">
-
-            <div class="salida-field mini-field">
-                <label>Cantidad</label>
-                <input type="number" id="cantidad_input" min="1" value="1">
+    <!-- SECCIÓN 2: CAPTURA RÁPIDA -->
+    <div class="capture-section">
+        <div class="capture-title">Agregar productos</div>
+        
+        <div class="capture-grid">
+            <!-- Campo de producto con botón para abrir modal -->
+            <div class="capture-field">
+                <label>🔍 Producto</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="productoDisplayInput" placeholder="Presiona Ctrl+B para buscar" readonly style="background: #f8f9fa; cursor: pointer;">
+                    <button type="button" id="openModalBtn" style="background: #3b82f6; border: none; padding: 0 20px; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">🔍 Buscar</button>
+                </div>
             </div>
 
-            <div class="salida-field">
-                <label>Producto</label>
-
-                <select id="producto_select" style="display:none;">
-                    <option value="">Seleccione un producto</option>
-                    <?php foreach ($productos as $producto): ?>
-                        <?php
-                            $ubicacionesProducto = [];
-
-                            if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
-                                foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
-                                    $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
-
-                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' ) {
-                                        $ubicacionesProducto[] = [
-                                            'ubicacion' => $ubicacionTmp,
-                                            'existencia_actual' => $existenciaTmp,
-                                        ];
-                                    }
-                                }
-                            }
-
-                            if (empty($ubicacionesProducto)) {
-                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
-                                $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
-
-                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' ) {
-                                    $ubicacionesProducto[] = [
-                                        'ubicacion' => $ubicacionNormal,
-                                        'existencia_actual' => $existenciaNormal,
-                                    ];
-                                }
-                            }
-
-                            usort($ubicacionesProducto, function ($a, $b) {
-                                return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
-                            });
-
-                            $existenciaTotalProducto = 0;
-
-                            foreach ($ubicacionesProducto as $ubiProd) {
-                                $existenciaTotalProducto += (int)$ubiProd['existencia_actual'];
-                            }
-
-                            $ubicacionSugerida = $ubicacionesProducto[0]['ubicacion'] ?? '';
-
-                            $ubicacionesJson = htmlspecialchars(
-                                json_encode($ubicacionesProducto, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                                ENT_QUOTES,
-                                'UTF-8'
-                            );
-                        ?>
-                        <option
-    class="producto-option"
-    value="<?= (int)$producto['id'] ?>"
-    data-codigo="<?= e($producto['codigo']) ?>"
-    data-descripcion="<?= e($producto['descripcion']) ?>"
-    data-costo="<?= e((string)$producto['precio_compra']) ?>"
-    data-precio="<?= e((string)$producto['precio_compra']) ?>"
-    data-existencia="<?= e((string)$existenciaTotalProducto) ?>"
-    data-unidad="<?= e($producto['unidad_medida']) ?>"
-    data-ubicacion="<?= e($ubicacionSugerida) ?>"
-    data-ubicaciones="<?= $ubicacionesJson ?>"
->
-    <?= e($producto['codigo']) ?>
-</option>
-                    <?php endforeach; ?>
-                </select>
-
-                <button type="button" class="btn-buscar-producto" onclick="abrirModalProductos()">
-                    Buscar producto
-                </button>
+            <!-- Cantidad -->
+            <div class="capture-field">
+                <label>🔢 Cantidad</label>
+                <input type="number" id="cantidadInput" value="1" min="1" step="1">
+                <div class="qty-actions">
+                    <button type="button" class="qty-btn" onclick="cambiarCantidad(1)">+1</button>
+                    <button type="button" class="qty-btn" onclick="cambiarCantidad(5)">+5</button>
+                    <button type="button" class="qty-btn" onclick="cambiarCantidad(10)">+10</button>
+                    <button type="button" class="qty-btn" onclick="setMaxCantidad()">MAX</button>
+                </div>
             </div>
 
-            <div class="salida-field salida-descripcion-field">
-                <label>Descripción</label>
-                <input type="text" id="descripcion_input" readonly>
-            </div>
-
-            <div class="salida-field mini-field">
-                <label>Unidad</label>
-                <input type="text" id="unidad_input" readonly>
-            </div>
-
-            <div class="salida-field mini-field">
-                <label>Existencia total</label>
-                <input type="text" id="existencia_input" value="0" readonly>
-            </div>
-
-            <div class="salida-field mini-field">
-                <label>Precio Unitario</label>
-                <input type="number" id="precio_input" step="0.01" min="0" value="0.00">
-            </div>
-
-            <div class="salida-field">
-                <label>Ubicación sugerida</label>
-                <input 
-                    type="text" 
-                    id="ubicacion_input" 
-                    list="lista_ubicaciones_salida" 
-                    placeholder="Seleccione o escriba ubicación"
-                    autocomplete="off"
-                >
-                <datalist id="lista_ubicaciones_salida">
-                    <?php foreach ($ubicacionesGenerales as $ubicacionGeneral): ?>
-                        <option value="<?= e($ubicacionGeneral) ?>"></option>
+            <!-- Ubicación -->
+            <div class="capture-field">
+                <label>📍 Ubicación</label>
+                <input type="text" id="ubicacionInput" list="ubicacionesList" placeholder="Seleccione ubicación">
+                <datalist id="ubicacionesList">
+                    <?php foreach ($ubicacionesGenerales as $ubicacion): ?>
+                        <option value="<?= e($ubicacion) ?>">
                     <?php endforeach; ?>
                 </datalist>
-                <small style="display:block; margin-top:4px; color:#64748b; font-size:11px;">
-                    Si la cantidad supera esta ubicación, el sistema completará con las siguientes ubicaciones disponibles.
-                </small>
             </div>
 
-            <div class="salida-actions">
-                <button type="button" class="btn-primary-action" onclick="agregarProductoSalida()">Agregar</button>
+            <!-- Precio -->
+            <div class="capture-field">
+                <label>💰 Precio unitario</label>
+                <input type="number" id="precioInput" step="0.01" value="0.00">
             </div>
+
+            <!-- Botón agregar -->
+            <button type="button" class="btn-add" id="agregarBtn">
+                ➕ Agregar producto (Enter)
+            </button>
+        </div>
+
+        <!-- Info del producto seleccionado -->
+        <div id="selectedInfo" style="display: none;">
+            <div class="selected-info">
+                <div class="row"><span class="label">📦 Producto:</span><span class="value" id="infoCodigo">-</span></div>
+                <div class="row"><span class="label">📝 Descripción:</span><span class="value" id="infoDescripcion">-</span></div>
+                <div class="row"><span class="label">📏 Unidad:</span><span class="value" id="infoUnidad">-</span></div>
+                <div class="row"><span class="label">📊 Stock disponible:</span><span class="value" id="infoStock">-</span></div>
+            </div>
+        </div>
+
+        <div class="shortcuts-bar">
+            🎯 <kbd>Ctrl</kbd> + <kbd>B</kbd> Abrir buscador &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>↑</kbd> <kbd>↓</kbd> Navegar resultados en modal &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>Enter</kbd> Seleccionar producto &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>Enter</kbd> (en cantidad/ubicación/precio) Agregar &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>Ctrl</kbd> + <kbd>Enter</kbd> Guardar salida
         </div>
     </div>
 
-    <div class="erp-table-card">
-        <div class="table-topbar">
-            <h3>Detalle de la salida</h3>
+    <!-- SECCIÓN 3: TABLA DE PRODUCTOS -->
+    <div class="products-section">
+        <div class="products-header">
+            <h3>Productos agregados</h3>
+            <span class="product-badge" id="productosCount">0 productos</span>
         </div>
-
         <div class="table-responsive">
-            <table class="erp-table tabla-salida">
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>Cantidad</th>
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Existencia total</th>
-                        <th>Precio U.</th>
-                        <th>Ubicación inicial</th>
+                        <th>Ubicación</th>
+                        <th>Precio</th>
                         <th>Importe</th>
-                        <th>Acción</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="detalleBody">
-    <?php if ($modoEdicion && !empty($salidaEditar['detalles'])): ?>
-        <?php foreach ($salidaEditar['detalles'] as $item): ?>
-            <?php
-                $cantidad = (int)($item['cantidad'] ?? 0);
-                $precio = (float)($item['precio_unitario'] ?? 0);
-                $costo = (float)($item['costo_unitario'] ?? 0);
-                $importe = $cantidad * $precio;
-                $productoId = (int)($item['producto_id'] ?? 0);
-                $codigo = $item['codigo'] ?? '';
-                $descripcion = $item['descripcion'] ?? '';
-                $unidad = $item['unidad_medida'] ?? '';
-                $ubicacion = $item['ubicacion'] ?? '';
-            ?>
-            <tr>
-                <td>
-                    <input
-                        type="number"
-                        min="1"
-                        value="<?= e((string)$cantidad) ?>"
-                        class="input-cantidad-detalle"
-                        style="width:70px;"
-                        oninput="actualizarCantidadFila(this)"
-                    >
-
-                    <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
-                    <input type="hidden" name="cantidad[]" value="<?= e((string)$cantidad) ?>">
-                    <input type="hidden" name="costo_unitario[]" value="<?= e((string)$costo) ?>">
-                    <input type="hidden" name="precio_unitario[]" value="<?= e((string)$precio) ?>">
-                    <input type="hidden" name="ubicacion[]" value="<?= e($ubicacion) ?>">
-                </td>
-                <td><?= e($codigo) ?></td>
-                <td><?= e($descripcion) ?></td>
-                <td><?= e($unidad) ?></td>
-                <?php
-    $existenciaActualProducto = 0;
-
-    if (isset($productosPorId[$productoId])) {
-        $existenciaActualProducto = (int)($productosPorId[$productoId]['existencia_actual'] ?? 0);
-    }
-
-    $existenciaDisponibleEdicion = $existenciaActualProducto + $cantidad;
-?>
-
-<td><?= number_format($existenciaDisponibleEdicion) ?></td>
-                <td>$<?= number_format($precio, 2) ?></td>
-                <td><?= e($ubicacion) ?></td>
-                <td class="importe-fila" data-importe="<?= e((string)$importe) ?>">
-                    $<?= number_format($importe, 2) ?>
-                </td>
-                <td>
-                    <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
-                        Eliminar
-                    </button>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-    <?php else: ?>
-        <tr id="filaVaciaDetalle">
-            <td colspan="9" class="empty-table">No has agregado productos.</td>
-        </tr>
-    <?php endif; ?>
-</tbody>
-                <tfoot>
-                    <tr>
-                        <th colspan="7" style="text-align:right;">Total:</th>
-                        <th id="totalSalida">$0.00</th>
-                        <th></th>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-
-        <div class="form-actions" style="margin-top:20px;">
-            <button type="submit" class="btn-primary-action">
-    <?= $modoEdicion ? 'Actualizar salida' : 'Guardar y ver vista previa' ?>
-</button>
-            <a href="salidas.php" class="btn-secondary-action">Nueva captura</a>
-        </div>
-    </div>
-</form>
-
-<div class="modal-productos-overlay" id="modalProductos">
-    <div class="modal-productos-card">
-        <div class="modal-productos-header">
-            <div>
-                <h3>Buscar producto</h3>
-                <p>Selecciona el producto que deseas agregar a la salida.</p>
-            </div>
-
-            <button type="button" class="modal-productos-close" onclick="cerrarModalProductos()">
-                &times;
-            </button>
-        </div>
-
-        <div class="modal-productos-search">
-            <input 
-                type="text" 
-                id="buscarProductoInput" 
-                placeholder="Buscar por código, descripción, unidad o ubicación..."
-                onkeyup="filtrarProductosModal()"
-            >
-        </div>
-
-        <div class="modal-productos-table-wrap">
-            <table class="modal-productos-table">
-                <thead>
-                    <tr>
-                        <th>Código</th>
-                        <th>Descripción</th>
-                        <th>Unidad</th>
-                        <th>Existencia total</th>
-                        <th>Precio Unitario</th>
-                        <th>Ubicación sugerida</th>
-                        <th>Ubicaciones</th>
-                        <th>Acción</th>
-                    </tr>
-                </thead>
-                <tbody id="productosModalBody">
-                    <?php foreach ($productos as $producto): ?>
-                        <?php
-                            $ubicacionesProductoModal = [];
-
-                            if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
-                                foreach ($producto['ubicaciones'] as $ubicacionItem) {
-                                    $ubicacionTmp = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
-                                    $existenciaTmp = (int)($ubicacionItem['existencia_actual'] ?? $ubicacionItem['existencia'] ?? 0);
-
-                                    if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION' ) {
-                                        $ubicacionesProductoModal[] = [
-                                            'ubicacion' => $ubicacionTmp,
-                                            'existencia_actual' => $existenciaTmp,
-                                        ];
-                                    }
-                                }
-                            }
-
-                            if (empty($ubicacionesProductoModal)) {
-                                $ubicacionNormal = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
-                                $existenciaNormal = (int)($producto['existencia_actual'] ?? $producto['existencia_bodega'] ?? 0);
-
-                                if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION' ) {
-                                    $ubicacionesProductoModal[] = [
-                                        'ubicacion' => $ubicacionNormal,
-                                        'existencia_actual' => $existenciaNormal,
-                                    ];
-                                }
-                            }
-
-                            usort($ubicacionesProductoModal, function ($a, $b) {
-                                return ((int)$a['existencia_actual']) <=> ((int)$b['existencia_actual']);
-                            });
-
-                            $existenciaTotalModal = 0;
-                            $textoUbicaciones = [];
-
-                            foreach ($ubicacionesProductoModal as $ubicacionItem) {
-                                $existenciaTotalModal += (int)$ubicacionItem['existencia_actual'];
-                                $textoUbicaciones[] = $ubicacionItem['ubicacion'] . ' (' . (int)$ubicacionItem['existencia_actual'] . ')';
-                            }
-
-                            $ubicacionSugerida = $ubicacionesProductoModal[0]['ubicacion'] ?? '';
-                            $textoUbicacionesPlano = implode(', ', $textoUbicaciones);
+                    <?php if ($modoEdicion && !empty($salidaEditar['detalles'])): ?>
+                        <?php foreach ($salidaEditar['detalles'] as $item): 
+                            $cantidad = (int)($item['cantidad'] ?? 0);
+                            $precio = (float)($item['precio_unitario'] ?? 0);
+                            $importe = $cantidad * $precio;
                         ?>
-
-                        
-                            <tr 
-                                data-busqueda="<?= e(strtolower($producto['codigo'] . ' ' . $producto['descripcion'] . ' ' . $producto['unidad_medida'] . ' ' . $ubicacionSugerida . ' ' . $textoUbicacionesPlano)) ?>"
-                            >
-                                <td><?= e($producto['codigo']) ?></td>
-                                <td><?= e($producto['descripcion']) ?></td>
-                                <td><?= e($producto['unidad_medida']) ?></td>
-                                <td><?= e((string)$existenciaTotalModal) ?></td>
-                                <td>$<?= number_format((float)$producto['precio_compra'], 2) ?></td>
-                                <td><?= e($ubicacionSugerida) ?></td>
-                                <td><?= e($textoUbicacionesPlano) ?></td>
+                            <tr data-producto-id="<?= (int)($item['producto_id'] ?? 0) ?>">
                                 <td>
-                                    <button 
-                                        type="button" 
-                                        class="btn-seleccionar-producto"
-                                        onclick="seleccionarProductoModal('<?= (int)$producto['id'] ?>')"
-                                    >
-                                        Seleccionar
-                                    </button>
+                                    <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" onchange="actualizarCantidadFila(this)">
+                                    <input type="hidden" name="producto_id[]" value="<?= (int)($item['producto_id'] ?? 0) ?>">
+                                    <input type="hidden" name="cantidad[]" value="<?= $cantidad ?>">
+                                    <input type="hidden" name="costo_unitario[]" value="<?= (float)($item['costo_unitario'] ?? 0) ?>">
+                                    <input type="hidden" name="precio_unitario[]" value="<?= $precio ?>">
+                                    <input type="hidden" name="ubicacion[]" value="<?= e($item['ubicacion'] ?? '') ?>">
                                 </td>
+                                <td><strong><?= e($item['codigo'] ?? '') ?></strong></td>
+                                <td><?= e(substr($item['descripcion'] ?? '', 0, 45)) ?></td>
+                                <td><?= e($item['unidad_medida'] ?? '') ?></td>
+                                <td><?= e($item['ubicacion'] ?? '') ?></td>
+                                <td>$<?= number_format($precio, 2) ?></td>
+                                <td class="importe-fila" data-importe="<?= $importe ?>">$<?= number_format($importe, 2) ?></td>
+                                <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
                             </tr>
-                        
-                     <?php endforeach; ?>
-
-                    <?php if (empty($productos)): ?>
-                        <tr>
-                            <td colspan="8" class="empty-table">No hay productos disponibles.</td>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr id="filaVacia">
+                            <td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">
+                                📭 No hay productos. Presiona Ctrl+B para buscar
+                            </td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
+        <div class="table-footer">
+            <button type="button" class="btn-clear" onclick="limpiarTodo()">🗑️ Limpiar todo</button>
+            <div>
+                <span style="color: #6c7a8a; font-size: 14px;">Total general:</span>
+                <span class="total-amount" id="totalSalida">$0.00</span>
+            </div>
+            <button type="button" class="btn-save" id="guardarBtn">
+                💾 Guardar salida (Ctrl+Enter)
+            </button>
+        </div>
+    </div>
+</form>
+</div>
+
+<!-- MODAL GRANDE ESTILO EXCEL -->
+<div class="modal-excel" id="modalExcel">
+    <div class="modal-excel-content">
+        <div class="modal-excel-header">
+            <h3>
+                <span>🔍</span> Buscar producto
+                <span class="shortcut">Ctrl+B para abrir</span>
+            </h3>
+            <button class="modal-excel-close" id="closeModalBtn">✕</button>
+        </div>
+        <div class="modal-excel-search">
+            <input type="text" id="modalSearchInput" placeholder="Escribe código o nombre del producto..." autocomplete="off">
+        </div>
+        <div class="modal-excel-table-container">
+            <table class="modal-excel-table" id="modalTable">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Descripción</th>
+                        <th>Unidad</th>
+                        <th>Stock disponible</th>
+                        <th>Precio</th>
+                        <th>Ubicación sugerida</th>
+                    </tr>
+                </thead>
+                <tbody id="modalTableBody">
+                    <!-- Productos se cargan vía JS -->
+                </tbody>
+            </table>
+        </div>
+        <div class="modal-excel-footer">
+            <span><kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Enter</kbd> Seleccionar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Esc</kbd> Cerrar</span>
+            <span>Mostrando <span id="modalResultCount">0</span> productos</span>
+        </div>
     </div>
 </div>
 
 <script>
-const productoSelect = document.getElementById('producto_select');
-const cantidadInput = document.getElementById('cantidad_input');
-const descripcionInput = document.getElementById('descripcion_input');
-const unidadInput = document.getElementById('unidad_input');
-const existenciaInput = document.getElementById('existencia_input');
-const precioInput = document.getElementById('precio_input');
-const ubicacionInput = document.getElementById('ubicacion_input');
+// ===== VARIABLES =====
+const productos = <?php 
+    $productosArray = [];
+    foreach ($productos as $p) {
+        $existenciaTotal = 0;
+        if (!empty($p['ubicaciones']) && is_array($p['ubicaciones'])) {
+            foreach ($p['ubicaciones'] as $ubi) {
+                $existenciaTotal += (int)($ubi['existencia_actual'] ?? 0);
+            }
+        } else {
+            $existenciaTotal = (int)($p['existencia_actual'] ?? $p['existencia_bodega'] ?? 0);
+        }
+        
+        $ubicacionSugerida = '';
+        if (!empty($p['ubicaciones']) && is_array($p['ubicaciones'])) {
+            $ubicacionSugerida = strtoupper($p['ubicaciones'][0]['ubicacion'] ?? '');
+        } else {
+            $ubicacionSugerida = strtoupper($p['ubicacion'] ?? '');
+        }
+        
+        $productosArray[] = [
+            'id' => (int)$p['id'],
+            'codigo' => $p['codigo'],
+            'descripcion' => $p['descripcion'],
+            'unidad_medida' => $p['unidad_medida'],
+            'precio_compra' => (float)$p['precio_compra'],
+            'existencia_total' => $existenciaTotal,
+            'ubicacion_sugerida' => $ubicacionSugerida
+        ];
+    }
+    echo json_encode($productosArray, JSON_UNESCAPED_UNICODE);
+?>;
+
+let productoSeleccionado = null;
+let modalProductosFiltrados = [];
+let modalSelectedIndex = -1;
+
+// Elementos DOM
+const modal = document.getElementById('modalExcel');
+const modalSearch = document.getElementById('modalSearchInput');
+const modalTableBody = document.getElementById('modalTableBody');
+const modalResultCount = document.getElementById('modalResultCount');
+const productoDisplayInput = document.getElementById('productoDisplayInput');
+const cantidadInput = document.getElementById('cantidadInput');
+const precioInput = document.getElementById('precioInput');
+const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
-const totalSalida = document.getElementById('totalSalida');
 
-const tipoOperacionSelect = document.getElementById('tipo_operacion');
-const folioOperacionBox = document.getElementById('folioOperacionBox');
-const folioOperacionInput = document.getElementById('folio_operacion');
-const folioOperacionLabel = document.getElementById('folioOperacionLabel');
-
-const modalProductos = document.getElementById('modalProductos');
-const buscarProductoInput = document.getElementById('buscarProductoInput');
-
-function escaparHtml(valor) {
-    return String(valor ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-}
-
-function limpiarUbicacion(valor) {
-    valor = String(valor || '').trim().toUpperCase();
-    valor = valor.replace('SIN UBICACIÓN', 'SIN UBICACION');
-    return valor || 'SIN UBICACION';
-}
-
-function cargarCatalogoUbicacionesSalida() {
-    const datalist = document.getElementById('lista_ubicaciones_salida');
-
-    if (!datalist) {
+// ===== FUNCIÓN PARA PONER FECHA ACTUAL AUTOMÁTICAMENTE =====
+function ponerFechaActual() {
+    const fechaInput = document.getElementById('fechaInput');
+    
+    // Si ya tiene valor y no estamos en edición, no hacer nada
+    if (fechaInput.value && !<?= $modoEdicion ? 'true' : 'false' ?>) {
         return;
     }
-
-    const ubicaciones = [];
-
-    function add(rack, nivel, zona) {
-        const z = String(zona).padStart(2, '0');
-        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    
+    // Si está vacío, poner fecha actual
+    if (!fechaInput.value) {
+        const ahora = new Date();
+        const year = ahora.getFullYear();
+        const month = String(ahora.getMonth() + 1).padStart(2, '0');
+        const day = String(ahora.getDate()).padStart(2, '0');
+        const hours = String(ahora.getHours()).padStart(2, '0');
+        const minutes = String(ahora.getMinutes()).padStart(2, '0');
+        
+        fechaInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
     }
+}
 
-    // RACKS
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) {
-            add(1, n, z);
-        }
+// ===== FUNCIONES DEL MODAL ESTILO EXCEL =====
+function abrirModal() {
+    modal.classList.add('active');
+    modalSearch.value = '';
+    cargarProductosEnModal(productos);
+    modalSearch.focus();
+    modalSelectedIndex = -1;
+}
+
+function cerrarModal() {
+    modal.classList.remove('active');
+}
+
+function cargarProductosEnModal(productosList) {
+    modalProductosFiltrados = productosList;
+    modalResultCount.textContent = productosList.length;
+    
+    if (productosList.length === 0) {
+        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+        return;
     }
-
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) {
-            add(2, n, z);
-        }
-    }
-
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) {
-            add(3, n, z);
-        }
-    }
-
-    for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 16; z++) {
-            add(4, n, z);
-        }
-    }
-
-    for (let z = 10; z <= 16; z++) {
-        add(4, 3, z);
-    }
-
-    for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 15; z++) {
-            add(5, n, z);
-        }
-    }
-
-    for (let z = 10; z <= 15; z++) {
-        add(5, 3, z);
-    }
-
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) {
-            add(6, n, z);
-        }
-    }
-
-    // PASILLOS
-    ubicaciones.push('R7N1Z01 - PASILLO 3');
-    ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 1');
-
-    // BODEGAS
-    ubicaciones.push('BODEGA PEDYALITE');
-
-    // IMPORTANTE:
-    // SOLO AGREGA LAS UBICACIONES DEL PRODUCTO ACTUAL
-    // QUE YA VIENEN FILTRADAS POR SUCURSAL EN PHP
-
-    document.querySelectorAll('.producto-option').forEach(option => {
-
-        let ubicacionesProducto = [];
-
-        try {
-            ubicacionesProducto = JSON.parse(option.dataset.ubicaciones || '[]');
-        } catch (e) {
-            ubicacionesProducto = [];
-        }
-
-        if (!Array.isArray(ubicacionesProducto)) {
-            ubicacionesProducto = [];
-        }
-
-        ubicacionesProducto.forEach(item => {
-
-            const ubicacion = limpiarUbicacion(item.ubicacion || '');
-
-            const existencia = parseInt(
-                item.existencia_actual || item.existencia || 0,
-                10
-            );
-
-            if (
-                ubicacion !== '' &&
-                ubicacion !== 'SIN UBICACION' &&
-                existencia > 0
-            ) {
-                ubicaciones.push(ubicacion);
+    
+    modalTableBody.innerHTML = productosList.map((p, idx) => `
+        <tr data-idx="${idx}" data-producto-id="${p.id}">
+            <td class="product-code">${escapeHtml(p.codigo)}</td>
+            <td>${escapeHtml(p.descripcion)}</td>
+            <td>${escapeHtml(p.unidad_medida)}</td>
+            <td class="product-stock">${p.existencia_total}</td>
+            <td>$${p.precio_compra.toFixed(2)}</td>
+            <td>${escapeHtml(p.ubicacion_sugerida || 'N/A')}</td>
+        </tr>
+    `).join('');
+    
+    // Agregar evento click a las filas
+    document.querySelectorAll('#modalTableBody tr').forEach(row => {
+        row.addEventListener('click', () => {
+            const idx = parseInt(row.dataset.idx);
+            if (modalProductosFiltrados[idx]) {
+                seleccionarProductoDelModal(modalProductosFiltrados[idx]);
             }
         });
     });
-
-    // QUITAR DUPLICADOS
-    const unicas = [...new Set(ubicaciones)].sort();
-
-    datalist.innerHTML = '';
-
-    unicas.forEach(ubicacion => {
-        const option = document.createElement('option');
-        option.value = ubicacion;
-        datalist.appendChild(option);
-    });
-}
-
-function obtenerOptionProductoActual() {
-    return productoSelect.options[productoSelect.selectedIndex];
-}
-
-function obtenerUbicacionesProducto(option) {
-    if (!option) return [];
-
-    let ubicaciones = [];
-
-    try {
-        ubicaciones = JSON.parse(option.dataset.ubicaciones || '[]');
-    } catch (error) {
-        ubicaciones = [];
-    }
-
-    if (!Array.isArray(ubicaciones)) {
-        ubicaciones = [];
-    }
-
-    return ubicaciones
-        .map(item => ({
-            ubicacion: limpiarUbicacion(item.ubicacion || ''),
-            existencia_actual: parseInt(item.existencia_actual || item.existencia || '0', 10)
-        }))
-        .filter(item => item.ubicacion !== 'SIN UBICACION' && item.existencia_actual > 0);
-}
-
-function existenciaTotalProducto(option) {
-    return obtenerUbicacionesProducto(option)
-        .reduce((total, item) => total + parseInt(item.existencia_actual || 0, 10), 0);
-}
-
-function cargarUbicacionesDelProducto(option) {
-    const datalist = document.getElementById('lista_ubicaciones_salida');
-
-    if (!datalist || !option) return;
-
-    datalist.innerHTML = '';
-
-    const ubicaciones = obtenerUbicacionesProducto(option);
-
-    ubicaciones.forEach(item => {
-        const opt = document.createElement('option');
-        opt.value = item.ubicacion;
-        opt.label = `${item.existencia_actual} disponibles`;
-        datalist.appendChild(opt);
-    });
-
-    if (ubicaciones.length === 0) {
-        cargarCatalogoUbicacionesSalida();
-    }
-}
-
-function obtenerUbicacionConMenorExistencia(option) {
-    const ubicaciones = obtenerUbicacionesProducto(option)
-        .sort((a, b) => a.existencia_actual - b.existencia_actual);
-
-    if (ubicaciones.length === 0) {
-        return {
-            ubicacion: 'SIN UBICACION',
-            existencia_actual: 0
-        };
-    }
-
-    return ubicaciones[0];
-}
-
-function existenciaDeUbicacion(option, ubicacion) {
-    ubicacion = limpiarUbicacion(ubicacion);
-
-    const ubicaciones = obtenerUbicacionesProducto(option);
-    const encontrada = ubicaciones.find(item => limpiarUbicacion(item.ubicacion) === ubicacion);
-
-    return encontrada ? parseInt(encontrada.existencia_actual || 0, 10) : 0;
-}
-
-function actualizarExistenciaPorUbicacion() {
-    const option = obtenerOptionProductoActual();
-
-    if (!option || !productoSelect.value) return;
-
-    const total = existenciaTotalProducto(option);
-    const existenciaUbi = existenciaDeUbicacion(option, ubicacionInput.value);
-
-    existenciaInput.value = total;
-
-    if (existenciaUbi > 0) {
-        existenciaInput.title = `Ubicación seleccionada: ${existenciaUbi}. Total producto: ${total}.`;
-    } else {
-        existenciaInput.title = `Total producto: ${total}.`;
-    }
-}
-
-function limpiarSinUbicacionAlClick() {
-    const valorReal = String(ubicacionInput.value || '').trim().toUpperCase();
-
-    if (valorReal === 'SIN UBICACION' || valorReal === 'SIN UBICACIÓN') {
-        ubicacionInput.value = '';
-    }
-}
-
-ubicacionInput.addEventListener('focus', limpiarSinUbicacionAlClick);
-ubicacionInput.addEventListener('input', actualizarExistenciaPorUbicacion);
-ubicacionInput.addEventListener('change', actualizarExistenciaPorUbicacion);
-
-function controlarFolioOperacion() {
-    const valor = tipoOperacionSelect.value;
-
-    if (valor === 'TICKET') {
-        folioOperacionBox.style.display = 'flex';
-        folioOperacionLabel.textContent = 'Folio de Ticket';
-        folioOperacionInput.placeholder = 'Ingrese folio del ticket';
-        folioOperacionInput.required = true;
-
-    } else if (valor === 'RESURTIDO') {
-        folioOperacionBox.style.display = 'flex';
-        folioOperacionLabel.textContent = 'Folio de Resurtido';
-        folioOperacionInput.placeholder = 'Ingrese folio del resurtido';
-        folioOperacionInput.required = true;
-
-    } else if (valor === 'NOTA_REMISION') {
-        folioOperacionBox.style.display = 'flex';
-        folioOperacionLabel.textContent = 'N# de Nota de Remision';
-        folioOperacionInput.placeholder = 'Ingrese N# de Nota de Remision';
-        folioOperacionInput.required = true;
-
-    } else {
-        folioOperacionBox.style.display = 'none';
-        folioOperacionInput.required = false;
-
-        if (!MODO_EDICION) {
-            folioOperacionInput.value = '';
-        }
-    }
-
-    guardarBorradorSalida();
-}
-
-tipoOperacionSelect.addEventListener('change', controlarFolioOperacion);
-productoSelect.addEventListener('change', cargarDatosProductoSeleccionado);
-
-function cargarDatosProductoSeleccionado() {
-    const option = obtenerOptionProductoActual();
-
-    if (!option || !productoSelect.value) {
-        descripcionInput.value = '';
-        unidadInput.value = '';
-        existenciaInput.value = '0';
-        precioInput.value = '0.00';
-        ubicacionInput.value = '';
-        cargarCatalogoUbicacionesSalida();
-        return;
-    }
-
-    const ubicacionMenor = obtenerUbicacionConMenorExistencia(option);
-    const total = existenciaTotalProducto(option);
-
-    descripcionInput.value = option.dataset.descripcion || '';
-    unidadInput.value = option.dataset.unidad || '';
-    precioInput.value = option.dataset.precio || '0.00';
-    ubicacionInput.value = ubicacionMenor.ubicacion || '';
-    existenciaInput.value = total;
-
-    cargarUbicacionesDelProducto(option);
-    actualizarExistenciaPorUbicacion();
-}
-
-function abrirModalProductos() {
-    modalProductos.classList.add('active');
-    buscarProductoInput.value = '';
-    filtrarProductosModal();
-
-    setTimeout(() => {
-        buscarProductoInput.focus();
-    }, 100);
-}
-
-function cerrarModalProductos() {
-    modalProductos.classList.remove('active');
 }
 
 function filtrarProductosModal() {
-    const texto = buscarProductoInput.value.toLowerCase().trim();
-    const filas = document.querySelectorAll('#productosModalBody tr');
+    const termino = modalSearch.value.toLowerCase().trim();
+    if (!termino) {
+        cargarProductosEnModal(productos);
+        return;
+    }
+    
+    const filtrados = productos.filter(p => 
+        p.codigo.toLowerCase().includes(termino) || 
+        p.descripcion.toLowerCase().includes(termino)
+    );
+    cargarProductosEnModal(filtrados);
+    modalSelectedIndex = -1;
+}
 
-    filas.forEach(fila => {
-        const busqueda = fila.dataset.busqueda || '';
-        fila.style.display = busqueda.includes(texto) ? '' : 'none';
+function seleccionarProductoDelModal(producto) {
+    productoSeleccionado = producto;
+    
+    // Mostrar info
+    document.getElementById('selectedInfo').style.display = 'block';
+    document.getElementById('infoCodigo').innerHTML = `<strong>${escapeHtml(producto.codigo)}</strong>`;
+    document.getElementById('infoDescripcion').textContent = producto.descripcion;
+    document.getElementById('infoUnidad').textContent = producto.unidad_medida;
+    document.getElementById('infoStock').textContent = producto.existencia_total;
+    
+    // Actualizar campos
+    productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
+    precioInput.value = producto.precio_compra;
+    ubicacionInput.value = producto.ubicacion_sugerida;
+    
+    cerrarModal();
+    cantidadInput.focus();
+    cantidadInput.select();
+    
+    mostrarToast(`✅ Producto seleccionado: ${producto.codigo}`);
+}
+
+// Navegación por teclado en el modal
+function actualizarSeleccionModal() {
+    const filas = document.querySelectorAll('#modalTableBody tr');
+    filas.forEach((fila, idx) => {
+        if (idx === modalSelectedIndex) {
+            fila.classList.add('selected');
+            fila.scrollIntoView({ block: 'nearest' });
+        } else {
+            fila.classList.remove('selected');
+        }
     });
 }
 
-function seleccionarProductoModal(productoId) {
-    productoSelect.value = productoId;
-    cargarDatosProductoSeleccionado();
-    cerrarModalProductos();
+// ===== FUNCIONES DE CANTIDAD =====
+function cambiarCantidad(valor) {
+    let nuevo = parseInt(cantidadInput.value) + valor;
+    if (nuevo < 1) nuevo = 1;
+    if (productoSeleccionado && nuevo > productoSeleccionado.existencia_total) {
+        nuevo = productoSeleccionado.existencia_total;
+        mostrarToast(`⚠️ Máximo disponible: ${productoSeleccionado.existencia_total}`, 'warning');
+    }
+    cantidadInput.value = nuevo;
 }
 
-document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-        cerrarModalProductos();
+function setMaxCantidad() {
+    if (productoSeleccionado) {
+        cantidadInput.value = productoSeleccionado.existencia_total;
     }
-});
+}
 
-modalProductos.addEventListener('click', function (e) {
-    if (e.target === modalProductos) {
-        cerrarModalProductos();
-    }
-});
-
-function agregarProductoSalida() {
-    const option = obtenerOptionProductoActual();
-
-    if (!productoSelect.value) {
-        alert('Selecciona un producto.');
+// ===== AGREGAR PRODUCTO =====
+function agregarProducto() {
+    if (!productoSeleccionado) {
+        mostrarToast('❌ Selecciona un producto (Ctrl+B para buscar)', 'error');
         return;
     }
-
-    const productoId = productoSelect.value;
-    const codigo = option.dataset.codigo || '';
-    const descripcion = option.dataset.descripcion || '';
-    const unidad = option.dataset.unidad || '';
-    const existenciaTotal = existenciaTotalProducto(option);
-    const cantidad = parseInt(cantidadInput.value || '0', 10);
-    const costo = parseFloat(option.dataset.costo || '0');
-    const precio = parseFloat(precioInput.value || '0');
-    let ubicacion = limpiarUbicacion(ubicacionInput.value);
-
-    if (ubicacion === 'SIN UBICACION') {
-        alert('Debes seleccionar o escribir una ubicación válida.');
-        return;
-    }
-
+    
+    const cantidad = parseInt(cantidadInput.value);
+    const precio = parseFloat(precioInput.value);
+    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+    
+    if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
+    
     if (cantidad <= 0) {
-        alert('La cantidad debe ser mayor a 0.');
+        mostrarToast('❌ Cantidad inválida', 'error');
         return;
     }
-
-    if (existenciaTotal <= 0) {
-        alert('Este producto no tiene existencia disponible.');
+    
+    if (cantidad > productoSeleccionado.existencia_total) {
+        mostrarToast(`❌ Stock insuficiente. Disponible: ${productoSeleccionado.existencia_total}`, 'error');
         return;
     }
-
-    if (cantidad > existenciaTotal) {
-        alert('La cantidad supera la existencia total del producto.');
-        return;
+    
+    // Verificar duplicado
+    const filasExistentes = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
+    for (let fila of filasExistentes) {
+        if (fila.dataset.productoId == productoSeleccionado.id) {
+            mostrarToast(`⚠️ El producto ya está en la lista`, 'warning');
+            return;
+        }
     }
-
-    const filaVacia = document.getElementById('filaVaciaDetalle');
-
-    if (filaVacia) {
-        filaVacia.remove();
-    }
-
+    
+    const filaVacia = document.getElementById('filaVacia');
+    if (filaVacia) filaVacia.remove();
+    
     const importe = cantidad * precio;
     const tr = document.createElement('tr');
-
+    tr.dataset.productoId = productoSeleccionado.id;
     tr.innerHTML = `
         <td>
-            <input
-                type="number"
-                min="1"
-                max="${escaparHtml(existenciaTotal)}"
-                value="${escaparHtml(cantidad)}"
-                class="input-cantidad-detalle"
-                style="width:70px;"
-                oninput="actualizarCantidadFila(this)"
-            >
-
-            <input type="hidden" name="producto_id[]" value="${escaparHtml(productoId)}">
-            <input type="hidden" name="cantidad[]" value="${escaparHtml(cantidad)}">
-            <input type="hidden" name="costo_unitario[]" value="${escaparHtml(costo)}">
-            <input type="hidden" name="precio_unitario[]" value="${escaparHtml(precio)}">
-            <input type="hidden" name="ubicacion[]" value="${escaparHtml(ubicacion)}">
+            <input type="number" class="qty-input" value="${cantidad}" min="1" onchange="actualizarCantidadFila(this)">
+            <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
+            <input type="hidden" name="cantidad[]" value="${cantidad}">
+            <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
+            <input type="hidden" name="precio_unitario[]" value="${precio}">
+            <input type="hidden" name="ubicacion[]" value="${ubicacion}">
         </td>
-        <td>${escaparHtml(codigo)}</td>
-        <td>${escaparHtml(descripcion)}</td>
-        <td>${escaparHtml(unidad)}</td>
-        <td>${escaparHtml(existenciaTotal)}</td>
+        <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
+        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
+        <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
+        <td>${escapeHtml(ubicacion)}</td>
         <td>$${precio.toFixed(2)}</td>
-        <td>${escaparHtml(ubicacion)} <small style="color:#64748b;">(completa con otras ubicaciones si hace falta)</small></td>
-        <td class="importe-fila" data-importe="${importe}">$${importe.toFixed(2)}</td>
-        <td>
-            <button type="button" class="btn-delete" onclick="eliminarFilaSalida(this)">
-                Eliminar
-            </button>
-        </td>
+        <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
+        <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
     `;
-
+    
     detalleBody.appendChild(tr);
-    actualizarTotalSalida();
-
-    productoSelect.value = '';
+    actualizarTotales();
+    
+    // Resetear para siguiente producto
+    productoSeleccionado = null;
+    document.getElementById('selectedInfo').style.display = 'none';
+    productoDisplayInput.value = '';
     cantidadInput.value = '1';
-    descripcionInput.value = '';
-    unidadInput.value = '';
-    existenciaInput.value = '0';
-    precioInput.value = '0.00';
     ubicacionInput.value = '';
-    cargarCatalogoUbicacionesSalida();
-
-    guardarBorradorSalida();
+    precioInput.value = '0.00';
+    
+    mostrarToast(`✅ ${cantidad} x producto agregado`);
 }
 
 function actualizarCantidadFila(input) {
     const tr = input.closest('tr');
-
-    let cantidadTexto = input.value.replace(/[^0-9]/g, '');
-    input.value = cantidadTexto;
-
-    if (cantidadTexto === '') {
-        return;
-    }
-
-    const cantidad = parseInt(cantidadTexto, 10);
-    const existenciaTotal = parseInt(
-    (tr.children[4].textContent || '0').replace(/,/g, ''),
-    10
-);
-
-    const precioTexto = tr.children[5]
-        .textContent
-        .replace('$', '')
-        .trim();
-
-    const precio = parseFloat(precioTexto || '0');
-
-    if (cantidad <= 0) {
-        return;
-    }
-
-    if (cantidad > existenciaTotal) {
-        alert('La cantidad no puede superar la existencia total del producto.');
-        input.value = existenciaTotal;
-        return;
-    }
-
+    let cantidad = parseInt(input.value);
+    if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
+    
+    const precioTexto = tr.children[5]?.textContent?.replace('$', '') || '0';
+    const precio = parseFloat(precioTexto);
     const nuevoImporte = cantidad * precio;
-
-    const inputHiddenCantidad = tr.querySelector('input[name="cantidad[]"]');
-    inputHiddenCantidad.value = cantidad;
-
-    const tdImporte = tr.querySelector('.importe-fila');
-    tdImporte.dataset.importe = nuevoImporte;
-    tdImporte.textContent = '$' + nuevoImporte.toFixed(2);
-
-    actualizarTotalSalida();
-    guardarBorradorSalida();
-}
-
-function eliminarFilaSalida(btn) {
-    btn.closest('tr').remove();
-
-    if (detalleBody.children.length === 0) {
-        detalleBody.innerHTML = `
-            <tr id="filaVaciaDetalle">
-                <td colspan="9" class="empty-table">
-                    No has agregado productos.
-                </td>
-            </tr>
-        `;
+    
+    const importeTd = tr.querySelector('.importe-fila');
+    if (importeTd) {
+        importeTd.dataset.importe = nuevoImporte;
+        importeTd.innerHTML = `<strong>$${nuevoImporte.toFixed(2)}</strong>`;
     }
-
-    actualizarTotalSalida();
-    guardarBorradorSalida();
+    
+    const hiddenInput = tr.querySelector('input[name="cantidad[]"]');
+    if (hiddenInput) hiddenInput.value = cantidad;
+    
+    actualizarTotales();
 }
 
-function actualizarTotalSalida() {
-    let total = 0;
+function eliminarFila(btn) {
+    btn.closest('tr').remove();
+    if (detalleBody.children.length === 0) {
+        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>`;
+    }
+    actualizarTotales();
+    mostrarToast('🗑️ Producto eliminado', 'info');
+}
 
+function limpiarTodo() {
+    if (confirm('¿Eliminar todos los productos?')) {
+        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>`;
+        actualizarTotales();
+        mostrarToast('🧹 Lista limpiada', 'info');
+    }
+}
+
+function actualizarTotales() {
+    let total = 0;
+    let count = 0;
     document.querySelectorAll('.importe-fila').forEach(td => {
         total += parseFloat(td.dataset.importe || '0');
+        count++;
     });
-
-    totalSalida.textContent = '$' + total.toFixed(2);
+    document.getElementById('totalSalida').textContent = `$${total.toFixed(2)}`;
+    document.getElementById('productosCount').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
 }
 
-document.getElementById('formSalida').addEventListener('submit', function (e) {
-    if (document.querySelectorAll('input[name="producto_id[]"]').length === 0) {
-        e.preventDefault();
-        alert('Debes agregar al menos un producto.');
+function mostrarToast(mensaje, tipo = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.style.borderLeftColor = tipo === 'success' ? '#059669' : (tipo === 'error' ? '#ef4444' : '#f59e0b');
+    toast.innerHTML = mensaje;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// ===== CONTROL DE FOLIO DE OPERACIÓN =====
+const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
+const folioOperacionBox = document.getElementById('folioOperacionBox');
+const folioOperacionInput = document.getElementById('folioOperacionInput');
+const folioOperacionLabel = document.getElementById('folioOperacionLabel');
+
+function controlarFolioOperacion() {
+    const valor = tipoOperacionSelect.value;
+    const tiposRequeridos = ['TICKET', 'RESURTIDO', 'NOTA_REMISION'];
+    
+    if (tiposRequeridos.includes(valor)) {
+        folioOperacionBox.style.display = 'block';
+        const etiquetas = {
+            'TICKET': '🎫 Folio de Ticket',
+            'RESURTIDO': '🔄 Folio de Resurtido',
+            'NOTA_REMISION': '📝 N# de Nota de Remisión'
+        };
+        folioOperacionLabel.innerHTML = etiquetas[valor] || '🔢 Folio de operación';
+        folioOperacionInput.required = true;
     } else {
-        localStorage.removeItem('borradorSalida');
+        folioOperacionBox.style.display = 'none';
+        folioOperacionInput.required = false;
+        <?php if (!$modoEdicion): ?>folioOperacionInput.value = '';<?php endif; ?>
     }
-});
-
-function guardarBorradorSalida() {
-    const datos = {
-        folio: document.querySelector('[name="folio"]')?.value || '',
-        fecha: document.querySelector('[name="fecha"]')?.value || '',
-        tipo_salida: document.querySelector('[name="tipo_salida"]')?.value || '',
-        tipo_operacion: document.querySelector('[name="tipo_operacion"]')?.value || '',
-        folio_operacion: document.querySelector('[name="folio_operacion"]')?.value || '',
-        almacen_id: document.querySelector('[name="almacen_id"]')?.value || '',
-        observaciones: document.querySelector('[name="observaciones"]')?.value || ''
-    };
-
-    localStorage.setItem('borradorSalida', JSON.stringify(datos));
 }
 
-function cargarBorradorSalida() {
-    const guardado = localStorage.getItem('borradorSalida');
+// ===== GUARDAR =====
+function guardarSalida() {
+    const productosEnLista = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
+    if (productosEnLista.length === 0) {
+        mostrarToast('❌ Agrega al menos un producto', 'error');
+        return;
+    }
+    
+    document.getElementById('formSalida').submit();
+}
 
-    if (!guardado) return;
-
-    const datos = JSON.parse(guardado);
-
-    if (datos.tipo_salida) document.querySelector('[name="tipo_salida"]').value = datos.tipo_salida;
-    if (datos.tipo_operacion) document.querySelector('[name="tipo_operacion"]').value = datos.tipo_operacion;
-    if (datos.folio_operacion) document.querySelector('[name="folio_operacion"]').value = datos.folio_operacion;
-    if (datos.almacen_id) document.querySelector('[name="almacen_id"]').value = datos.almacen_id;
-    if (datos.observaciones) document.querySelector('[name="observaciones"]').value = datos.observaciones;
-
+// ===== EVENTOS GLOBALES =====
+document.addEventListener('DOMContentLoaded', () => {
+    actualizarTotales();
     controlarFolioOperacion();
-}
+    ponerFechaActual(); // <-- FECHA AUTOMÁTICA AL CARGAR
+    
+    // Ctrl+B para abrir modal
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'b') {
+            e.preventDefault();
+            abrirModal();
+        }
+    });
+    
+    // Enter en cantidad, precio o ubicación = agregar producto
+    const camposEnter = ['cantidadInput', 'precioInput', 'ubicacionInput'];
+    camposEnter.forEach(id => {
+        document.getElementById(id)?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                agregarProducto();
+            }
+        });
+    });
+    
+    document.getElementById('agregarBtn')?.addEventListener('click', agregarProducto);
+    document.getElementById('guardarBtn')?.addEventListener('click', guardarSalida);
+    document.getElementById('openModalBtn')?.addEventListener('click', abrirModal);
+    document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
+    
+    // Ctrl+Enter = guardar
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            guardarSalida();
+        }
+    });
+    
+    // Cerrar modal con ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            cerrarModal();
+        }
+    });
+    
+    // Cerrar modal al hacer clic fuera
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) cerrarModal();
+    });
+});
 
-function ponerFechaActualSalida() {
-    const inputFecha = document.getElementById('fecha_salida');
-    if (!inputFecha) return;
-
-    const ahora = new Date();
-
-    const year = ahora.getFullYear();
-    const month = String(ahora.getMonth() + 1).padStart(2, '0');
-    const day = String(ahora.getDate()).padStart(2, '0');
-    const hours = String(ahora.getHours()).padStart(2, '0');
-    const minutes = String(ahora.getMinutes()).padStart(2, '0');
-
-    inputFecha.value = `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
-const MODO_EDICION = <?= $modoEdicion ? 'true' : 'false' ?>;
-
-document.addEventListener('DOMContentLoaded', function () {
-    localStorage.removeItem('borradorSalida');
-    cargarCatalogoUbicacionesSalida();
-
-    if (!MODO_EDICION) {
-        ponerFechaActualSalida();
-    } else {
-        actualizarTotalSalida();
-        controlarFolioOperacion();
+// Eventos de teclado para el modal
+modalSearch.addEventListener('keydown', (e) => {
+    const filas = document.querySelectorAll('#modalTableBody tr');
+    const totalFilas = filas.length;
+    
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        modalSelectedIndex = Math.min(modalSelectedIndex + 1, totalFilas - 1);
+        actualizarSeleccionModal();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        modalSelectedIndex = Math.max(modalSelectedIndex - 1, 0);
+        actualizarSeleccionModal();
+    } else if (e.key === 'Enter' && modalSelectedIndex >= 0 && modalProductosFiltrados[modalSelectedIndex]) {
+        e.preventDefault();
+        seleccionarProductoDelModal(modalProductosFiltrados[modalSelectedIndex]);
+    } else if (e.key === 'Escape') {
+        cerrarModal();
     }
 });
 
-document.querySelectorAll('input, select, textarea').forEach(campo => {
-    campo.addEventListener('change', guardarBorradorSalida);
-    campo.addEventListener('keyup', guardarBorradorSalida);
-});
+modalSearch.addEventListener('input', filtrarProductosModal);
+tipoOperacionSelect.addEventListener('change', controlarFolioOperacion);
 </script>
 
 <?php

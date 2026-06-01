@@ -15,3 +15,17 @@ function requireRole(array $rolesPermitidos): void
         exit;
     }
 }
+
+function denyGerenteWrite(): void
+{
+    requireLogin();
+
+    $user = currentUser();
+
+    if (($user['rol'] ?? '') === 'GERENTE') {
+        http_response_code(403);
+        echo "<h2>Acceso denegado</h2>";
+        echo "<p>El perfil GERENTE solo tiene permisos de consulta.</p>";
+        exit;
+    }
+}

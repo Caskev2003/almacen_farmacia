@@ -10,7 +10,9 @@ $controller = new AgotadoController();
 
 $user = currentUser();
 $rol = strtoupper(trim($user['rol'] ?? ''));
+
 $esAdmin = in_array($rol, ['ADMINISTRADOR', 'ADMIN'], true);
+$esGerente = ($rol === 'GERENTE');
 
 $almacenIdSesion = (int)($user['almacen_id'] ?? 0);
 
@@ -66,18 +68,23 @@ $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+    if ($esGerente) {
+        $message = 'El perfil GERENTE solo tiene permisos de consulta.';
+        $messageType = 'danger';
+    } else {
+        $action = $_POST['action'] ?? '';
 
-    if ($action === 'asignar_ubicacion') {
-        $result = $controller->actualizarUbicacion($_POST);
-        $message = $result['message'];
-        $messageType = $result['success'] ? 'success' : 'danger';
-    }
+        if ($action === 'asignar_ubicacion') {
+            $result = $controller->actualizarUbicacion($_POST);
+            $message = $result['message'];
+            $messageType = $result['success'] ? 'success' : 'danger';
+        }
 
-    if ($action === 'dar_baja') {
-        $result = $controller->darDeBaja($_POST);
-        $message = $result['message'];
-        $messageType = $result['success'] ? 'success' : 'danger';
+        if ($action === 'dar_baja') {
+            $result = $controller->darDeBaja($_POST);
+            $message = $result['message'];
+            $messageType = $result['success'] ? 'success' : 'danger';
+        }
     }
 }
 
@@ -294,30 +301,46 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                         <?= e($motivo) ?>
                                     </span>
                                 </td>
+
                                 <td>
-                                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                                        <button
-                                            type="button"
-                                            class="btn-asignar"
-                                            onclick="abrirModalAsignarUbicacion(
-                                                <?= (int)$productoId ?>,
-                                                <?= jsValue($descripcion) ?>,
-                                                <?= jsValue($sucursal) ?>,
-                                                <?= (int)$existencia ?>
-                                            )"
-                                        >
-                                            Asignar ubicación
-                                        </button>
-
-                                        <form method="POST" style="margin:0;" onsubmit="return confirm('¿Seguro que deseas dar de baja este producto? Se enviará a Sin almacén, Sin ubicación y Sin existencia.');">
-                                            <input type="hidden" name="action" value="dar_baja">
-                                            <input type="hidden" name="producto_id" value="<?= (int)$productoId ?>">
-
-                                            <button type="submit" class="btn-dar-baja">
-                                                Dar de baja
+                                    <?php if (!$esGerente): ?>
+                                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                            <button
+                                                type="button"
+                                                class="btn-asignar"
+                                                onclick="abrirModalAsignarUbicacion(
+                                                    <?= (int)$productoId ?>,
+                                                    <?= jsValue($descripcion) ?>,
+                                                    <?= jsValue($sucursal) ?>,
+                                                    <?= (int)$existencia ?>
+                                                )"
+                                            >
+                                                Asignar ubicación
                                             </button>
-                                        </form>
-                                    </div>
+
+                                            <form method="POST" style="margin:0;" onsubmit="return confirm('¿Seguro que deseas dar de baja este producto? Se enviará a Sin almacén, Sin ubicación y Sin existencia.');">
+                                                <input type="hidden" name="action" value="dar_baja">
+                                                <input type="hidden" name="producto_id" value="<?= (int)$productoId ?>">
+
+                                                <button type="submit" class="btn-dar-baja">
+                                                    Dar de baja
+                                                </button>
+                                            </form>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="
+                                            display:inline-block;
+                                            background:#eef2ff;
+                                            color:#1e40af;
+                                            padding:7px 10px;
+                                            border-radius:8px;
+                                            font-size:12px;
+                                            font-weight:700;
+                                            white-space:nowrap;
+                                        ">
+                                            Solo consulta
+                                        </span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -377,108 +400,110 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
 </div>
 
-<div id="modalAsignarUbicacion" class="modal-agotado">
-    <div class="modal-agotado-card">
-        <div class="modal-agotado-header">
-            <div>
-                <h3 id="tituloAsignarUbicacion">Asignar ubicación</h3>
-                <p>Al asignar ubicación y existencia, el producto saldrá automáticamente de Agotados.</p>
+<?php if (!$esGerente): ?>
+    <div id="modalAsignarUbicacion" class="modal-agotado">
+        <div class="modal-agotado-card">
+            <div class="modal-agotado-header">
+                <div>
+                    <h3 id="tituloAsignarUbicacion">Asignar ubicación</h3>
+                    <p>Al asignar ubicación y existencia, el producto saldrá automáticamente de Agotados.</p>
+                </div>
+
+                <button type="button" onclick="cerrarModalAsignarUbicacion()">
+                    &times;
+                </button>
             </div>
 
-            <button type="button" onclick="cerrarModalAsignarUbicacion()">
-                &times;
-            </button>
+            <form method="POST">
+                <input type="hidden" name="action" value="asignar_ubicacion">
+                <input type="hidden" name="producto_id" id="agotadoProductoId">
+                <input type="hidden" name="sucursal" id="agotadoSucursal">
+
+                <div class="form-group">
+                    <label>Ubicación nueva</label>
+                    <input
+                        type="text"
+                        name="ubicacion_nueva"
+                        id="agotadoUbicacionNueva"
+                        list="listaUbicaciones"
+                        required
+                        autocomplete="off"
+                        placeholder="Ejemplo: R1N1Z01"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Existencia</label>
+                    <input
+                        type="number"
+                        name="existencia"
+                        id="agotadoExistencia"
+                        min="1"
+                        required
+                    >
+                </div>
+
+                <button type="submit" class="btn-guardar-ubicacion">
+                    Guardar ubicación
+                </button>
+            </form>
         </div>
-
-        <form method="POST">
-            <input type="hidden" name="action" value="asignar_ubicacion">
-            <input type="hidden" name="producto_id" id="agotadoProductoId">
-            <input type="hidden" name="sucursal" id="agotadoSucursal">
-
-            <div class="form-group">
-                <label>Ubicación nueva</label>
-                <input
-                    type="text"
-                    name="ubicacion_nueva"
-                    id="agotadoUbicacionNueva"
-                    list="listaUbicaciones"
-                    required
-                    autocomplete="off"
-                    placeholder="Ejemplo: R1N1Z01"
-                >
-            </div>
-
-            <div class="form-group">
-                <label>Existencia</label>
-                <input
-                    type="number"
-                    name="existencia"
-                    id="agotadoExistencia"
-                    min="1"
-                    required
-                >
-            </div>
-
-            <button type="submit" class="btn-guardar-ubicacion">
-                Guardar ubicación
-            </button>
-        </form>
     </div>
-</div>
 
-<datalist id="listaUbicaciones"></datalist>
+    <datalist id="listaUbicaciones"></datalist>
 
-<script>
-function abrirModalAsignarUbicacion(productoId, descripcion, sucursal, existencia) {
-    document.getElementById('modalAsignarUbicacion').style.display = 'flex';
-    document.getElementById('agotadoProductoId').value = productoId;
-    document.getElementById('agotadoSucursal').value = sucursal || '';
-    document.getElementById('agotadoExistencia').value = existencia > 0 ? existencia : 1;
-    document.getElementById('agotadoUbicacionNueva').value = '';
-    document.getElementById('tituloAsignarUbicacion').innerText = descripcion;
-}
-
-function cerrarModalAsignarUbicacion() {
-    document.getElementById('modalAsignarUbicacion').style.display = 'none';
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-    const lista = document.getElementById('listaUbicaciones');
-
-    if (!lista) return;
-
-    const ubicaciones = [];
-
-    function add(rack, nivel, zona) {
-        const z = String(zona).padStart(2, '0');
-        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    <script>
+    function abrirModalAsignarUbicacion(productoId, descripcion, sucursal, existencia) {
+        document.getElementById('modalAsignarUbicacion').style.display = 'flex';
+        document.getElementById('agotadoProductoId').value = productoId;
+        document.getElementById('agotadoSucursal').value = sucursal || '';
+        document.getElementById('agotadoExistencia').value = existencia > 0 ? existencia : 1;
+        document.getElementById('agotadoUbicacionNueva').value = '';
+        document.getElementById('tituloAsignarUbicacion').innerText = descripcion;
     }
 
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(1, n, z);
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(2, n, z);
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(3, n, z);
+    function cerrarModalAsignarUbicacion() {
+        document.getElementById('modalAsignarUbicacion').style.display = 'none';
+    }
 
-    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 16; z++) add(4, n, z);
-    for (let z = 10; z <= 16; z++) add(4, 3, z);
+    document.addEventListener('DOMContentLoaded', function () {
+        const lista = document.getElementById('listaUbicaciones');
 
-    for (let n = 1; n <= 2; n++) for (let z = 1; z <= 15; z++) add(5, n, z);
-    for (let z = 10; z <= 15; z++) add(5, 3, z);
+        if (!lista) return;
 
-    for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
+        const ubicaciones = [];
 
-    ubicaciones.push('R7N1Z01 - PASILLO 3');
-    ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 1');
-    ubicaciones.push('BODEGA PEDYALITE');
+        function add(rack, nivel, zona) {
+            const z = String(zona).padStart(2, '0');
+            ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+        }
 
-    lista.innerHTML = '';
+        for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(1, n, z);
+        for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(2, n, z);
+        for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(3, n, z);
 
-    ubicaciones.forEach(u => {
-        const option = document.createElement('option');
-        option.value = u;
-        lista.appendChild(option);
+        for (let n = 1; n <= 2; n++) for (let z = 1; z <= 16; z++) add(4, n, z);
+        for (let z = 10; z <= 16; z++) add(4, 3, z);
+
+        for (let n = 1; n <= 2; n++) for (let z = 1; z <= 15; z++) add(5, n, z);
+        for (let z = 10; z <= 15; z++) add(5, 3, z);
+
+        for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
+
+        ubicaciones.push('R7N1Z01 - PASILLO 3');
+        ubicaciones.push('R8N1Z01 - PASILLO 2');
+        ubicaciones.push('R9N1Z01 - PASILLO 1');
+        ubicaciones.push('BODEGA PEDYALITE');
+
+        lista.innerHTML = '';
+
+        ubicaciones.forEach(u => {
+            const option = document.createElement('option');
+            option.value = u;
+            lista.appendChild(option);
+        });
     });
-});
-</script>
+    </script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>

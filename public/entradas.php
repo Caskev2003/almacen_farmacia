@@ -51,23 +51,17 @@ date_default_timezone_set('America/Mexico_City');
 // ===== FECHA AUTOMÁTICA =====
 $fechaActual = date('Y-m-d\TH:i');
 
+// ===== UBICACIONES GENERALES PARA ENTRADAS =====
 $ubicacionesGenerales = [];
 
-foreach ($productos as $producto) {
-    $ubicacionProducto = strtoupper(trim((string)($producto['ubicacion'] ?? '')));
+$ubicacionesTodas = method_exists($controller, 'ubicacionesTodas')
+    ? $controller->ubicacionesTodas($almacenSesion)
+    : [];
 
-    if ($ubicacionProducto !== '' && $ubicacionProducto !== 'SIN UBICACION') {
-        $ubicacionesGenerales[$ubicacionProducto] = $ubicacionProducto;
-    }
-
-    if (!empty($producto['ubicaciones']) && is_array($producto['ubicaciones'])) {
-        foreach ($producto['ubicaciones'] as $ubicacionItem) {
-            $ubicacionMultiple = strtoupper(trim((string)($ubicacionItem['ubicacion'] ?? '')));
-
-            if ($ubicacionMultiple !== '' && $ubicacionMultiple !== 'SIN UBICACION') {
-                $ubicacionesGenerales[$ubicacionMultiple] = $ubicacionMultiple;
-            }
-        }
+foreach ($ubicacionesTodas as $ubicacion) {
+    $ubicacion = strtoupper(trim((string)$ubicacion));
+    if ($ubicacion !== '' && $ubicacion !== 'SIN UBICACION') {
+        $ubicacionesGenerales[$ubicacion] = $ubicacion;
     }
 }
 
@@ -877,12 +871,21 @@ body {
 
             <div class="capture-field">
                 <label>📍 Ubicación</label>
-                <input type="text" id="ubicacionInput" list="ubicacionesList" placeholder="Seleccione ubicación">
+                <input
+                    type="text"
+                    id="ubicacionInput"
+                    list="ubicacionesList"
+                    placeholder="Escriba o seleccione ubicación"
+                    autocomplete="off"
+                >
                 <datalist id="ubicacionesList">
                     <?php foreach ($ubicacionesGenerales as $ubicacion): ?>
-                        <option value="<?= e($ubicacion) ?>">
+                        <option value="<?= e($ubicacion) ?>"></option>
                     <?php endforeach; ?>
                 </datalist>
+                <small style="font-size: 11px; color: #6c7a8a;">
+                    <?= count($ubicacionesGenerales) ?> ubicación(es) disponible(s)
+                </small>
             </div>
 
             <button type="button" class="btn-add" id="agregarBtn">
@@ -1091,7 +1094,9 @@ function seleccionarProductoDelModal(producto) {
     
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
     precioInput.value = producto.precio_compra;
-    ubicacionInput.value = producto.ubicacion_sugerida;
+    if (producto.ubicacion_sugerida) {
+        ubicacionInput.value = producto.ubicacion_sugerida;
+    }
     
     cerrarModal();
     cantidadInput.focus();
@@ -1135,12 +1140,12 @@ function agregarProducto() {
     
     if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
     
-    if (cantidad <= 0) {
+    if (cantidad <= 0 || isNaN(cantidad)) {
         mostrarToast('❌ Cantidad inválida', 'error');
         return;
     }
     
-    if (precio < 0) {
+    if (precio < 0 || isNaN(precio)) {
         mostrarToast('❌ Precio inválido', 'error');
         return;
     }
@@ -1171,7 +1176,7 @@ function agregarProducto() {
         <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
         <td>
             <input type="number" class="price-input" value="${precio.toFixed(2)}" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
-         </td>
+        </td>
         <td>${escapeHtml(lote)}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
@@ -1327,9 +1332,94 @@ function guardarEntrada() {
     document.getElementById('formEntrada').submit();
 }
 
+// ===== GENERAR TODAS LAS UBICACIONES (como en productos.php) =====
+function generarTodasLasUbicaciones() {
+    const lista = document.getElementById('ubicacionesList');
+    if (!lista) return;
+    
+    const ubicaciones = [];
+    
+    function add(rack, nivel, zona) {
+        const z = String(zona).padStart(2, '0');
+        ubicaciones.push(`R${rack}N${nivel}Z${z}`);
+    }
+    
+    // Rack 1: niveles 1-3, zonas 1-22
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 22; z++) {
+            add(1, n, z);
+        }
+    }
+    
+    // Rack 2: niveles 1-3, zonas 1-20
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 20; z++) {
+            add(2, n, z);
+        }
+    }
+    
+    // Rack 3: niveles 1-3, zonas 1-20
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 20; z++) {
+            add(3, n, z);
+        }
+    }
+    
+    // Rack 4: niveles 1-2, zonas 1-16
+    for (let n = 1; n <= 2; n++) {
+        for (let z = 1; z <= 16; z++) {
+            add(4, n, z);
+        }
+    }
+    // Rack 4 nivel 3 zonas 10-16
+    for (let z = 10; z <= 16; z++) {
+        add(4, 3, z);
+    }
+    
+    // Rack 5: niveles 1-2, zonas 1-15
+    for (let n = 1; n <= 2; n++) {
+        for (let z = 1; z <= 15; z++) {
+            add(5, n, z);
+        }
+    }
+    // Rack 5 nivel 3 zonas 10-15
+    for (let z = 10; z <= 15; z++) {
+        add(5, 3, z);
+    }
+    
+    // Rack 6: niveles 1-3, zonas 1-22
+    for (let n = 1; n <= 3; n++) {
+        for (let z = 1; z <= 22; z++) {
+            add(6, n, z);
+        }
+    }
+    
+    // Ubicaciones adicionales
+    ubicaciones.push('R7N1Z01 - PASILLO 3');
+    ubicaciones.push('R8N1Z01 - PASILLO 2');
+    ubicaciones.push('R9N1Z01 - PASILLO 1');
+    ubicaciones.push('BODEGA PEDYALITE');
+   
+    
+    // Limpiar opciones existentes y agregar todas
+    lista.innerHTML = '';
+    
+    ubicaciones.forEach(u => {
+        const option = document.createElement('option');
+        option.value = u;
+        lista.appendChild(option);
+    });
+    
+    console.log('Ubicaciones cargadas:', ubicaciones.length);
+}
+
 // ===== INICIALIZACIÓN =====
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM cargado - Entradas');
+    
+    // Generar todas las ubicaciones
+    generarTodasLasUbicaciones();
+    
     actualizarTotales();
     ponerFechaActual();
     
@@ -1415,15 +1505,6 @@ document.addEventListener('DOMContentLoaded', function() {
     tipoDocumento?.addEventListener('change', construirReferencia);
     folioDocumento?.addEventListener('input', construirReferencia);
 });
-
-// Función global para limpiar desde el botón
-function limpiarTodo() {
-    if (confirm('¿Eliminar todos los productos?')) {
-        detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
-        actualizarTotales();
-        mostrarToast('🧹 Lista limpiada', 'info');
-    }
-}
 </script>
 
 <?php

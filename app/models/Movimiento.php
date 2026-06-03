@@ -106,210 +106,211 @@ class Movimiento
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-  public function getProductosActivos(): array
-{
-    $sesion = $this->obtenerAlmacenSesion();
-    $sucursal = $sesion['sucursal'];
+    public function getProductosActivos(): array
+    {
+        $sesion = $this->obtenerAlmacenSesion();
+        $sucursal = $sesion['sucursal'];
 
-    $sql = "SELECT 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.precio_compra,
-                p.precio_venta,
-                p.unidad_medida,
-                p.ubicacion,
+        $sql = "SELECT 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida,
+                    p.ubicacion,
 
-                COALESCE(SUM(pe.existencia), 0) AS existencia_actual,
-                COALESCE(SUM(pe.existencia), 0) AS existencia_bodega
+                    COALESCE(SUM(pe.existencia), 0) AS existencia_actual,
+                    COALESCE(SUM(pe.existencia), 0) AS existencia_bodega
 
-            FROM productos p
+                FROM productos p
 
-            INNER JOIN producto_existencias pe
-                ON pe.producto_id = p.id
-                AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                AND COALESCE(pe.existencia, 0) > 0
-                AND pe.ubicacion IS NOT NULL
-                AND TRIM(pe.ubicacion) != ''
-                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                INNER JOIN producto_existencias pe
+                    ON pe.producto_id = p.id
+                    AND UPPER(COALESCE(pe.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                    AND COALESCE(pe.existencia, 0) > 0
+                    AND pe.ubicacion IS NOT NULL
+                    AND TRIM(pe.ubicacion) != ''
+                    AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
 
-            WHERE p.estado = 1
+                WHERE p.estado = 1
 
-            GROUP BY 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.precio_compra,
-                p.precio_venta,
-                p.unidad_medida,
-                p.ubicacion
+                GROUP BY 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida,
+                    p.ubicacion
 
-            HAVING SUM(pe.existencia) > 0
+                HAVING SUM(pe.existencia) > 0
 
-            ORDER BY p.descripcion ASC";
+                ORDER BY p.descripcion ASC";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([
-        ':sucursal' => $sucursal
-    ]);
-
-    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($productos as &$producto) {
-        $productoId = (int)$producto['id'];
-
-        $sqlUbicaciones = "SELECT 
-                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                                existencia AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                           AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                           AND COALESCE(existencia, 0) > 0
-                           AND ubicacion IS NOT NULL
-                           AND TRIM(ubicacion) != ''
-                           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY existencia ASC, ubicacion ASC";
-
-        $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
-        $stmtUbicaciones->execute([
-            ':producto_id' => $productoId,
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
             ':sucursal' => $sucursal
         ]);
 
-        $ubicaciones = $stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC);
+        $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $producto['ubicaciones'] = [];
+        foreach ($productos as &$producto) {
+            $productoId = (int)$producto['id'];
 
-        foreach ($ubicaciones as $ubi) {
-            $producto['ubicaciones'][] = [
-                'ubicacion' => $this->limpiarUbicacion($ubi['ubicacion'] ?? ''),
-                'existencia_actual' => (int)$ubi['existencia_actual']
-            ];
+            $sqlUbicaciones = "SELECT 
+                                    COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                                    existencia AS existencia_actual
+                               FROM producto_existencias
+                               WHERE producto_id = :producto_id
+                               AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                               AND COALESCE(existencia, 0) > 0
+                               AND ubicacion IS NOT NULL
+                               AND TRIM(ubicacion) != ''
+                               AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                               ORDER BY existencia ASC, ubicacion ASC";
+
+            $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
+            $stmtUbicaciones->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal
+            ]);
+
+            $ubicaciones = $stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC);
+
+            $producto['ubicaciones'] = [];
+
+            foreach ($ubicaciones as $ubi) {
+                $producto['ubicaciones'][] = [
+                    'ubicacion' => $this->limpiarUbicacion($ubi['ubicacion'] ?? ''),
+                    'existencia_actual' => (int)$ubi['existencia_actual']
+                ];
+            }
+
+            if (!empty($producto['ubicaciones'])) {
+                $producto['ubicacion'] = $producto['ubicaciones'][0]['ubicacion'];
+            }
         }
 
-        if (!empty($producto['ubicaciones'])) {
-            $producto['ubicacion'] = $producto['ubicaciones'][0]['ubicacion'];
-        }
+        unset($producto);
+
+        return $productos;
     }
 
-    unset($producto);
+    public function getProductosParaSalida(): array
+    {
+        $sesion = $this->obtenerAlmacenSesion();
+        $sucursal = $sesion['sucursal'];
 
-    return $productos;
-}
+        $sql = "SELECT 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida,
 
-public function getProductosParaSalida(): array
-{
-    $sesion = $this->obtenerAlmacenSesion();
-    $sucursal = $sesion['sucursal'];
+                    COALESCE(
+                        MAX(
+                            CASE
+                                WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                                AND pe.ubicacion IS NOT NULL
+                                AND TRIM(pe.ubicacion) != ''
+                                AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                                AND COALESCE(pe.existencia, 0) > 0
+                                THEN pe.ubicacion
+                                ELSE NULL
+                            END
+                        ),
+                        'SIN UBICACION'
+                    ) AS ubicacion,
 
-    $sql = "SELECT 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.precio_compra,
-                p.precio_venta,
-                p.unidad_medida,
-
-                COALESCE(
-                    MAX(
+                    COALESCE(SUM(
                         CASE
-                            WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                            AND pe.ubicacion IS NOT NULL
-                            AND TRIM(pe.ubicacion) != ''
-                            AND UPPER(TRIM(pe.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                            AND COALESCE(pe.existencia, 0) > 0
-                            THEN pe.ubicacion
-                            ELSE NULL
+                            WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal2)
+                            THEN COALESCE(pe.existencia, 0)
+                            ELSE 0
                         END
-                    ),
-                    'SIN UBICACION'
-                ) AS ubicacion,
+                    ), 0) AS existencia_actual,
 
-                COALESCE(SUM(
-                    CASE
-                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal2)
-                        THEN COALESCE(pe.existencia, 0)
-                        ELSE 0
-                    END
-                ), 0) AS existencia_actual,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal3)
+                            THEN COALESCE(pe.existencia, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS existencia_bodega
 
-                COALESCE(SUM(
-                    CASE
-                        WHEN UPPER(TRIM(COALESCE(pe.sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal3)
-                        THEN COALESCE(pe.existencia, 0)
-                        ELSE 0
-                    END
-                ), 0) AS existencia_bodega
+                FROM productos p
 
-            FROM productos p
+                LEFT JOIN producto_existencias pe
+                    ON pe.producto_id = p.id
 
-            LEFT JOIN producto_existencias pe
-                ON pe.producto_id = p.id
+                WHERE p.estado = 1
 
-            WHERE p.estado = 1
+                GROUP BY 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida
 
-            GROUP BY 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.precio_compra,
-                p.precio_venta,
-                p.unidad_medida
+                ORDER BY p.descripcion ASC";
 
-            ORDER BY p.descripcion ASC";
-
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([
-        ':sucursal' => $sucursal,
-        ':sucursal2' => $sucursal,
-        ':sucursal3' => $sucursal
-    ]);
-
-    $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($productos as &$producto) {
-        $productoId = (int)$producto['id'];
-
-        $sqlUbicaciones = "SELECT 
-                                COALESCE(NULLIF(TRIM(ubicacion), ''), 'SIN UBICACION') AS ubicacion,
-                                COALESCE(existencia, 0) AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                           AND UPPER(TRIM(COALESCE(sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                           AND ubicacion IS NOT NULL
-                           AND TRIM(ubicacion) != ''
-                           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY 
-                                CASE WHEN COALESCE(existencia, 0) > 0 THEN 0 ELSE 1 END,
-                                existencia ASC,
-                                ubicacion ASC";
-
-        $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
-        $stmtUbicaciones->execute([
-            ':producto_id' => $productoId,
-            ':sucursal' => $sucursal
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':sucursal' => $sucursal,
+            ':sucursal2' => $sucursal,
+            ':sucursal3' => $sucursal
         ]);
 
-        $producto['ubicaciones'] = $stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC);
+        $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($producto['ubicaciones'])) {
-            $producto['ubicaciones'] = [[
-                'ubicacion' => 'SIN UBICACION',
-                'existencia_actual' => 0
-            ]];
+        foreach ($productos as &$producto) {
+            $productoId = (int)$producto['id'];
 
-            $producto['ubicacion'] = 'SIN UBICACION';
+            $sqlUbicaciones = "SELECT 
+                                    COALESCE(NULLIF(TRIM(ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                                    COALESCE(existencia, 0) AS existencia_actual
+                               FROM producto_existencias
+                               WHERE producto_id = :producto_id
+                               AND UPPER(TRIM(COALESCE(sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                               AND ubicacion IS NOT NULL
+                               AND TRIM(ubicacion) != ''
+                               AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                               ORDER BY 
+                                    CASE WHEN COALESCE(existencia, 0) > 0 THEN 0 ELSE 1 END,
+                                    existencia ASC,
+                                    ubicacion ASC";
+
+            $stmtUbicaciones = $this->conn->prepare($sqlUbicaciones);
+            $stmtUbicaciones->execute([
+                ':producto_id' => $productoId,
+                ':sucursal' => $sucursal
+            ]);
+
+            $producto['ubicaciones'] = $stmtUbicaciones->fetchAll(PDO::FETCH_ASSOC);
+
+            if (empty($producto['ubicaciones'])) {
+                $producto['ubicaciones'] = [[
+                    'ubicacion' => 'SIN UBICACION',
+                    'existencia_actual' => 0
+                ]];
+
+                $producto['ubicacion'] = 'SIN UBICACION';
+            }
         }
+
+        unset($producto);
+
+        return $productos;
     }
-
-    unset($producto);
-
-    return $productos;
-}
+    
     private function generarFolioPorAlmacen(string $tipoMovimiento, int $almacenId): string
     {
         $tipoMovimiento = strtoupper(trim($tipoMovimiento));
@@ -400,127 +401,114 @@ public function getProductosParaSalida(): array
         return $row ? $row['folio'] : '';
     }
 
-   private function aumentarExistencia(
-    int $productoId,
-    string $sucursal,
-    int $cantidad,
-    string $ubicacion = ''
-): void {
-    $sucursal = strtoupper(trim($sucursal));
-    $ubicacion = $this->limpiarUbicacion($ubicacion);
+    private function aumentarExistencia(
+        int $productoId,
+        string $sucursal,
+        int $cantidad,
+        string $ubicacion = ''
+    ): void {
+        $sucursal = strtoupper(trim($sucursal));
+        $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-    if ($productoId <= 0 || $sucursal === '' || $cantidad <= 0) {
-        return;
-    }
+        if ($productoId <= 0 || $sucursal === '' || $cantidad <= 0) {
+            return;
+        }
 
-    /*
-    1. Si ya existe la misma ubicación exacta,
-       suma la cantidad.
-    */
-    $sqlExisteExacta = "SELECT id
-                        FROM producto_existencias
-                        WHERE producto_id = :producto_id
-                        AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                        AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
-                        LIMIT 1";
+        $sqlExisteExacta = "SELECT id
+                            FROM producto_existencias
+                            WHERE producto_id = :producto_id
+                            AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                            AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
+                            LIMIT 1";
 
-    $stmtExisteExacta = $this->conn->prepare($sqlExisteExacta);
-    $stmtExisteExacta->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal,
-        ':ubicacion' => $ubicacion
-    ]);
-
-    $existenciaExacta = $stmtExisteExacta->fetch(PDO::FETCH_ASSOC);
-
-    if ($existenciaExacta) {
-        $sqlUpdate = "UPDATE producto_existencias
-                      SET existencia = COALESCE(existencia, 0) + :cantidad,
-                          sucursal = :sucursal,
-                          ubicacion = :ubicacion,
-                          updated_at = CURRENT_TIMESTAMP
-                      WHERE id = :id";
-
-        $stmtUpdate = $this->conn->prepare($sqlUpdate);
-        $stmtUpdate->execute([
-            ':cantidad' => $cantidad,
+        $stmtExisteExacta = $this->conn->prepare($sqlExisteExacta);
+        $stmtExisteExacta->execute([
+            ':producto_id' => $productoId,
             ':sucursal' => $sucursal,
-            ':ubicacion' => $ubicacion,
-            ':id' => $existenciaExacta['id']
+            ':ubicacion' => $ubicacion
         ]);
 
-        return;
-    }
+        $existenciaExacta = $stmtExisteExacta->fetch(PDO::FETCH_ASSOC);
 
-    /*
-    2. Si existe fila basura:
-       SIN UBICACION + 0 en la misma sucursal,
-       la reutiliza y NO crea una nueva.
-    */
-    $sqlSinUbicacion = "SELECT id
-                        FROM producto_existencias
-                        WHERE producto_id = :producto_id
-                        AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                        AND (
-                            ubicacion IS NULL
-                            OR TRIM(ubicacion) = ''
-                            OR UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                        )
-                        AND COALESCE(existencia, 0) <= 0
-                        ORDER BY id ASC
-                        LIMIT 1";
+        if ($existenciaExacta) {
+            $sqlUpdate = "UPDATE producto_existencias
+                          SET existencia = COALESCE(existencia, 0) + :cantidad,
+                              sucursal = :sucursal,
+                              ubicacion = :ubicacion,
+                              updated_at = CURRENT_TIMESTAMP
+                          WHERE id = :id";
 
-    $stmtSinUbicacion = $this->conn->prepare($sqlSinUbicacion);
-    $stmtSinUbicacion->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal
-    ]);
+            $stmtUpdate = $this->conn->prepare($sqlUpdate);
+            $stmtUpdate->execute([
+                ':cantidad' => $cantidad,
+                ':sucursal' => $sucursal,
+                ':ubicacion' => $ubicacion,
+                ':id' => $existenciaExacta['id']
+            ]);
 
-    $sinUbicacion = $stmtSinUbicacion->fetch(PDO::FETCH_ASSOC);
+            return;
+        }
 
-    if ($sinUbicacion && $ubicacion !== 'SIN UBICACION') {
-        $sqlUpdateSin = "UPDATE producto_existencias
-                         SET sucursal = :sucursal,
-                             ubicacion = :ubicacion,
-                             existencia = :cantidad,
-                             updated_at = CURRENT_TIMESTAMP
-                         WHERE id = :id";
+        $sqlSinUbicacion = "SELECT id
+                            FROM producto_existencias
+                            WHERE producto_id = :producto_id
+                            AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                            AND (
+                                ubicacion IS NULL
+                                OR TRIM(ubicacion) = ''
+                                OR UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                            )
+                            AND COALESCE(existencia, 0) <= 0
+                            ORDER BY id ASC
+                            LIMIT 1";
 
-        $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
-        $stmtUpdateSin->execute([
-            ':sucursal' => $sucursal,
-            ':ubicacion' => $ubicacion,
-            ':cantidad' => $cantidad,
-            ':id' => $sinUbicacion['id']
+        $stmtSinUbicacion = $this->conn->prepare($sqlSinUbicacion);
+        $stmtSinUbicacion->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal
         ]);
 
-        return;
+        $sinUbicacion = $stmtSinUbicacion->fetch(PDO::FETCH_ASSOC);
+
+        if ($sinUbicacion && $ubicacion !== 'SIN UBICACION') {
+            $sqlUpdateSin = "UPDATE producto_existencias
+                             SET sucursal = :sucursal,
+                                 ubicacion = :ubicacion,
+                                 existencia = :cantidad,
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = :id";
+
+            $stmtUpdateSin = $this->conn->prepare($sqlUpdateSin);
+            $stmtUpdateSin->execute([
+                ':sucursal' => $sucursal,
+                ':ubicacion' => $ubicacion,
+                ':cantidad' => $cantidad,
+                ':id' => $sinUbicacion['id']
+            ]);
+
+            return;
+        }
+
+        $sqlInsert = "INSERT INTO producto_existencias (
+                        producto_id,
+                        sucursal,
+                        ubicacion,
+                        existencia
+                    ) VALUES (
+                        :producto_id,
+                        :sucursal,
+                        :ubicacion,
+                        :cantidad
+                    )";
+
+        $stmtInsert = $this->conn->prepare($sqlInsert);
+        $stmtInsert->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion,
+            ':cantidad' => $cantidad
+        ]); 
     }
-
-    /*
-    3. Si no existe nada reutilizable,
-       crea una fila nueva.
-    */
-    $sqlInsert = "INSERT INTO producto_existencias (
-                    producto_id,
-                    sucursal,
-                    ubicacion,
-                    existencia
-                ) VALUES (
-                    :producto_id,
-                    :sucursal,
-                    :ubicacion,
-                    :cantidad
-                )";
-
-    $stmtInsert = $this->conn->prepare($sqlInsert);
-    $stmtInsert->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal,
-        ':ubicacion' => $ubicacion,
-        ':cantidad' => $cantidad
-    ]); 
-}
 
     private function disminuirExistencia(
         int $productoId,
@@ -749,61 +737,63 @@ public function getProductosParaSalida(): array
     }
 
     public function getProductosCatalogo(): array
-{
-    $sql = "SELECT 
-                p.id,
-                p.codigo,
-                p.codigo_barras,
-                p.descripcion,
-                p.precio_compra,
-                p.precio_venta,
-                p.unidad_medida,
-                COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
-                0 AS existencia_actual,
-                0 AS existencia_bodega
-            FROM productos p
-            WHERE p.estado = 1
-            ORDER BY p.descripcion ASC";
+    {
+        $sql = "SELECT 
+                    p.id,
+                    p.codigo,
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.precio_compra,
+                    p.precio_venta,
+                    p.unidad_medida,
+                    COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                    0 AS existencia_actual,
+                    0 AS existencia_bodega
+                FROM productos p
+                WHERE p.estado = 1
+                ORDER BY p.descripcion ASC";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute();
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute();
 
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
     private function obtenerUbicacionesDisponiblesProducto(
-    int $productoId,
-    string $sucursal,
-    string $ubicacionPreferida = ''
-): array {
-    $ubicacionPreferida = $this->limpiarUbicacion($ubicacionPreferida);
+        int $productoId,
+        string $sucursal,
+        string $ubicacionPreferida = ''
+    ): array {
+        $ubicacionPreferida = $this->limpiarUbicacion($ubicacionPreferida);
 
-    $sql = "SELECT 
-                ubicacion,
-                existencia
-            FROM producto_existencias
-            WHERE producto_id = :producto_id
-            AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-            AND COALESCE(existencia, 0) > 0
-            AND ubicacion IS NOT NULL
-            AND TRIM(ubicacion) != ''
-            AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-            ORDER BY 
-                CASE 
-                    WHEN UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion_preferida) THEN 0
-                    ELSE 1
-                END,
-                existencia ASC,
-                ubicacion ASC";
+        $sql = "SELECT 
+                    ubicacion,
+                    existencia
+                FROM producto_existencias
+                WHERE producto_id = :producto_id
+                AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                AND COALESCE(existencia, 0) > 0
+                AND ubicacion IS NOT NULL
+                AND TRIM(ubicacion) != ''
+                AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                ORDER BY 
+                    CASE 
+                        WHEN UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion_preferida) THEN 0
+                        ELSE 1
+                    END,
+                    existencia ASC,
+                    ubicacion ASC";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal,
-        ':ubicacion_preferida' => $ubicacionPreferida
-    ]);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion_preferida' => $ubicacionPreferida
+        ]);
 
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
     public function crearMovimiento(array $data, array $detalle): array
     {
         try {
@@ -1182,664 +1172,698 @@ public function getProductosParaSalida(): array
         return $movimiento;
     }
 
-   public function obtenerSalidaPorId(int $movimientoId): ?array
-{
-    $sql = "SELECT 
-                m.id,
-                m.folio,
-                m.fecha,
-                m.tipo_movimiento,
-                m.almacen_id,
-                m.referencia,
-                m.tipo_operacion,
-                m.observaciones,
-                m.cancelado,
-                m.fecha_cancelacion,
-                m.motivo_cancelacion,
-                a.nombre AS almacen_nombre,
-                u.nombre AS usuario_nombre
-            FROM movimientos m
-            LEFT JOIN almacenes a ON m.almacen_id = a.id
-            INNER JOIN usuarios u ON m.usuario_id = u.id
-            WHERE m.id = :id
-            AND m.tipo_movimiento = 'SALIDA'
-            LIMIT 1";
+    public function obtenerSalidaPorId(int $movimientoId): ?array
+    {
+        $sql = "SELECT 
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.tipo_movimiento,
+                    m.almacen_id,
+                    m.referencia,
+                    m.tipo_operacion,
+                    m.observaciones,
+                    m.cancelado,
+                    m.fecha_cancelacion,
+                    m.motivo_cancelacion,
+                    a.nombre AS almacen_nombre,
+                    u.nombre AS usuario_nombre
+                FROM movimientos m
+                LEFT JOIN almacenes a ON m.almacen_id = a.id
+                INNER JOIN usuarios u ON m.usuario_id = u.id
+                WHERE m.id = :id
+                AND m.tipo_movimiento = 'SALIDA'
+                LIMIT 1";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([
-        ':id' => $movimientoId
-    ]);
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':id' => $movimientoId
+        ]);
 
-    $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$movimiento) {
-        return null;
+        if (!$movimiento) {
+            return null;
+        }
+
+        $sqlDetalle = "SELECT 
+                            md.producto_id,
+                            md.cantidad,
+                            md.costo_unitario,
+                            md.precio_unitario,
+                            md.ubicacion,
+                            p.codigo,
+                            p.descripcion,
+                            p.unidad_medida
+                       FROM movimiento_detalle md
+                       INNER JOIN productos p ON md.producto_id = p.id
+                       WHERE md.movimiento_id = :movimiento_id
+                       ORDER BY md.id ASC";
+
+        $stmtDetalle = $this->conn->prepare($sqlDetalle);
+        $stmtDetalle->execute([
+            ':movimiento_id' => $movimientoId
+        ]);
+
+        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+        return $movimiento;
     }
+    
+    public function historialSalidas(
+        string $buscar = '',
+        int $almacenId = 0,
+        string $fechaInicio = '',
+        string $fechaFinal = ''
+    ): array {
+        $sql = "SELECT
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.referencia,
+                    m.tipo_operacion,
+                    m.observaciones,
 
-    $sqlDetalle = "SELECT 
-                        md.producto_id,
-                        md.cantidad,
-                        md.costo_unitario,
-                        md.precio_unitario,
-                        md.ubicacion,
-                        p.codigo,
-                        p.descripcion,
-                        p.unidad_medida
-                   FROM movimiento_detalle md
-                   INNER JOIN productos p ON md.producto_id = p.id
-                   WHERE md.movimiento_id = :movimiento_id
-                   ORDER BY md.id ASC";
+                    m.cancelado,
+                    m.fecha_cancelacion,
+                    m.motivo_cancelacion,
 
-    $stmtDetalle = $this->conn->prepare($sqlDetalle);
-    $stmtDetalle->execute([
-        ':movimiento_id' => $movimientoId
-    ]);
+                    a.nombre AS almacen_nombre,
+                    u.nombre AS usuario_nombre,
 
-    $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+                    COUNT(md.id) AS total_productos,
+                    COALESCE(SUM(md.cantidad), 0) AS total_unidades,
+                    COALESCE(SUM(md.cantidad * md.precio_unitario), 0) AS total
 
-    return $movimiento;
-}
-   public function historialSalidas(
-    string $buscar = '',
-    int $almacenId = 0,
-    string $fechaInicio = '',
-    string $fechaFinal = ''
-): array {
-    $sql = "SELECT
-                m.id,
-                m.folio,
-                m.fecha,
-                m.referencia,
-                m.tipo_operacion,
-                m.observaciones,
+                FROM movimientos m
 
-                m.cancelado,
-                m.fecha_cancelacion,
-                m.motivo_cancelacion,
+                LEFT JOIN almacenes a
+                    ON m.almacen_id = a.id
 
-                a.nombre AS almacen_nombre,
-                u.nombre AS usuario_nombre,
+                INNER JOIN usuarios u
+                    ON m.usuario_id = u.id
 
-                COUNT(md.id) AS total_productos,
-                COALESCE(SUM(md.cantidad), 0) AS total_unidades,
-                COALESCE(SUM(md.cantidad * md.precio_unitario), 0) AS total
+                LEFT JOIN movimiento_detalle md
+                    ON m.id = md.movimiento_id
 
-            FROM movimientos m
+                WHERE m.tipo_movimiento = 'SALIDA'";
 
-            LEFT JOIN almacenes a
-                ON m.almacen_id = a.id
+        $params = [];
 
-            INNER JOIN usuarios u
-                ON m.usuario_id = u.id
-
-            LEFT JOIN movimiento_detalle md
-                ON m.id = md.movimiento_id
-
-            WHERE m.tipo_movimiento = 'SALIDA'";
-
-    $params = [];
-
-    if ($buscar !== '') {
-        $sql .= " AND (
-                    m.folio LIKE :buscar
-                    OR m.referencia LIKE :buscar
-                    OR m.tipo_operacion LIKE :buscar
-                    OR a.nombre LIKE :buscar
-                    OR u.nombre LIKE :buscar
-                    OR EXISTS (
-                        SELECT 1
-                        FROM movimiento_detalle md2
-                        INNER JOIN productos p2
-                            ON md2.producto_id = p2.id
-                        WHERE md2.movimiento_id = m.id
-                        AND (
-                            p2.codigo LIKE :buscar
-                            OR p2.codigo_barras LIKE :buscar
-                            OR p2.descripcion LIKE :buscar
+        if ($buscar !== '') {
+            $sql .= " AND (
+                        m.folio LIKE :buscar
+                        OR m.referencia LIKE :buscar
+                        OR m.tipo_operacion LIKE :buscar
+                        OR a.nombre LIKE :buscar
+                        OR u.nombre LIKE :buscar
+                        OR EXISTS (
+                            SELECT 1
+                            FROM movimiento_detalle md2
+                            INNER JOIN productos p2
+                                ON md2.producto_id = p2.id
+                            WHERE md2.movimiento_id = m.id
+                            AND (
+                                p2.codigo LIKE :buscar
+                                OR p2.codigo_barras LIKE :buscar
+                                OR p2.descripcion LIKE :buscar
+                            )
                         )
-                    )
-                )";
+                    )";
 
-        $params[':buscar'] = '%' . $buscar . '%';
+            $params[':buscar'] = '%' . $buscar . '%';
+        }
+
+        if ($almacenId > 0) {
+            $sql .= " AND m.almacen_id = :almacen_id";
+            $params[':almacen_id'] = $almacenId;
+        }
+
+        if ($fechaInicio !== '') {
+            $sql .= " AND m.fecha >= :fecha_inicio";
+            $params[':fecha_inicio'] = $fechaInicio . ' 00:00:00';
+        }
+
+        if ($fechaFinal !== '') {
+            $sql .= " AND m.fecha <= :fecha_final";
+            $params[':fecha_final'] = $fechaFinal . ' 23:59:59';
+        }
+
+        $sql .= " GROUP BY
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.referencia,
+                    m.tipo_operacion,
+                    m.observaciones,
+
+                    m.cancelado,
+                    m.fecha_cancelacion,
+                    m.motivo_cancelacion,
+
+                    a.nombre,
+                    u.nombre
+
+                  ORDER BY m.id DESC";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
-    if ($almacenId > 0) {
-        $sql .= " AND m.almacen_id = :almacen_id";
-        $params[':almacen_id'] = $almacenId;
-    }
-
-    if ($fechaInicio !== '') {
-        $sql .= " AND m.fecha >= :fecha_inicio";
-        $params[':fecha_inicio'] = $fechaInicio . ' 00:00:00';
-    }
-
-    if ($fechaFinal !== '') {
-        $sql .= " AND m.fecha <= :fecha_final";
-        $params[':fecha_final'] = $fechaFinal . ' 23:59:59';
-    }
-
-    $sql .= " GROUP BY
-                m.id,
-                m.folio,
-                m.fecha,
-                m.referencia,
-                m.tipo_operacion,
-                m.observaciones,
-
-                m.cancelado,
-                m.fecha_cancelacion,
-                m.motivo_cancelacion,
-
-                a.nombre,
-                u.nombre
-
-              ORDER BY m.id DESC";
-
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute($params);
-
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+    
     public function historialEntradas(
-    string $buscar = '',
-    int $almacenId = 0,
-    string $fechaInicio = '',
-    string $fechaFinal = ''
-): array {
-    $sql = "SELECT
-                m.id,
-                m.folio,
-                m.fecha,
-                m.referencia,
-                m.observaciones,
+        string $buscar = '',
+        int $almacenId = 0,
+        string $fechaInicio = '',
+        string $fechaFinal = ''
+    ): array {
+        $sql = "SELECT
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.referencia,
+                    m.observaciones,
 
-                m.cancelado,
-                m.fecha_cancelacion,
-                m.motivo_cancelacion,
+                    m.cancelado,
+                    m.fecha_cancelacion,
+                    m.motivo_cancelacion,
 
-                a.nombre AS almacen_nombre,
-                pr.nombre AS proveedor_nombre,
-                u.nombre AS usuario_nombre,
+                    a.nombre AS almacen_nombre,
+                    pr.nombre AS proveedor_nombre,
+                    u.nombre AS usuario_nombre,
 
-                COUNT(md.id) AS total_productos,
-                COALESCE(SUM(md.cantidad), 0) AS total_unidades,
-                COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
+                    COUNT(md.id) AS total_productos,
+                    COALESCE(SUM(md.cantidad), 0) AS total_unidades,
+                    COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
 
-            FROM movimientos m
+                FROM movimientos m
 
-            LEFT JOIN almacenes a
-                ON m.almacen_id = a.id
+                LEFT JOIN almacenes a
+                    ON m.almacen_id = a.id
 
-            LEFT JOIN proveedores pr
-                ON m.proveedor_id = pr.id
+                LEFT JOIN proveedores pr
+                    ON m.proveedor_id = pr.id
 
-            INNER JOIN usuarios u
-                ON m.usuario_id = u.id
+                INNER JOIN usuarios u
+                    ON m.usuario_id = u.id
 
-            LEFT JOIN movimiento_detalle md
-                ON m.id = md.movimiento_id
+                LEFT JOIN movimiento_detalle md
+                    ON m.id = md.movimiento_id
 
-            WHERE m.tipo_movimiento = 'ENTRADA'";
+                WHERE m.tipo_movimiento = 'ENTRADA'";
 
-    $params = [];
+        $params = [];
 
-    if ($buscar !== '') {
-        $sql .= " AND (
-                    m.folio LIKE :buscar
-                    OR m.referencia LIKE :buscar
-                    OR m.observaciones LIKE :buscar
-                    OR a.nombre LIKE :buscar
-                    OR pr.nombre LIKE :buscar
-                    OR u.nombre LIKE :buscar
-                    OR EXISTS (
-                        SELECT 1
-                        FROM movimiento_detalle md2
-                        INNER JOIN productos p2
-                            ON md2.producto_id = p2.id
-                        WHERE md2.movimiento_id = m.id
-                        AND (
-                            p2.codigo LIKE :buscar
-                            OR p2.codigo_barras LIKE :buscar
-                            OR p2.descripcion LIKE :buscar
+        if ($buscar !== '') {
+            $sql .= " AND (
+                        m.folio LIKE :buscar
+                        OR m.referencia LIKE :buscar
+                        OR m.observaciones LIKE :buscar
+                        OR a.nombre LIKE :buscar
+                        OR pr.nombre LIKE :buscar
+                        OR u.nombre LIKE :buscar
+                        OR EXISTS (
+                            SELECT 1
+                            FROM movimiento_detalle md2
+                            INNER JOIN productos p2
+                                ON md2.producto_id = p2.id
+                            WHERE md2.movimiento_id = m.id
+                            AND (
+                                p2.codigo LIKE :buscar
+                                OR p2.codigo_barras LIKE :buscar
+                                OR p2.descripcion LIKE :buscar
+                            )
                         )
-                    )
-                )";
+                    )";
 
-        $params[':buscar'] = '%' . $buscar . '%';
+            $params[':buscar'] = '%' . $buscar . '%';
+        }
+
+        if ($almacenId > 0) {
+            $sql .= " AND m.almacen_id = :almacen_id";
+            $params[':almacen_id'] = $almacenId;
+        }
+
+        if ($fechaInicio !== '') {
+            $sql .= " AND DATE(m.fecha) >= :fecha_inicio";
+            $params[':fecha_inicio'] = $fechaInicio;
+        }
+
+        if ($fechaFinal !== '') {
+            $sql .= " AND DATE(m.fecha) <= :fecha_final";
+            $params[':fecha_final'] = $fechaFinal;
+        }
+
+        $sql .= " GROUP BY
+                    m.id,
+                    m.folio,
+                    m.fecha,
+                    m.referencia,
+                    m.observaciones,
+
+                    m.cancelado,
+                    m.fecha_cancelacion,
+                    m.motivo_cancelacion,
+
+                    a.nombre,
+                    pr.nombre,
+                    u.nombre
+
+                  ORDER BY m.id DESC";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
-    if ($almacenId > 0) {
-        $sql .= " AND m.almacen_id = :almacen_id";
-        $params[':almacen_id'] = $almacenId;
-    }
-
-    if ($fechaInicio !== '') {
-        $sql .= " AND DATE(m.fecha) >= :fecha_inicio";
-        $params[':fecha_inicio'] = $fechaInicio;
-    }
-
-    if ($fechaFinal !== '') {
-        $sql .= " AND DATE(m.fecha) <= :fecha_final";
-        $params[':fecha_final'] = $fechaFinal;
-    }
-
-    $sql .= " GROUP BY
-                m.id,
-                m.folio,
-                m.fecha,
-                m.referencia,
-                m.observaciones,
-
-                m.cancelado,
-                m.fecha_cancelacion,
-                m.motivo_cancelacion,
-
-                a.nombre,
-                pr.nombre,
-                u.nombre
-
-              ORDER BY m.id DESC";
-
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute($params);
-
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
 
     private function obtenerExistenciaUbicacion(int $productoId, string $sucursal, string $ubicacion): int
-{
-    $ubicacion = $this->limpiarUbicacion($ubicacion);
+    {
+        $ubicacion = $this->limpiarUbicacion($ubicacion);
 
-    $sql = "SELECT COALESCE(existencia, 0)
-            FROM producto_existencias
-            WHERE producto_id = :producto_id
-            AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-            AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
-            LIMIT 1";
+        $sql = "SELECT COALESCE(existencia, 0)
+                FROM producto_existencias
+                WHERE producto_id = :producto_id
+                AND UPPER(TRIM(sucursal)) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci = UPPER(:ubicacion)
+                LIMIT 1";
 
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([
-        ':producto_id' => $productoId,
-        ':sucursal' => $sucursal,
-        ':ubicacion' => $ubicacion
-    ]);
-
-    return (int)$stmt->fetchColumn();
-}
-
-public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo = ''): array
-{
-    try {
-        $this->conn->beginTransaction();
-
-        $sqlMov = "SELECT id, almacen_id, cancelado
-                   FROM movimientos
-                   WHERE id = :id
-                   AND tipo_movimiento = 'SALIDA'
-                   LIMIT 1";
-
-        $stmtMov = $this->conn->prepare($sqlMov);
-        $stmtMov->execute([':id' => $movimientoId]);
-        $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
-
-        if (!$movimiento) {
-            throw new Exception('La salida no existe.');
-        }
-
-        if ((int)$movimiento['cancelado'] === 1) {
-            throw new Exception('Esta salida ya fue cancelada.');
-        }
-
-        $sucursal = $this->obtenerSucursalPorAlmacenId((int)$movimiento['almacen_id']);
-
-        $sqlDetalle = "SELECT producto_id, cantidad, ubicacion
-                       FROM movimiento_detalle
-                       WHERE movimiento_id = :movimiento_id";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([':movimiento_id' => $movimientoId]);
-        $detalles = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($detalles as $detalle) {
-            $productoId = (int)$detalle['producto_id'];
-            $cantidad = (int)$detalle['cantidad'];
-            $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
-
-            $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
-            $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacion);
-        }
-
-        $sqlCancelar = "UPDATE movimientos
-                        SET cancelado = 1,
-                            fecha_cancelacion = NOW(),
-                            usuario_cancelacion_id = :usuario_id,
-                            motivo_cancelacion = :motivo
-                        WHERE id = :id";
-
-        $stmtCancelar = $this->conn->prepare($sqlCancelar);
-        $stmtCancelar->execute([
-            ':usuario_id' => $usuarioId,
-            ':motivo' => $motivo,
-            ':id' => $movimientoId
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId,
+            ':sucursal' => $sucursal,
+            ':ubicacion' => $ubicacion
         ]);
 
-        $this->conn->commit();
-
-        return [
-            'success' => true,
-            'message' => 'Salida cancelada correctamente. El stock fue regresado a sus ubicaciones.'
-        ];
-
-    } catch (Throwable $e) {
-        if ($this->conn->inTransaction()) {
-            $this->conn->rollBack();
-        }
-
-        return [
-            'success' => false,
-            'message' => $e->getMessage()
-        ];
+        return (int)$stmt->fetchColumn();
     }
-}
 
-public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motivo = ''): array
-{
-    try {
-        $this->conn->beginTransaction();
+    public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo = ''): array
+    {
+        try {
+            $this->conn->beginTransaction();
 
-        $sqlMov = "SELECT id, almacen_id, cancelado
-                   FROM movimientos
-                   WHERE id = :id
-                   AND tipo_movimiento = 'ENTRADA'
-                   LIMIT 1";
+            $sqlMov = "SELECT id, almacen_id, cancelado
+                       FROM movimientos
+                       WHERE id = :id
+                       AND tipo_movimiento = 'SALIDA'
+                       LIMIT 1";
 
-        $stmtMov = $this->conn->prepare($sqlMov);
-        $stmtMov->execute([':id' => $movimientoId]);
-        $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
+            $stmtMov = $this->conn->prepare($sqlMov);
+            $stmtMov->execute([':id' => $movimientoId]);
+            $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
 
-        if (!$movimiento) {
-            throw new Exception('La entrada no existe.');
+            if (!$movimiento) {
+                throw new Exception('La salida no existe.');
+            }
+
+            if ((int)$movimiento['cancelado'] === 1) {
+                throw new Exception('Esta salida ya fue cancelada.');
+            }
+
+            $sucursal = $this->obtenerSucursalPorAlmacenId((int)$movimiento['almacen_id']);
+
+            $sqlDetalle = "SELECT producto_id, cantidad, ubicacion
+                           FROM movimiento_detalle
+                           WHERE movimiento_id = :movimiento_id";
+
+            $stmtDetalle = $this->conn->prepare($sqlDetalle);
+            $stmtDetalle->execute([':movimiento_id' => $movimientoId]);
+            $detalles = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($detalles as $detalle) {
+                $productoId = (int)$detalle['producto_id'];
+                $cantidad = (int)$detalle['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+
+                $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+                $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacion);
+            }
+
+            $sqlCancelar = "UPDATE movimientos
+                            SET cancelado = 1,
+                                fecha_cancelacion = NOW(),
+                                usuario_cancelacion_id = :usuario_id,
+                                motivo_cancelacion = :motivo
+                            WHERE id = :id";
+
+            $stmtCancelar = $this->conn->prepare($sqlCancelar);
+            $stmtCancelar->execute([
+                ':usuario_id' => $usuarioId,
+                ':motivo' => $motivo,
+                ':id' => $movimientoId
+            ]);
+
+            $this->conn->commit();
+
+            return [
+                'success' => true,
+                'message' => 'Salida cancelada correctamente. El stock fue regresado a sus ubicaciones.'
+            ];
+
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
         }
+    }
 
-        if ((int)$movimiento['cancelado'] === 1) {
-            throw new Exception('Esta entrada ya fue cancelada.');
+    public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motivo = ''): array
+    {
+        try {
+            $this->conn->beginTransaction();
+
+            $sqlMov = "SELECT id, almacen_id, cancelado
+                       FROM movimientos
+                       WHERE id = :id
+                       AND tipo_movimiento = 'ENTRADA'
+                       LIMIT 1";
+
+            $stmtMov = $this->conn->prepare($sqlMov);
+            $stmtMov->execute([':id' => $movimientoId]);
+            $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
+
+            if (!$movimiento) {
+                throw new Exception('La entrada no existe.');
+            }
+
+            if ((int)$movimiento['cancelado'] === 1) {
+                throw new Exception('Esta entrada ya fue cancelada.');
+            }
+
+            $sucursal = $this->obtenerSucursalPorAlmacenId((int)$movimiento['almacen_id']);
+
+            $sqlDetalle = "SELECT producto_id, lote_id, cantidad, ubicacion
+                           FROM movimiento_detalle
+                           WHERE movimiento_id = :movimiento_id";
+
+            $stmtDetalle = $this->conn->prepare($sqlDetalle);
+            $stmtDetalle->execute([':movimiento_id' => $movimientoId]);
+            $detalles = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($detalles as $detalle) {
+                $productoId = (int)$detalle['producto_id'];
+                $cantidad = (int)$detalle['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+
+                $existenciaActual = $this->obtenerExistenciaUbicacion($productoId, $sucursal, $ubicacion);
+
+                if ($existenciaActual < $cantidad) {
+                    throw new Exception(
+                        'No se puede cancelar la entrada porque ya se usó parte del stock en la ubicación: ' . $ubicacion
+                    );
+                }
+            }
+
+            foreach ($detalles as $detalle) {
+                $productoId = (int)$detalle['producto_id'];
+                $loteId = (int)($detalle['lote_id'] ?? 0);
+                $cantidad = (int)$detalle['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+
+                $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+                $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacion);
+                $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
+
+                if ($loteId > 0) {
+                    $sqlLote = "UPDATE lotes
+                                SET existencia = GREATEST(existencia - :cantidad, 0)
+                                WHERE id = :lote_id";
+
+                    $stmtLote = $this->conn->prepare($sqlLote);
+                    $stmtLote->execute([
+                        ':cantidad' => $cantidad,
+                        ':lote_id' => $loteId
+                    ]);
+                }
+            }
+
+            $sqlCancelar = "UPDATE movimientos
+                            SET cancelado = 1,
+                                fecha_cancelacion = NOW(),
+                                usuario_cancelacion_id = :usuario_id,
+                                motivo_cancelacion = :motivo
+                            WHERE id = :id";
+
+            $stmtCancelar = $this->conn->prepare($sqlCancelar);
+            $stmtCancelar->execute([
+                ':usuario_id' => $usuarioId,
+                ':motivo' => $motivo,
+                ':id' => $movimientoId
+            ]);
+
+            $this->conn->commit();
+
+            return [
+                'success' => true,
+                'message' => 'Entrada cancelada correctamente. El stock fue descontado.'
+            ];
+
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
         }
+    }
 
-        $sucursal = $this->obtenerSucursalPorAlmacenId((int)$movimiento['almacen_id']);
+    public function editarSalida(int $movimientoId, array $data, array $detalle, int $usuarioId): array
+    {
+        try {
+            $this->conn->beginTransaction();
 
-        $sqlDetalle = "SELECT producto_id, lote_id, cantidad, ubicacion
-                       FROM movimiento_detalle
-                       WHERE movimiento_id = :movimiento_id";
+            $sqlMov = "SELECT id, folio, almacen_id, cancelado
+                       FROM movimientos
+                       WHERE id = :id
+                       AND tipo_movimiento = 'SALIDA'
+                       LIMIT 1
+                       FOR UPDATE";
 
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([':movimiento_id' => $movimientoId]);
-        $detalles = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+            $stmtMov = $this->conn->prepare($sqlMov);
+            $stmtMov->execute([':id' => $movimientoId]);
+            $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
 
-        foreach ($detalles as $detalle) {
-            $productoId = (int)$detalle['producto_id'];
-            $cantidad = (int)$detalle['cantidad'];
-            $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+            if (!$movimiento) {
+                throw new Exception('La salida no existe.');
+            }
 
-            $existenciaActual = $this->obtenerExistenciaUbicacion($productoId, $sucursal, $ubicacion);
+            if ((int)$movimiento['cancelado'] === 1) {
+                throw new Exception('No puedes editar una salida cancelada.');
+            }
 
-            if ($existenciaActual < $cantidad) {
-                throw new Exception(
-                    'No se puede cancelar la entrada porque ya se usó parte del stock en la ubicación: ' . $ubicacion
+            $almacenId = (int)$movimiento['almacen_id'];
+            $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
+
+            if ($sucursal === '') {
+                throw new Exception('No se pudo identificar la sucursal.');
+            }
+
+            $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion
+                                   FROM movimiento_detalle
+                                   WHERE movimiento_id = :movimiento_id";
+
+            $stmtDetalleOriginal = $this->conn->prepare($sqlDetalleOriginal);
+            $stmtDetalleOriginal->execute([':movimiento_id' => $movimientoId]);
+            $detallesOriginales = $stmtDetalleOriginal->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($detallesOriginales as $item) {
+                $productoId = (int)$item['producto_id'];
+                $cantidad = (int)$item['cantidad'];
+                $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+                $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+                $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacion);
+            }
+
+            $sqlDeleteDetalle = "DELETE FROM movimiento_detalle
+                                 WHERE movimiento_id = :movimiento_id";
+
+            $stmtDeleteDetalle = $this->conn->prepare($sqlDeleteDetalle);
+            $stmtDeleteDetalle->execute([':movimiento_id' => $movimientoId]);
+
+            $sqlUpdateMov = "UPDATE movimientos
+                             SET fecha = :fecha,
+                                 almacen_id = :almacen_id,
+                                 usuario_id = :usuario_id,
+                                 referencia = :referencia,
+                                 tipo_operacion = :tipo_operacion,
+                                 observaciones = :observaciones
+                             WHERE id = :id";
+
+            $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);
+            $stmtUpdateMov->execute([
+                ':fecha' => $data['fecha'],
+                ':almacen_id' => $almacenId,
+                ':usuario_id' => $usuarioId,
+                ':referencia' => $data['referencia'] ?: null,
+                ':tipo_operacion' => $data['tipo_operacion'] ?: null,
+                ':observaciones' => $data['observaciones'] ?: null,
+                ':id' => $movimientoId
+            ]);
+
+            $sqlProducto = "SELECT id, descripcion, precio_compra, precio_venta, ubicacion
+                            FROM productos
+                            WHERE id = :id
+                            AND estado = 1
+                            LIMIT 1";
+
+            $stmtProducto = $this->conn->prepare($sqlProducto);
+
+            $sqlDetalle = "INSERT INTO movimiento_detalle (
+                                movimiento_id, producto_id, lote_id, cantidad,
+                                costo_unitario, precio_unitario, ubicacion
+                           ) VALUES (
+                                :movimiento_id, :producto_id, NULL, :cantidad,
+                                :costo_unitario, :precio_unitario, :ubicacion
+                           )";
+
+            $stmtDetalle = $this->conn->prepare($sqlDetalle);
+
+            foreach ($detalle as $item) {
+                $productoId = (int)$item['producto_id'];
+                $cantidadSolicitada = (int)$item['cantidad'];
+                $ubicacionPreferida = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+                $stmtProducto->execute([':id' => $productoId]);
+                $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC);
+
+                if (!$producto) {
+                    throw new Exception('Producto no encontrado.');
+                }
+
+                if ($ubicacionPreferida === 'SIN UBICACION') {
+                    throw new Exception('Debes seleccionar una ubicación válida para: ' . $producto['descripcion']);
+                }
+
+                if ($cantidadSolicitada <= 0) {
+                    throw new Exception('La cantidad debe ser mayor a 0.');
+                }
+
+                $ubicacionesDisponibles = $this->obtenerUbicacionesDisponiblesProducto(
+                    $productoId,
+                    $sucursal,
+                    $ubicacionPreferida
                 );
+
+                $existenciaTotal = 0;
+
+                foreach ($ubicacionesDisponibles as $ubi) {
+                    $existenciaTotal += (int)$ubi['existencia'];
+                }
+
+                if ($existenciaTotal < $cantidadSolicitada) {
+                    throw new Exception(
+                        'Stock insuficiente para ' . $producto['descripcion'] .
+                        '. Solicitado: ' . $cantidadSolicitada .
+                        '. Disponible: ' . $existenciaTotal
+                    );
+                }
+
+                $cantidadPendiente = $cantidadSolicitada;
+
+                foreach ($ubicacionesDisponibles as $ubi) {
+                    if ($cantidadPendiente <= 0) {
+                        break;
+                    }
+
+                    $ubicacionActual = $this->limpiarUbicacion($ubi['ubicacion'] ?? '');
+                    $existenciaUbicacion = (int)$ubi['existencia'];
+
+                    if ($existenciaUbicacion <= 0) {
+                        continue;
+                    }
+
+                    $cantidadADescontar = min($cantidadPendiente, $existenciaUbicacion);
+
+                    $stmtDetalle->execute([
+                        ':movimiento_id' => $movimientoId,
+                        ':producto_id' => $productoId,
+                        ':cantidad' => $cantidadADescontar,
+                        ':costo_unitario' => $item['costo_unitario'],
+                        ':precio_unitario' => $item['precio_unitario'],
+                        ':ubicacion' => $ubicacionActual
+                    ]);
+
+                    $this->disminuirExistencia($productoId, $sucursal, $cantidadADescontar, $ubicacionActual);
+                    $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacionActual);
+                    $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
+
+                    $cantidadPendiente -= $cantidadADescontar;
+                }
             }
-        }
 
-        foreach ($detalles as $detalle) {
-            $productoId = (int)$detalle['producto_id'];
-            $loteId = (int)($detalle['lote_id'] ?? 0);
-            $cantidad = (int)$detalle['cantidad'];
-            $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+            $this->conn->commit();
 
-            $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
-            $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacion);
-            $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
+            return [
+                'success' => true,
+                'message' => 'Salida actualizada correctamente.',
+                'movimiento_id' => $movimientoId,
+                'folio' => $movimiento['folio']
+            ];
 
-            if ($loteId > 0) {
-                $sqlLote = "UPDATE lotes
-                            SET existencia = GREATEST(existencia - :cantidad, 0)
-                            WHERE id = :lote_id";
-
-                $stmtLote = $this->conn->prepare($sqlLote);
-                $stmtLote->execute([
-                    ':cantidad' => $cantidad,
-                    ':lote_id' => $loteId
-                ]);
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
             }
+
+            return [
+                'success' => false,
+                'message' => 'Error al editar la salida: ' . $e->getMessage()
+            ];
         }
-
-        $sqlCancelar = "UPDATE movimientos
-                        SET cancelado = 1,
-                            fecha_cancelacion = NOW(),
-                            usuario_cancelacion_id = :usuario_id,
-                            motivo_cancelacion = :motivo
-                        WHERE id = :id";
-
-        $stmtCancelar = $this->conn->prepare($sqlCancelar);
-        $stmtCancelar->execute([
-            ':usuario_id' => $usuarioId,
-            ':motivo' => $motivo,
-            ':id' => $movimientoId
-        ]);
-
-        $this->conn->commit();
-
-        return [
-            'success' => true,
-            'message' => 'Entrada cancelada correctamente. El stock fue descontado.'
-        ];
-
-    } catch (Throwable $e) {
-        if ($this->conn->inTransaction()) {
-            $this->conn->rollBack();
-        }
-
-        return [
-            'success' => false,
-            'message' => $e->getMessage()
-        ];
     }
-}
 
-public function editarSalida(int $movimientoId, array $data, array $detalle, int $usuarioId): array
-{
-    try {
-        $this->conn->beginTransaction();
+    /**
+     * Obtiene todas las ubicaciones únicas para una sucursal/almacén
+     * @param int|null $almacenId ID del almacén (opcional)
+     * @return array Lista de ubicaciones
+     */
+    public function getTodasUbicacionesPorSucursal(?int $almacenId = null): array
+    {
+        $sesion = $this->obtenerAlmacenSesion();
 
-        $sqlMov = "SELECT id, folio, almacen_id, cancelado
-                   FROM movimientos
-                   WHERE id = :id
-                   AND tipo_movimiento = 'SALIDA'
-                   LIMIT 1
-                   FOR UPDATE";
+        // Usar el almacén proporcionado o el de la sesión
+        $almacenId = $almacenId !== null && $almacenId > 0
+            ? (int)$almacenId
+            : (int)$sesion['almacen_id'];
 
-        $stmtMov = $this->conn->prepare($sqlMov);
-        $stmtMov->execute([':id' => $movimientoId]);
-        $movimiento = $stmtMov->fetch(PDO::FETCH_ASSOC);
-
-        if (!$movimiento) {
-            throw new Exception('La salida no existe.');
-        }
-
-        if ((int)$movimiento['cancelado'] === 1) {
-            throw new Exception('No puedes editar una salida cancelada.');
-        }
-
-        $almacenId = (int)$movimiento['almacen_id'];
         $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
 
         if ($sucursal === '') {
-            throw new Exception('No se pudo identificar la sucursal.');
+            return [];
         }
 
-        /*
-         * 1. REGRESAR STOCK DE LA SALIDA ORIGINAL
-         */
-        $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion
-                               FROM movimiento_detalle
-                               WHERE movimiento_id = :movimiento_id";
+        $sql = "SELECT DISTINCT 
+                    UPPER(TRIM(ubicacion)) AS ubicacion
+                FROM producto_existencias
+                WHERE UPPER(TRIM(COALESCE(sucursal, ''))) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+                AND ubicacion IS NOT NULL
+                AND TRIM(ubicacion) != ''
+                AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+                ORDER BY ubicacion ASC";
 
-        $stmtDetalleOriginal = $this->conn->prepare($sqlDetalleOriginal);
-        $stmtDetalleOriginal->execute([':movimiento_id' => $movimientoId]);
-        $detallesOriginales = $stmtDetalleOriginal->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($detallesOriginales as $item) {
-            $productoId = (int)$item['producto_id'];
-            $cantidad = (int)$item['cantidad'];
-            $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
-
-            $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
-            $this->actualizarUbicacionPrincipalProducto($productoId, $ubicacion);
-        }
-
-        /*
-         * 2. BORRAR DETALLE ANTERIOR
-         */
-        $sqlDeleteDetalle = "DELETE FROM movimiento_detalle
-                             WHERE movimiento_id = :movimiento_id";
-
-        $stmtDeleteDetalle = $this->conn->prepare($sqlDeleteDetalle);
-        $stmtDeleteDetalle->execute([':movimiento_id' => $movimientoId]);
-
-        /*
-         * 3. ACTUALIZAR ENCABEZADO CONSERVANDO EL MISMO FOLIO
-         */
-        $sqlUpdateMov = "UPDATE movimientos
-                         SET fecha = :fecha,
-                             almacen_id = :almacen_id,
-                             usuario_id = :usuario_id,
-                             referencia = :referencia,
-                             tipo_operacion = :tipo_operacion,
-                             observaciones = :observaciones
-                         WHERE id = :id";
-
-        $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);
-        $stmtUpdateMov->execute([
-            ':fecha' => $data['fecha'],
-            ':almacen_id' => $almacenId,
-            ':usuario_id' => $usuarioId,
-            ':referencia' => $data['referencia'] ?: null,
-            ':tipo_operacion' => $data['tipo_operacion'] ?: null,
-            ':observaciones' => $data['observaciones'] ?: null,
-            ':id' => $movimientoId
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':sucursal' => $sucursal
         ]);
 
-        /*
-         * 4. VOLVER A HACER LA SALIDA CON EL NUEVO DETALLE
-         */
-        $sqlProducto = "SELECT id, descripcion, precio_compra, precio_venta, ubicacion
-                        FROM productos
-                        WHERE id = :id
-                        AND estado = 1
-                        LIMIT 1";
-
-        $stmtProducto = $this->conn->prepare($sqlProducto);
-
-        $sqlDetalle = "INSERT INTO movimiento_detalle (
-                            movimiento_id, producto_id, lote_id, cantidad,
-                            costo_unitario, precio_unitario, ubicacion
-                       ) VALUES (
-                            :movimiento_id, :producto_id, NULL, :cantidad,
-                            :costo_unitario, :precio_unitario, :ubicacion
-                       )";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-
-        foreach ($detalle as $item) {
-            $productoId = (int)$item['producto_id'];
-            $cantidadSolicitada = (int)$item['cantidad'];
-            $ubicacionPreferida = $this->limpiarUbicacion($item['ubicacion'] ?? '');
-
-            $stmtProducto->execute([':id' => $productoId]);
-            $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC);
-
-            if (!$producto) {
-                throw new Exception('Producto no encontrado.');
-            }
-
-            if ($ubicacionPreferida === 'SIN UBICACION') {
-                throw new Exception('Debes seleccionar una ubicación válida para: ' . $producto['descripcion']);
-            }
-
-            if ($cantidadSolicitada <= 0) {
-                throw new Exception('La cantidad debe ser mayor a 0.');
-            }
-
-            $ubicacionesDisponibles = $this->obtenerUbicacionesDisponiblesProducto(
-                $productoId,
-                $sucursal,
-                $ubicacionPreferida
-            );
-
-            $existenciaTotal = 0;
-
-            foreach ($ubicacionesDisponibles as $ubi) {
-                $existenciaTotal += (int)$ubi['existencia'];
-            }
-
-            if ($existenciaTotal < $cantidadSolicitada) {
-                throw new Exception(
-                    'Stock insuficiente para ' . $producto['descripcion'] .
-                    '. Solicitado: ' . $cantidadSolicitada .
-                    '. Disponible: ' . $existenciaTotal
-                );
-            }
-
-            $cantidadPendiente = $cantidadSolicitada;
-
-            foreach ($ubicacionesDisponibles as $ubi) {
-                if ($cantidadPendiente <= 0) {
-                    break;
-                }
-
-                $ubicacionActual = $this->limpiarUbicacion($ubi['ubicacion'] ?? '');
-                $existenciaUbicacion = (int)$ubi['existencia'];
-
-                if ($existenciaUbicacion <= 0) {
-                    continue;
-                }
-
-                $cantidadADescontar = min($cantidadPendiente, $existenciaUbicacion);
-
-                $stmtDetalle->execute([
-                    ':movimiento_id' => $movimientoId,
-                    ':producto_id' => $productoId,
-                    ':cantidad' => $cantidadADescontar,
-                    ':costo_unitario' => $item['costo_unitario'],
-                    ':precio_unitario' => $item['precio_unitario'],
-                    ':ubicacion' => $ubicacionActual
-                ]);
-
-                $this->disminuirExistencia($productoId, $sucursal, $cantidadADescontar, $ubicacionActual);
-                $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacionActual);
-                $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
-
-                $cantidadPendiente -= $cantidadADescontar;
-            }
+        $resultados = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        // Si no hay ubicaciones, devolver un array con una por defecto
+        if (empty($resultados)) {
+            return ['ALMACEN_PRINCIPAL'];
         }
-
-        $this->conn->commit();
-
-        return [
-            'success' => true,
-            'message' => 'Salida actualizada correctamente.',
-            'movimiento_id' => $movimientoId,
-            'folio' => $movimiento['folio']
-        ];
-
-    } catch (Throwable $e) {
-        if ($this->conn->inTransaction()) {
-            $this->conn->rollBack();
-        }
-
-        return [
-            'success' => false,
-            'message' => 'Error al editar la salida: ' . $e->getMessage()
-        ];
+        
+        return $resultados;
     }
-}
 }

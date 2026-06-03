@@ -83,7 +83,7 @@ $documentoData = array_map(
 
 ?>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="assets/js/chart.umd.min.js"></script>
 
 <div class="power-dashboard">
 

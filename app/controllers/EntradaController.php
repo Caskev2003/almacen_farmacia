@@ -216,8 +216,19 @@ class EntradaController
             'usuario_id' => $usuarioId,
         ], $detalle);
     }
+
     public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motivo = ''): array
-{
-    return $this->movimientoModel->cancelarEntrada($movimientoId, $usuarioId, $motivo);
-}
+    {
+        return $this->movimientoModel->cancelarEntrada($movimientoId, $usuarioId, $motivo);
+    }
+
+    /**
+     * Obtiene todas las ubicaciones únicas del sistema
+     * @param int|null $almacenId ID del almacén (opcional)
+     * @return array Lista de ubicaciones únicas
+     */
+    public function ubicacionesTodas(?int $almacenId = null): array
+    {
+        return $this->movimientoModel->getTodasUbicacionesPorSucursal($almacenId);
+    }
 }

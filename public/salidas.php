@@ -1153,9 +1153,9 @@ function generarTodasLasUbicaciones() {
         for (let z = 1; z <= 22; z++) add(6, n, z);
     }
     
-    ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1');
-    ubicaciones.push('BODEGA PEDYALITE', 'ALMACEN_PRINCIPAL', 'ESTANTE_A1', 'ESTANTE_A2');
-    ubicaciones.push('ESTANTE_B1', 'ESTANTE_B2', 'CONGELADOR', 'REFRIGERADOR', 'RECEPCION', 'DEVOLUCIONES');
+    ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1','BODEGA PEDYALITE');
+    
+   
     
     lista.innerHTML = '';
     ubicaciones.forEach(u => {

@@ -748,52 +748,45 @@ body {
         height: 85vh;
     }
 }
-/* Estilo para la tabla de ubicaciones dentro del modal */
-.ubicaciones-container {
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid #eef2f6;
-    border-radius: 8px;
+
+/* Estilos para evitar interferencia con la tabla de ubicaciones */
+.ubicaciones-wrapper {
+    pointer-events: auto;
 }
 
-.ubicaciones-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11px;
+.ubicaciones-interna-table tr {
+    cursor: default !important;
 }
 
-.ubicaciones-table th {
-    background: #f8f9fa;
-    padding: 6px 8px;
-    text-align: left;
-    font-weight: 600;
-    color: #4a5b6e;
-    position: sticky;
-    top: 0;
-    border-bottom: 1px solid #e4e7eb;
+.ubicaciones-interna-table tr:hover td {
+    background: transparent !important;
 }
 
-.ubicaciones-table td {
-    padding: 5px 8px;
-    border-bottom: 1px solid #f0f2f5;
+.modal-excel-table tr.producto-principal.selected td {
+    background: #dbeafe;
 }
 
-.ubicaciones-table tr:last-child td {
-    border-bottom: none;
+.ubicaciones-wrapper::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
 }
 
-.ubicaciones-table .existencia-cell {
-    text-align: right;
-    font-weight: 500;
+.ubicaciones-wrapper::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
 }
 
-.ubicaciones-more {
-    font-size: 10px;
-    color: #6c7a8a;
-    padding: 5px 8px;
-    text-align: center;
-    background: #fafbfc;
-    border-top: 1px solid #eef2f6;
+.ubicaciones-wrapper::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.ubicaciones-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.ubicaciones-cell {
+    cursor: default;
 }
 </style>
 
@@ -998,7 +991,7 @@ body {
                                 <td>$<?= number_format($precio, 2) ?></td>
                                 <td class="importe-fila" data-importe="<?= $importe ?>">$<?= number_format($importe, 2) ?></td>
                                 <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
-                            </tr>
+                            </table>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr id="filaVacia">
@@ -1038,21 +1031,21 @@ body {
             <input type="text" id="modalSearchInput" placeholder="Escribe código o nombre del producto..." autocomplete="off">
         </div>
         <div class="modal-excel-table-container">
-     <table class="modal-excel-table" id="modalTable">
-    <thead>
-        <tr>
-            <th>Código</th>
-            <th>Descripción</th>
-            <th>Unidad</th>
-            <th>Stock disponible</th>
-            <th>Precio</th>
-            <th style="min-width: 250px;">Ubicaciones (Ubicación / Existencia)</th>
-        </tr>
-    </thead>
-    <tbody id="modalTableBody">
-        <!-- Productos se cargan vía JS -->
-    </tbody>
-</table>
+            <table class="modal-excel-table" id="modalTable">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Descripción</th>
+                        <th>Unidad</th>
+                        <th>Stock disponible</th>
+                        <th>Precio</th>
+                        <th style="min-width: 250px;">Ubicaciones (Ubicación / Existencia)</th>
+                    </tr>
+                </thead>
+                <tbody id="modalTableBody">
+                    <!-- Productos se cargan vía JS -->
+                </tbody>
+            </table>
         </div>
         <div class="modal-excel-footer">
             <span><kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Enter</kbd> Seleccionar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Esc</kbd> Cerrar</span>
@@ -1106,7 +1099,7 @@ foreach ($productos as $p) {
         'precio_compra' => (float)$p['precio_compra'],
         'existencia_total' => $existenciaTotal,
         'ubicacion_sugerida' => $ubicacionSugerida,
-        'ubicaciones' => $ubicacionesLista  // <-- AGREGAR TODAS LAS UBICACIONES
+        'ubicaciones' => $ubicacionesLista
     ];
 }
     echo json_encode($productosArray, JSON_UNESCAPED_UNICODE);
@@ -1127,7 +1120,7 @@ const precioInput = document.getElementById('precioInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
 
-// ===== FUNCIÓN PARA GENERAR TODAS LAS UBICACIONES (como en productos.php) =====
+// ===== FUNCIÓN PARA GENERAR TODAS LAS UBICACIONES =====
 function generarTodasLasUbicaciones() {
     const lista = document.getElementById('ubicacionesList');
     if (!lista) return;
@@ -1139,106 +1132,40 @@ function generarTodasLasUbicaciones() {
         ubicaciones.push(`R${rack}N${nivel}Z${z}`);
     }
     
-    // Rack 1: niveles 1-3, zonas 1-22
     for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) {
-            add(1, n, z);
-        }
+        for (let z = 1; z <= 22; z++) add(1, n, z);
     }
-    
-    // Rack 2: niveles 1-3, zonas 1-20
     for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) {
-            add(2, n, z);
-        }
+        for (let z = 1; z <= 20; z++) add(2, n, z);
     }
-    
-    // Rack 3: niveles 1-3, zonas 1-20
     for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) {
-            add(3, n, z);
-        }
+        for (let z = 1; z <= 20; z++) add(3, n, z);
     }
-    
-    // Rack 4: niveles 1-2, zonas 1-16
     for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 16; z++) {
-            add(4, n, z);
-        }
+        for (let z = 1; z <= 16; z++) add(4, n, z);
     }
-    // Rack 4 nivel 3 zonas 10-16
-    for (let z = 10; z <= 16; z++) {
-        add(4, 3, z);
-    }
-    
-    // Rack 5: niveles 1-2, zonas 1-15
+    for (let z = 10; z <= 16; z++) add(4, 3, z);
     for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 15; z++) {
-            add(5, n, z);
-        }
+        for (let z = 1; z <= 15; z++) add(5, n, z);
     }
-    // Rack 5 nivel 3 zonas 10-15
-    for (let z = 10; z <= 15; z++) {
-        add(5, 3, z);
-    }
-    
-    // Rack 6: niveles 1-3, zonas 1-22
+    for (let z = 10; z <= 15; z++) add(5, 3, z);
     for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) {
-            add(6, n, z);
-        }
+        for (let z = 1; z <= 22; z++) add(6, n, z);
     }
     
-    // Ubicaciones adicionales
-    ubicaciones.push('R7N1Z01 - PASILLO 3');
-    ubicaciones.push('R8N1Z01 - PASILLO 2');
-    ubicaciones.push('R9N1Z01 - PASILLO 1');
-    ubicaciones.push('BODEGA PEDYALITE');
-    ubicaciones.push('ALMACEN_PRINCIPAL');
-    ubicaciones.push('ESTANTE_A1');
-    ubicaciones.push('ESTANTE_A2');
-    ubicaciones.push('ESTANTE_B1');
-    ubicaciones.push('ESTANTE_B2');
-    ubicaciones.push('CONGELADOR');
-    ubicaciones.push('REFRIGERADOR');
-    ubicaciones.push('RECEPCION');
-    ubicaciones.push('DEVOLUCIONES');
+    ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1');
+    ubicaciones.push('BODEGA PEDYALITE', 'ALMACEN_PRINCIPAL', 'ESTANTE_A1', 'ESTANTE_A2');
+    ubicaciones.push('ESTANTE_B1', 'ESTANTE_B2', 'CONGELADOR', 'REFRIGERADOR', 'RECEPCION', 'DEVOLUCIONES');
     
-    // Limpiar opciones existentes y agregar todas
     lista.innerHTML = '';
-    
     ubicaciones.forEach(u => {
         const option = document.createElement('option');
         option.value = u;
         lista.appendChild(option);
     });
-    
-    console.log('Ubicaciones cargadas:', ubicaciones.length);
 }
 
-// ===== FUNCIÓN PARA PONER FECHA ACTUAL AUTOMÁTICAMENTE =====
-function ponerFechaActual() {
-    const fechaInput = document.getElementById('fechaInput');
-    
-    // Si ya tiene valor y no estamos en edición, no hacer nada
-    if (fechaInput.value && !<?= $modoEdicion ? 'true' : 'false' ?>) {
-        return;
-    }
-    
-    // Si está vacío, poner fecha actual
-    if (!fechaInput.value) {
-        const ahora = new Date();
-        const year = ahora.getFullYear();
-        const month = String(ahora.getMonth() + 1).padStart(2, '0');
-        const day = String(ahora.getDate()).padStart(2, '0');
-        const hours = String(ahora.getHours()).padStart(2, '0');
-        const minutes = String(ahora.getMinutes()).padStart(2, '0');
-        
-        fechaInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
-    }
-}
-
-// ===== FUNCIONES DEL MODAL ESTILO EXCEL =====
+// ===== FUNCIONES DEL MODAL CORREGIDAS =====
 function abrirModal() {
     modal.classList.add('active');
     modalSearch.value = '';
@@ -1261,14 +1188,11 @@ function cargarProductosEnModal(productosList) {
     }
     
     modalTableBody.innerHTML = productosList.map((p, idx) => {
-        // Crear tabla de ubicaciones como lista
         let ubicacionesHtml = '';
         if (p.ubicaciones && p.ubicaciones.length > 0) {
-            // Limitar a mostrar máximo 5 ubicaciones con scroll
-            const ubicacionesMostrar = p.ubicaciones.slice(0, 10);
             ubicacionesHtml = `
-                <div style="max-height: 120px; overflow-y: auto; font-size: 11px;">
-                    <table style="width: 100%; border-collapse: collapse;">
+                <div class="ubicaciones-wrapper" style="max-height: 120px; overflow-y: auto; font-size: 11px;">
+                    <table class="ubicaciones-interna-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr style="background: #f0f2f5;">
                                 <th style="padding: 4px 6px; text-align: left;">Ubicación</th>
@@ -1294,22 +1218,22 @@ function cargarProductosEnModal(productosList) {
         }
         
         return `
-            <tr data-idx="${idx}" data-producto-id="${p.id}" style="cursor: pointer;">
+            <tr data-idx="${idx}" data-producto-id="${p.id}" class="producto-principal" style="cursor: pointer;">
                 <td class="product-code" style="vertical-align: top;">${escapeHtml(p.codigo)}</td>
                 <td style="vertical-align: top;">${escapeHtml(p.descripcion)}</td>
                 <td style="vertical-align: top;">${escapeHtml(p.unidad_medida)}</td>
                 <td class="product-stock" style="vertical-align: top;">${p.existencia_total}</td>
                 <td style="vertical-align: top;">$${p.precio_compra.toFixed(2)}</td>
-                <td style="vertical-align: top;">${ubicacionesHtml}</td>
+                <td style="vertical-align: top;" class="ubicaciones-cell">${ubicacionesHtml}</td>
             </tr>
         `;
     }).join('');
     
-    // Agregar evento click a las filas
-    document.querySelectorAll('#modalTableBody tr').forEach(row => {
+    // Evento click SOLO para filas de productos
+    document.querySelectorAll('#modalTableBody > tr.producto-principal').forEach(row => {
         row.addEventListener('click', (e) => {
-            // Evitar que el click en la tabla de ubicaciones seleccione el producto
-            if (e.target.closest('.ubicaciones-table')) {
+            if (e.target.closest('.ubicaciones-interna-table') || e.target.closest('.ubicaciones-wrapper')) {
+                e.stopPropagation();
                 return;
             }
             const idx = parseInt(row.dataset.idx);
@@ -1335,21 +1259,30 @@ function filtrarProductosModal() {
     modalSelectedIndex = -1;
 }
 
+function actualizarSeleccionModal() {
+    const filas = document.querySelectorAll('#modalTableBody > tr.producto-principal');
+    filas.forEach((fila, idx) => {
+        if (idx === modalSelectedIndex) {
+            fila.classList.add('selected');
+            fila.scrollIntoView({ block: 'nearest' });
+        } else {
+            fila.classList.remove('selected');
+        }
+    });
+}
+
 function seleccionarProductoDelModal(producto) {
     productoSeleccionado = producto;
     
-    // Mostrar info
     document.getElementById('selectedInfo').style.display = 'block';
     document.getElementById('infoCodigo').innerHTML = `<strong>${escapeHtml(producto.codigo)}</strong>`;
     document.getElementById('infoDescripcion').textContent = producto.descripcion;
     document.getElementById('infoUnidad').textContent = producto.unidad_medida;
     document.getElementById('infoStock').textContent = producto.existencia_total;
     
-    // Actualizar campos
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
     precioInput.value = producto.precio_compra;
     
-    // Sugerir la ubicación con menos stock (primera de la lista ordenada)
     if (producto.ubicaciones && producto.ubicaciones.length > 0) {
         ubicacionInput.value = producto.ubicaciones[0].ubicacion;
     } else {
@@ -1359,20 +1292,7 @@ function seleccionarProductoDelModal(producto) {
     cerrarModal();
     cantidadInput.focus();
     cantidadInput.select();
-    
     mostrarToast(`✅ Producto seleccionado: ${producto.codigo}`);
-}
-// Navegación por teclado en el modal
-function actualizarSeleccionModal() {
-    const filas = document.querySelectorAll('#modalTableBody tr');
-    filas.forEach((fila, idx) => {
-        if (idx === modalSelectedIndex) {
-            fila.classList.add('selected');
-            fila.scrollIntoView({ block: 'nearest' });
-        } else {
-            fila.classList.remove('selected');
-        }
-    });
 }
 
 // ===== FUNCIONES DE CANTIDAD =====
@@ -1421,7 +1341,6 @@ function agregarProducto() {
         return;
     }
     
-    // Verificar duplicado
     const filasExistentes = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
     for (let fila of filasExistentes) {
         if (fila.dataset.productoId == productoSeleccionado.id) {
@@ -1444,7 +1363,7 @@ function agregarProducto() {
             <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
             <input type="hidden" name="precio_unitario[]" value="${precio}">
             <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
-         </td>
+        </td>
         <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
         <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
         <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
@@ -1457,7 +1376,6 @@ function agregarProducto() {
     detalleBody.appendChild(tr);
     actualizarTotales();
     
-    // Resetear para siguiente producto
     productoSeleccionado = null;
     document.getElementById('selectedInfo').style.display = 'none';
     productoDisplayInput.value = '';
@@ -1562,40 +1480,47 @@ function controlarFolioOperacion() {
     }
 }
 
-// ===== GUARDAR =====
+function ponerFechaActual() {
+    const fechaInput = document.getElementById('fechaInput');
+    if (fechaInput.value && !<?= $modoEdicion ? 'true' : 'false' ?>) return;
+    if (!fechaInput.value) {
+        const ahora = new Date();
+        const year = ahora.getFullYear();
+        const month = String(ahora.getMonth() + 1).padStart(2, '0');
+        const day = String(ahora.getDate()).padStart(2, '0');
+        const hours = String(ahora.getHours()).padStart(2, '0');
+        const minutes = String(ahora.getMinutes()).padStart(2, '0');
+        fechaInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+}
+
 function guardarSalida() {
     const productosEnLista = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
     if (productosEnLista.length === 0) {
         mostrarToast('❌ Agrega al menos un producto', 'error');
         return;
     }
-    
     document.getElementById('formSalida').submit();
 }
 
 // ===== EVENTOS GLOBALES =====
 document.addEventListener('DOMContentLoaded', () => {
-    // Generar todas las ubicaciones primero
     generarTodasLasUbicaciones();
-    
     actualizarTotales();
     controlarFolioOperacion();
     ponerFechaActual();
     
-    // Ctrl+B para abrir modal - CORREGIDO
+    // Ctrl+B para abrir modal
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
             e.preventDefault();
             e.stopPropagation();
-            console.log('Ctrl+B presionado - Abriendo modal');
             abrirModal();
-            return false;
         }
     });
     
-    // Enter en cantidad, precio o ubicación = agregar producto
-    const camposEnter = ['cantidadInput', 'precioInput', 'ubicacionInput'];
-    camposEnter.forEach(id => {
+    // Enter en cantidad, precio o ubicación
+    ['cantidadInput', 'precioInput', 'ubicacionInput'].forEach(id => {
         document.getElementById(id)?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1609,7 +1534,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openModalBtn')?.addEventListener('click', abrirModal);
     document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
     
-    // Ctrl+Enter = guardar
+    // Ctrl+Enter para guardar
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
@@ -1624,30 +1549,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Cerrar modal al hacer clic fuera
     modal.addEventListener('click', (e) => {
         if (e.target === modal) cerrarModal();
     });
 });
 
-// Eventos de teclado para el modal
+// ===== EVENTOS DE TECLADO PARA EL MODAL (CORREGIDOS) =====
 if (modalSearch) {
     modalSearch.addEventListener('keydown', (e) => {
-        const filas = document.querySelectorAll('#modalTableBody tr');
-        const totalFilas = filas.length;
+        const filasProductos = document.querySelectorAll('#modalTableBody > tr.producto-principal');
+        const totalFilas = filasProductos.length;
         
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            modalSelectedIndex = Math.min(modalSelectedIndex + 1, totalFilas - 1);
-            actualizarSeleccionModal();
+            e.stopPropagation();
+            if (totalFilas > 0) {
+                modalSelectedIndex = Math.min(modalSelectedIndex + 1, totalFilas - 1);
+                actualizarSeleccionModal();
+            }
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            modalSelectedIndex = Math.max(modalSelectedIndex - 1, 0);
-            actualizarSeleccionModal();
+            e.stopPropagation();
+            if (totalFilas > 0) {
+                modalSelectedIndex = Math.max(modalSelectedIndex - 1, 0);
+                actualizarSeleccionModal();
+            }
         } else if (e.key === 'Enter' && modalSelectedIndex >= 0 && modalProductosFiltrados[modalSelectedIndex]) {
             e.preventDefault();
+            e.stopPropagation();
             seleccionarProductoDelModal(modalProductosFiltrados[modalSelectedIndex]);
         } else if (e.key === 'Escape') {
+            e.preventDefault();
             cerrarModal();
         }
     });

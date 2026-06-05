@@ -98,6 +98,7 @@ $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 date_default_timezone_set('America/Mexico_City');
 
+// FECHA AUTOMÁTICA
 $fechaActual = date('Y-m-d\TH:i');
 
 $moduleCss = 'salidas';
@@ -122,6 +123,7 @@ body {
     min-height: 100vh;
 }
 
+/* ===== HEADER SIMPLE ===== */
 .page-header {
     margin-bottom: 28px;
 }
@@ -132,11 +134,13 @@ body {
     color: #1a2c3e;
 }
 
+/* ===== CONTENEDOR PRINCIPAL ===== */
 .main-container {
     max-width: 1600px;
     margin: 0 auto;
 }
 
+/* ===== SECCIÓN DE DATOS DEL DOCUMENTO ===== */
 .doc-section {
     background: white;
     border-radius: 20px;
@@ -210,6 +214,7 @@ body {
     font-weight: 500;
 }
 
+/* ===== SECCIÓN DE CAPTURA RÁPIDA ===== */
 .capture-section {
     background: white;
     border-radius: 20px;
@@ -281,6 +286,7 @@ body {
     box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
 }
 
+/* Botones rápidos cantidad */
 .qty-actions {
     display: flex;
     gap: 8px;
@@ -328,6 +334,7 @@ body {
     transform: scale(1.01);
 }
 
+/* Producto seleccionado */
 .selected-info {
     background: #eff6ff;
     border-radius: 14px;
@@ -352,6 +359,7 @@ body {
     font-weight: 600;
 }
 
+/* ===== MODAL GRANDE ESTILO EXCEL ===== */
 .modal-excel {
     position: fixed;
     inset: 0;
@@ -535,6 +543,7 @@ body {
     margin: 0 4px;
 }
 
+/* ===== TABLA DE PRODUCTOS - CORREGIDA ===== */
 .products-section {
     background: white;
     border-radius: 20px;
@@ -573,6 +582,7 @@ body {
     padding: 0 20px;
 }
 
+/* IMPORTANTE: FORZAR VISUALIZACIÓN CORRECTA DE TABLA */
 .data-table {
     width: 100%;
     border-collapse: collapse;
@@ -680,6 +690,7 @@ body {
     cursor: pointer;
 }
 
+/* Shortcuts bar */
 .shortcuts-bar {
     margin-top: 20px;
     padding: 12px 20px;
@@ -700,6 +711,7 @@ body {
     font-size: 11px;
 }
 
+/* Toast */
 .toast-message {
     position: fixed;
     bottom: 30px;
@@ -720,6 +732,7 @@ body {
     to { transform: translateX(0); opacity: 1; }
 }
 
+/* Estilos para evitar interferencia con la tabla de ubicaciones */
 .ubicaciones-wrapper {
     pointer-events: auto;
 }
@@ -759,6 +772,7 @@ body {
     cursor: default;
 }
 
+/* Responsive para tabla */
 @media (max-width: 768px) {
     body {
         padding: 16px;
@@ -792,24 +806,9 @@ body {
         white-space: nowrap;
     }
 }
-
-/* Estilos para ubicación prioritaria */
-.ubicacion-prioritaria {
-    background: #f0fdf4 !important;
-}
-
-.prioridad-badge {
-    display: inline-block;
-    background: #059669;
-    color: white;
-    border-radius: 40px;
-    padding: 2px 8px;
-    font-size: 10px;
-    font-weight: 700;
-    margin-left: 8px;
-}
 </style>
 
+<!-- HEADER -->
 <div class="page-header">
     <h1><?= $modoEdicion ? '✏️ Editar Salida' : '➕ Nueva Salida de Almacén' ?></h1>
 </div>
@@ -827,6 +826,7 @@ body {
         <input type="hidden" name="editar_id" value="<?= (int)$salidaEditar['id'] ?>">
     <?php endif; ?>
 
+    <!-- SECCIÓN 1: DATOS DEL DOCUMENTO -->
     <div class="doc-section">
         <div class="form-grid">
             <div class="form-field">
@@ -902,6 +902,7 @@ body {
         </div>
     </div>
 
+    <!-- SECCIÓN 2: CAPTURA RÁPIDA -->
     <div class="capture-section">
         <div class="capture-title">Agregar productos</div>
         
@@ -926,7 +927,7 @@ body {
             </div>
 
             <div class="capture-field">
-                <label>📍 Ubicación (sugerida)</label>
+                <label>📍 Ubicación</label>
                 <input type="text" id="ubicacionInput" list="ubicacionesList" placeholder="Seleccione ubicación">
                 <datalist id="ubicacionesList"></datalist>
             </div>
@@ -952,13 +953,14 @@ body {
 
         <div class="shortcuts-bar">
             🎯 <kbd>Ctrl</kbd> + <kbd>B</kbd> Abrir buscador &nbsp;&nbsp;|&nbsp;&nbsp;
-            <kbd>↑</kbd> <kbd>↓</kbd> Navegar resultados &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>↑</kbd> <kbd>↓</kbd> Navegar resultados en modal &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Enter</kbd> Seleccionar producto &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Enter</kbd> (en cantidad/ubicación/precio) Agregar &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Ctrl</kbd> + <kbd>Enter</kbd> Guardar salida
         </div>
     </div>
 
+    <!-- SECCIÓN 3: TABLA DE PRODUCTOS CORREGIDA -->
     <div class="products-section">
         <div class="products-header">
             <h3>Productos agregados</h3>
@@ -972,7 +974,7 @@ body {
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Ubicación (Stock → A tomar)</th>
+                        <th>Ubicación</th>
                         <th>Precio</th>
                         <th>Importe</th>
                         <th style="width: 60px;"></th>
@@ -991,7 +993,7 @@ body {
                             $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
                             $unidad = e($item['unidad_medida'] ?? '');
                         ?>
-                            <tr data-producto-id="<?= $productoId ?>" data-ubicacion-original="<?= e($ubicacion) ?>">
+                            <tr data-producto-id="<?= $productoId ?>">
                                 <td>
                                     <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" step="1" onchange="actualizarCantidadFila(this)">
                                     <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
@@ -1003,7 +1005,7 @@ body {
                                 <td><strong><?= $codigo ?></strong></td>
                                 <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;"><?= $descripcion ?></td>
                                 <td><?= $unidad ?></td>
-                                <td><strong>📍 <?= e($ubicacion) ?></strong></td>
+                                <td><?= e($ubicacion) ?></td>
                                 <td>$<?= number_format($precio, 2) ?></td>
                                 <td class="importe-fila" data-importe="<?= $importe ?>"><strong>$<?= number_format($importe, 2) ?></strong></td>
                                 <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
@@ -1033,6 +1035,7 @@ body {
 </form>
 </div>
 
+<!-- MODAL GRANDE ESTILO EXCEL -->
 <div class="modal-excel" id="modalExcel">
     <div class="modal-excel-content">
         <div class="modal-excel-header">
@@ -1052,12 +1055,13 @@ body {
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Stock total</th>
+                        <th>Stock disponible</th>
                         <th>Precio</th>
-                        <th style="min-width: 300px;">Ubicaciones (orden: menor stock → consecutivo)</th>
+                        <th style="min-width: 250px;">Ubicaciones (Ubicación / Existencia)</th>
                     </tr>
                 </thead>
                 <tbody id="modalTableBody">
+                    <!-- Productos se cargan vía JS -->
                 </tbody>
             </table>
         </div>
@@ -1098,33 +1102,8 @@ const productos = <?php
             }
         }
         
-        // ORDEN MIXTO: primero por existencia (menor a mayor), luego por orden físico
         usort($ubicacionesLista, function($a, $b) {
-            // Extraer componentes para orden físico
-            $extraer = function($ubicacion) {
-                preg_match('/R(\d+)N(\d+)Z(\d+)/i', $ubicacion, $matches);
-                if (count($matches) === 4) {
-                    return [
-                        'rack' => (int)$matches[1],
-                        'nivel' => (int)$matches[2],
-                        'zona' => (int)$matches[3]
-                    ];
-                }
-                return ['rack' => 999, 'nivel' => 999, 'zona' => 999];
-            };
-            
-            // 1. Ordenar por existencia (menor a mayor)
-            if ($a['existencia'] != $b['existencia']) {
-                return $a['existencia'] - $b['existencia'];
-            }
-            
-            // 2. Si misma existencia, orden físico por rack, nivel, zona
-            $compA = $extraer($a['ubicacion']);
-            $compB = $extraer($b['ubicacion']);
-            
-            if ($compA['rack'] != $compB['rack']) return $compA['rack'] - $compB['rack'];
-            if ($compA['nivel'] != $compB['nivel']) return $compA['nivel'] - $compB['nivel'];
-            return $compA['zona'] - $compB['zona'];
+            return $a['existencia'] - $b['existencia'];
         });
         
         $ubicacionSugerida = !empty($ubicacionesLista) ? $ubicacionesLista[0]['ubicacion'] : '';
@@ -1158,86 +1137,7 @@ const precioInput = document.getElementById('precioInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
 
-// ===== FUNCIÓN: Extraer componentes de ubicación =====
-function extraerComponentesUbicacion(ubicacion) {
-    const match = ubicacion.match(/R(\d+)N(\d+)Z(\d+)/i);
-    if (match) {
-        return {
-            rack: parseInt(match[1]),
-            nivel: parseInt(match[2]),
-            zona: parseInt(match[3]),
-            original: ubicacion
-        };
-    }
-    return { rack: 999, nivel: 999, zona: 999, original: ubicacion };
-}
-
-// ===== FUNCIÓN: Orden mixto (existencia + físico) =====
-function ordenarUbicacionesMixto(ubicaciones) {
-    return [...ubicaciones].sort((a, b) => {
-        // Primero por existencia (menor a mayor)
-        if (a.existencia !== b.existencia) {
-            return a.existencia - b.existencia;
-        }
-        // Si misma existencia, orden físico
-        const compA = extraerComponentesUbicacion(a.ubicacion);
-        const compB = extraerComponentesUbicacion(b.ubicacion);
-        
-        if (compA.rack !== compB.rack) return compA.rack - compB.rack;
-        if (compA.nivel !== compB.nivel) return compA.nivel - compB.nivel;
-        return compA.zona - compB.zona;
-    });
-}
-
-// ===== FUNCIÓN: Distribuir cantidad respetando orden mixto =====
-function calcularDistribucionPorUbicaciones(producto, cantidadRequerida) {
-    if (!producto.ubicaciones || producto.ubicaciones.length === 0) {
-        return [{ ubicacion: producto.ubicacion_sugerida || 'SIN UBICACION', cantidad: cantidadRequerida, stockOriginal: 0 }];
-    }
-    
-    // Ordenar con lógica mixta: primero las de menor existencia, manteniendo orden físico
-    let ubicacionesDisponibles = ordenarUbicacionesMixto(producto.ubicaciones);
-    
-    let cantidadRestante = cantidadRequerida;
-    let distribucion = [];
-    let ubicacionActualIndex = 0;
-    
-    console.log('📍 Ubicaciones ordenadas (prioridad menor existencia + orden físico):', 
-        ubicacionesDisponibles.map(u => `${u.ubicacion} (${u.existencia})`));
-    
-    while (cantidadRestante > 0 && ubicacionActualIndex < ubicacionesDisponibles.length) {
-        const ubicacionActual = ubicacionesDisponibles[ubicacionActualIndex];
-        const stockDisponible = ubicacionActual.existencia;
-        
-        if (stockDisponible > 0) {
-            const cantidadATomar = Math.min(cantidadRestante, stockDisponible);
-            distribucion.push({
-                ubicacion: ubicacionActual.ubicacion,
-                cantidad: cantidadATomar,
-                stockOriginal: stockDisponible,
-                prioridad: ubicacionActualIndex + 1,
-                agotaStock: cantidadATomar === stockDisponible
-            });
-            cantidadRestante -= cantidadATomar;
-            
-            if (cantidadATomar === stockDisponible) {
-                console.log(`✅ Ubicación ${ubicacionActual.ubicacion} agotada (${stockDisponible} unidades). Pasando a siguiente...`);
-            }
-            ubicacionActualIndex++;
-        } else {
-            ubicacionActualIndex++;
-        }
-    }
-    
-    if (cantidadRestante > 0) {
-        mostrarToast(`⚠️ Stock insuficiente. Faltan ${cantidadRestante} unidades. Stock total: ${producto.existencia_total}`, 'warning');
-        return null;
-    }
-    
-    return distribucion;
-}
-
-// ===== GENERAR UBICACIONES =====
+// Generar ubicaciones
 function generarTodasLasUbicaciones() {
     const lista = document.getElementById('ubicacionesList');
     if (!lista) return;
@@ -1280,7 +1180,7 @@ function generarTodasLasUbicaciones() {
     });
 }
 
-// ===== FUNCIONES DEL MODAL =====
+// Funciones del modal
 function abrirModal() {
     modal.classList.add('active');
     modalSearch.value = '';
@@ -1303,35 +1203,22 @@ function cargarProductosEnModal(productosList) {
     }
     
     modalTableBody.innerHTML = productosList.map((p, idx) => {
-        // Ordenar ubicaciones con orden mixto para mostrar en modal
-        const ubicacionesOrdenadas = ordenarUbicacionesMixto(p.ubicaciones);
-        
         let ubicacionesHtml = '';
-        if (ubicacionesOrdenadas.length > 0) {
+        if (p.ubicaciones && p.ubicaciones.length > 0) {
             ubicacionesHtml = `
-                <div class="ubicaciones-wrapper" style="max-height: 150px; overflow-y: auto; font-size: 11px;">
+                <div class="ubicaciones-wrapper" style="max-height: 120px; overflow-y: auto; font-size: 11px;">
                     <table style="width: 100%; border-collapse: collapse;">
                         <thead>
-                            <tr style="background: #f0f2f5; position: sticky; top: 0;">
-                                <th style="padding: 6px; text-align: left;">📍 Ubicación</th>
-                                <th style="padding: 6px; text-align: right;">📊 Stock</th>
-                                <th style="padding: 6px; text-align: center;">🎯 Prioridad</th>
+                            <tr style="background: #f0f2f5;">
+                                <th style="padding: 4px 6px; text-align: left;">Ubicación</th>
+                                <th style="padding: 4px 6px; text-align: right;">Existencia</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${ubicacionesOrdenadas.map((u, uIdx) => `
-                                <tr style="border-bottom: 1px solid #eef2f6; ${uIdx === 0 ? 'background: #f0fdf4;' : ''}">
-                                    <td style="padding: 6px;">
-                                        ${uIdx === 0 ? '🥇 ' : (uIdx === 1 ? '🥈 ' : (uIdx === 2 ? '🥉 ' : '📦 '))}
-                                        <strong>${escapeHtml(u.ubicacion)}</strong>
-                                        ${u.existencia === 0 ? '<span style="color:#dc2626;"> (AGOTADO)</span>' : ''}
-                                    </td>
-                                    <td style="padding: 6px; text-align: right;">
-                                        <strong style="color: ${u.existencia < 10 ? '#dc2626' : '#059669'}">${u.existencia}</strong>
-                                    </td>
-                                    <td style="padding: 6px; text-align: center;">
-                                        ${uIdx === 0 ? '1° (prioridad)' : `${uIdx+1}°`}
-                                    </td>
+                            ${p.ubicaciones.map(u => `
+                                <tr style="border-bottom: 1px solid #eef2f6;">
+                                    <td style="padding: 4px 6px;">${escapeHtml(u.ubicacion)}</td>
+                                    <td style="padding: 4px 6px; text-align: right;">${u.existencia}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -1339,15 +1226,15 @@ function cargarProductosEnModal(productosList) {
                 </div>
             `;
         } else {
-            ubicacionesHtml = `<div style="color: #9ca3af; text-align: center; padding: 10px;">Sin ubicaciones registradas</div>`;
+            ubicacionesHtml = `<div style="color: #9ca3af; text-align: center;">Sin ubicaciones</div>`;
         }
         
         return `
             <tr data-idx="${idx}" data-producto-id="${p.id}" class="producto-principal" style="cursor: pointer;">
                 <td class="product-code" style="vertical-align: top;">${escapeHtml(p.codigo)}</td>
-                <td style="vertical-align: top;">${escapeHtml(p.descripcion.substring(0, 60))}</td>
+                <td style="vertical-align: top;">${escapeHtml(p.descripcion)}</td>
                 <td style="vertical-align: top;">${escapeHtml(p.unidad_medida)}</td>
-                <td class="product-stock" style="vertical-align: top; text-align: center;"><strong>${p.existencia_total}</strong></td>
+                <td class="product-stock" style="vertical-align: top;">${p.existencia_total}</td>
                 <td style="vertical-align: top;">$${p.precio_compra.toFixed(2)}</td>
                 <td style="vertical-align: top;" class="ubicaciones-cell">${ubicacionesHtml}</td>
             </tr>
@@ -1407,14 +1294,8 @@ function seleccionarProductoDelModal(producto) {
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
     precioInput.value = producto.precio_compra;
     
-    // Sugerir la primera ubicación (prioridad por menor stock)
     if (producto.ubicaciones && producto.ubicaciones.length > 0) {
-        const ubicacionesOrdenadas = ordenarUbicacionesMixto(producto.ubicaciones);
-        ubicacionInput.value = ubicacionesOrdenadas[0].ubicacion;
-        
-        // Mostrar tooltip con el orden de prioridad
-        const prioridadTexto = ubicacionesOrdenadas.map((u, i) => `${i+1}. ${u.ubicacion} (${u.existencia})`).join(' → ');
-        ubicacionInput.title = `Orden de prioridad: ${prioridadTexto}`;
+        ubicacionInput.value = producto.ubicaciones[0].ubicacion;
     } else {
         ubicacionInput.value = producto.ubicacion_sugerida || '';
     }
@@ -1422,10 +1303,10 @@ function seleccionarProductoDelModal(producto) {
     cerrarModal();
     cantidadInput.focus();
     cantidadInput.select();
-    mostrarToast(`✅ Producto seleccionado: ${producto.codigo} - Prioridad: ${producto.ubicaciones.length} ubicaciones disponibles`);
+    mostrarToast(`✅ Producto seleccionado: ${producto.codigo}`);
 }
 
-// ===== FUNCIONES DE CANTIDAD =====
+// Funciones de cantidad
 function cambiarCantidad(valor) {
     let nuevo = parseInt(cantidadInput.value) + valor;
     if (nuevo < 1) nuevo = 1;
@@ -1439,11 +1320,10 @@ function cambiarCantidad(valor) {
 function setMaxCantidad() {
     if (productoSeleccionado) {
         cantidadInput.value = productoSeleccionado.existencia_total;
-        mostrarToast(`📦 Cantidad máxima: ${productoSeleccionado.existencia_total} unidades`, 'info');
     }
 }
 
-// ===== AGREGAR PRODUCTO CON DISTRIBUCIÓN INTELIGENTE =====
+// Agregar producto
 function agregarProducto() {
     if (!productoSeleccionado) {
         mostrarToast('❌ Selecciona un producto (Ctrl+B para buscar)', 'error');
@@ -1459,101 +1339,64 @@ function agregarProducto() {
         return;
     }
     
+    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+    if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
+    
     if (cantidad > productoSeleccionado.existencia_total) {
         mostrarToast(`❌ Stock insuficiente. Disponible: ${productoSeleccionado.existencia_total}`, 'error');
         return;
     }
     
-    // Verificar si el producto ya existe
     const filasExistentes = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
     for (let fila of filasExistentes) {
         if (fila.dataset.productoId == productoSeleccionado.id) {
-            mostrarToast(`⚠️ El producto ya está en la lista. Edita la cantidad desde la tabla.`, 'warning');
+            mostrarToast(`⚠️ El producto ya está en la lista`, 'warning');
             return;
         }
     }
     
-    // Calcular distribución con orden inteligente
-    const distribucion = calcularDistribucionPorUbicaciones(productoSeleccionado, cantidad);
-    
-    if (!distribucion) {
-        return;
-    }
-    
-    // Eliminar fila vacía
     const filaVacia = document.getElementById('filaVacia');
     if (filaVacia) filaVacia.remove();
     
-    let primeraFila = true;
+    const importe = cantidad * precio;
+    const tr = document.createElement('tr');
+    tr.dataset.productoId = productoSeleccionado.id;
+    tr.innerHTML = `
+        <td>
+            <input type="number" class="qty-input" value="${cantidad}" min="1" step="1" onchange="actualizarCantidadFila(this)">
+            <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
+            <input type="hidden" name="cantidad[]" value="${cantidad}">
+            <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
+            <input type="hidden" name="precio_unitario[]" value="${precio}">
+            <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
+        </td>
+        <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
+        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 60))}</td>
+        <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
+        <td>${escapeHtml(ubicacion)}</td>
+        <td>$${precio.toFixed(2)}</td>
+        <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
+        <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
+    `;
     
-    // Crear fila por cada ubicación
-    for (const item of distribucion) {
-        const importe = item.cantidad * precio;
-        const tr = document.createElement('tr');
-        tr.dataset.productoId = productoSeleccionado.id;
-        tr.dataset.ubicacionOriginal = item.ubicacion;
-        
-        const descripcionDisplay = primeraFila 
-            ? productoSeleccionado.descripcion.substring(0, 60)
-            : `↳ Continuación - ${productoSeleccionado.descripcion.substring(0, 45)}`;
-        
-        const prioridadIcon = item.prioridad === 1 ? '🥇' : (item.prioridad === 2 ? '🥈' : (item.prioridad === 3 ? '🥉' : '📦'));
-        const agotaTexto = item.agotaStock ? '<span style="color:#dc2626; font-size:10px;"> (AGOTA)</span>' : '';
-        
-        tr.innerHTML = `
-            <td style="vertical-align: middle;">
-                <input type="number" class="qty-input" value="${item.cantidad}" min="1" step="1" onchange="actualizarCantidadFila(this, '${item.ubicacion}')">
-                <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
-                <input type="hidden" name="cantidad[]" value="${item.cantidad}">
-                <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
-                <input type="hidden" name="precio_unitario[]" value="${precio}">
-                <input type="hidden" name="ubicacion[]" value="${escapeHtml(item.ubicacion)}">
-            </td>
-            <td style="vertical-align: middle;"><strong>${escapeHtml(productoSeleccionado.codigo)}${!primeraFila ? ' *' : ''}</strong></td>
-            <td style="vertical-align: middle;">${escapeHtml(descripcionDisplay)}</td>
-            <td style="vertical-align: middle;">${escapeHtml(productoSeleccionado.unidad_medida)}</td>
-            <td style="vertical-align: middle; background: ${item.prioridad === 1 ? '#f0fdf4' : 'transparent'}">
-                ${prioridadIcon} <strong>${escapeHtml(item.ubicacion)}</strong>${agotaTexto}<br>
-                <small style="color: #4a5b6e;">
-                    📊 Stock disponible: ${item.stockOriginal} | 🎯 Tomar: ${item.cantidad}
-                </small>
-            </td>
-            <td style="vertical-align: middle;">$${precio.toFixed(2)}</td>
-            <td class="importe-fila" data-importe="${importe}" style="vertical-align: middle;"><strong>$${importe.toFixed(2)}</strong></td>
-            <td style="vertical-align: middle;"><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
-        `;
-        
-        detalleBody.appendChild(tr);
-        primeraFila = false;
-    }
-    
-    // Mostrar resumen de la distribución
-    if (distribucion.length === 1) {
-        mostrarToast(`✅ ${cantidad} unidades desde ${distribucion[0].ubicacion}`, 'success');
-    } else {
-        const ubicacionesTexto = distribucion.map(d => `${d.ubicacion} (${d.cantidad})`).join(' → ');
-        mostrarToast(`📦 Distribución inteligente: ${ubicacionesTexto}`, 'success');
-    }
-    
+    detalleBody.appendChild(tr);
     actualizarTotales();
     
-    // Limpiar selección
     productoSeleccionado = null;
     document.getElementById('selectedInfo').style.display = 'none';
     productoDisplayInput.value = '';
     cantidadInput.value = '1';
     ubicacionInput.value = '';
     precioInput.value = '0.00';
+    
+    mostrarToast(`✅ ${cantidad} x ${productoSeleccionado?.codigo || 'producto'} agregado`);
 }
 
-function actualizarCantidadFila(input, ubicacionOriginal = null) {
+function actualizarCantidadFila(input) {
     const tr = input.closest('tr');
     let cantidad = parseInt(input.value);
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
     
-    const ubicacionFila = ubicacionOriginal || tr.querySelector('input[name="ubicacion[]"]')?.value || '';
-    
-    // Buscar el precio en la celda
     const precioTd = tr.children[5];
     let precio = 0;
     if (precioTd) {
@@ -1611,7 +1454,7 @@ function mostrarToast(mensaje, tipo = 'success') {
     else toast.style.borderLeftColor = '#059669';
     toast.innerHTML = mensaje;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => toast.remove(), 2500);
 }
 
 function escapeHtml(str) {
@@ -1624,7 +1467,7 @@ function escapeHtml(str) {
     });
 }
 
-// ===== CONTROL DE FOLIO DE OPERACIÓN =====
+// Control de folio de operación
 const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
 const folioOperacionBox = document.getElementById('folioOperacionBox');
 const folioOperacionInput = document.getElementById('folioOperacionInput');
@@ -1673,7 +1516,7 @@ function guardarSalida() {
     document.getElementById('formSalida').submit();
 }
 
-// ===== EVENTOS GLOBALES =====
+// Eventos
 document.addEventListener('DOMContentLoaded', () => {
     generarTodasLasUbicaciones();
     actualizarTotales();
@@ -1719,7 +1562,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Eventos del modal
 if (modalSearch) {
     modalSearch.addEventListener('keydown', (e) => {
         const filasProductos = document.querySelectorAll('#modalTableBody > tr.producto-principal');

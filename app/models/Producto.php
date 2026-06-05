@@ -319,18 +319,19 @@ class Producto
 
             if ($isAdmin) {
                 $sqlUbi = "SELECT 
-                                sucursal,
-                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                                existencia AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                           AND sucursal IS NOT NULL
-                           AND TRIM(sucursal) != ''
-                           AND COALESCE(existencia, 0) > 0
-                           AND ubicacion IS NOT NULL
-                           AND TRIM(ubicacion) != ''
-                           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY sucursal ASC, ubicacion ASC";
+                sucursal,
+                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                existencia AS existencia_actual
+           FROM producto_existencias
+           WHERE producto_id = :producto_id
+           AND sucursal IS NOT NULL
+           AND TRIM(sucursal) != ''
+           AND COALESCE(existencia, 0) >= 0  -- Traer TODAS (incluyo 0)
+           AND ubicacion IS NOT NULL
+           AND TRIM(ubicacion) != ''
+           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+           ORDER BY ubicacion ASC  -- <-- SOLO ORDEN FÍSICO, NO POR EXISTENCIA
+           ";
 
                 $stmtUbi = $this->conn->prepare($sqlUbi);
                 $stmtUbi->execute([
@@ -338,17 +339,18 @@ class Producto
                 ]);
             } else {
                 $sqlUbi = "SELECT 
-                                sucursal,
-                                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
-                                existencia AS existencia_actual
-                           FROM producto_existencias
-                           WHERE producto_id = :producto_id
-                           AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
-                           AND COALESCE(existencia, 0) > 0
-                           AND ubicacion IS NOT NULL
-                           AND TRIM(ubicacion) != ''
-                           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                           ORDER BY existencia ASC, ubicacion ASC";
+                sucursal,
+                COALESCE(ubicacion, 'SIN UBICACION') AS ubicacion,
+                existencia AS existencia_actual
+           FROM producto_existencias
+           WHERE producto_id = :producto_id
+           AND UPPER(COALESCE(sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal)
+           AND COALESCE(existencia, 0) >= 0  -- Traer TODAS (incluyo 0)
+           AND ubicacion IS NOT NULL
+           AND TRIM(ubicacion) != ''
+           AND UPPER(TRIM(ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
+           ORDER BY ubicacion ASC  -- <-- SOLO ORDEN FÍSICO
+           ";
 
                 $stmtUbi = $this->conn->prepare($sqlUbi);
                 $stmtUbi->execute([

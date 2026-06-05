@@ -33,6 +33,7 @@ $fechaImpresa = '';
 if (!empty($salida['fecha'])) {
     $fechaImpresa = date('d/m/Y', strtotime($salida['fecha']));
 }
+
 function obtenerIniciales(string $nombreCompleto): string
 {
     $nombreCompleto = trim($nombreCompleto);
@@ -44,10 +45,7 @@ function obtenerIniciales(string $nombreCompleto): string
     $partes = preg_split('/\s+/', $nombreCompleto);
 
     if (count($partes) >= 2) {
-        $primeraInicial = strtoupper(substr($partes[0], 0, 1));
-        $segundaInicial = strtoupper(substr($partes[1], 0, 1));
-
-        return $primeraInicial . '.' . $segundaInicial . '.';
+        return strtoupper(substr($partes[0], 0, 1)) . '.' . strtoupper(substr($partes[1], 0, 1)) . '.';
     }
 
     return strtoupper(substr($partes[0], 0, 1)) . '.';
@@ -115,6 +113,11 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
             margin: 0 auto;
             background: #fff;
             padding: 8px 6px;
+        }
+
+        .print-header {
+            width: 100%;
+            background: #fff;
         }
 
         .header {
@@ -230,41 +233,43 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
             background: #fafafa;
         }
 
+        .firmas-box {
+            margin-top: 45px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 28px;
+            align-items: end;
+        }
+
+        .firma-item {
+            text-align: center;
+            font-size: 10px;
+        }
+
+        .firma-linea {
+            border-top: 1px solid #111;
+            height: 1px;
+            margin-bottom: 6px;
+        }
+
+        .firma-titulo {
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+
+        .firma-nombre {
+            font-size: 9px;
+            color: #333;
+        }
+
         .footer-note {
             margin-top: 18px;
             text-align: center;
             font-size: 13px;
             font-weight: bold;
         }
-.firmas-box {
-    margin-top: 45px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 28px;
-    align-items: end;
-}
 
-.firma-item {
-    text-align: center;
-    font-size: 10px;
-}
-
-.firma-linea {
-    border-top: 1px solid #111;
-    height: 1px;
-    margin-bottom: 6px;
-}
-
-.firma-titulo {
-    font-weight: bold;
-    text-transform: uppercase;
-    margin-bottom: 3px;
-}
-
-.firma-nombre {
-    font-size: 9px;
-    color: #333;
-}
         @media print {
             .no-print {
                 display: none !important;
@@ -283,6 +288,21 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
                 margin: 0;
             }
 
+            .print-header {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: #fff;
+                z-index: 9999;
+                padding: 0 14mm 6px 14mm;
+                box-sizing: border-box;
+            }
+
+            .print-content {
+                margin-top: 145px;
+            }
+
             table {
                 page-break-inside: auto;
             }
@@ -299,9 +319,16 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
             tfoot {
                 display: table-footer-group;
             }
+
+            .firmas-box,
+            .footer-note {
+                page-break-inside: avoid;
+            }
         }
     </style>
 </head>
+
+<body>
 
 <script>
 function imprimirYLimpiar() {
@@ -310,15 +337,15 @@ function imprimirYLimpiar() {
 }
 </script>
 
-<body>
+<div class="no-print">
+    <button class="btn btn-primary" onclick="imprimirYLimpiar()">Imprimir</button>
+    <a class="btn btn-secondary" href="javascript:history.back()">Regresar</a>
+    <a class="btn btn-primary" href="salidas.php">Nueva salida</a>
+</div>
 
-    <div class="no-print">
-        <button class="btn btn-primary" onclick="imprimirYLimpiar()">Imprimir</button>
-        <a class="btn btn-secondary" href="javascript:history.back()">Regresar</a>
-        <a class="btn btn-primary" href="salidas.php">Nueva salida</a>
-    </div>
+<div class="sheet">
 
-    <div class="sheet">
+    <div class="print-header">
 
         <div class="header">
             <div class="logo-box">
@@ -335,9 +362,7 @@ function imprimirYLimpiar() {
                 <h2>Movimientos al Inventario</h2>
                 <div>
                     Folio:
-                    <span class="movement-number">
-                        <?= e($salida['folio']) ?>
-                    </span>
+                    <span class="movement-number"><?= e($salida['folio']) ?></span>
                 </div>
             </div>
         </div>
@@ -351,9 +376,6 @@ function imprimirYLimpiar() {
         <div class="info-grid">
             <div class="label">Movimiento:</div>
             <div><?= e($movimientoTexto) ?></div>
-
-            
-           
         </div>
 
         <div class="info-grid">
@@ -365,12 +387,12 @@ function imprimirYLimpiar() {
         </div>
 
         <div class="info-grid">
-    <div class="label">Almacén:</div>
-    <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
+            <div class="label">Almacén:</div>
+            <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
 
-    <div class="label">Usuario:</div>
-    <div><?= e($aliasUsuario) ?></div>
-</div>
+            <div class="label">Usuario:</div>
+            <div><?= e($aliasUsuario) ?></div>
+        </div>
 
         <div class="info-grid">
             <div class="label">Observaciones:</div>
@@ -378,6 +400,10 @@ function imprimirYLimpiar() {
         </div>
 
         <div class="line"></div>
+
+    </div>
+
+    <div class="print-content">
 
         <table>
             <thead>
@@ -417,31 +443,33 @@ function imprimirYLimpiar() {
             </tbody>
         </table>
 
-       <div class="firmas-box">
-    <div class="firma-item">
-        <div class="firma-linea"></div>
-        <div class="firma-titulo">Surtió</div>
-        <div class="firma-nombre">Nombre y firma</div>
+        <div class="firmas-box">
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Surtió</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
+
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Verificó</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
+
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Recibió</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            Movimiento Realizado !!!
+        </div>
+
     </div>
 
-    <div class="firma-item">
-        <div class="firma-linea"></div>
-        <div class="firma-titulo">Verificó</div>
-        <div class="firma-nombre">Nombre y firma</div>
-    </div>
-
-    <div class="firma-item">
-        <div class="firma-linea"></div>
-        <div class="firma-titulo">Recibió</div>
-        <div class="firma-nombre">Nombre y firma</div>
-    </div>
 </div>
-
-<div class="footer-note">
-    Movimiento Realizado !!!
-</div>
-
-    </div>
 
 </body>
 </html>

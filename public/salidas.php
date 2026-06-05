@@ -98,10 +98,9 @@ $folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 date_default_timezone_set('America/Mexico_City');
 
-// ===== FECHA AUTOMÁTICA =====
+// FECHA AUTOMÁTICA
 $fechaActual = date('Y-m-d\TH:i');
 
-// Ya no necesitamos generar ubicaciones desde PHP, lo haremos en JS
 $moduleCss = 'salidas';
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
@@ -239,6 +238,24 @@ body {
     grid-template-columns: 1fr 180px 200px 180px 140px;
     gap: 16px;
     align-items: end;
+}
+
+@media (max-width: 1100px) {
+    .capture-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .btn-add {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    .capture-grid {
+        grid-template-columns: 1fr;
+    }
+    .btn-add {
+        grid-column: span 1;
+    }
 }
 
 .capture-field {
@@ -526,7 +543,7 @@ body {
     margin: 0 4px;
 }
 
-/* ===== TABLA DE PRODUCTOS ===== */
+/* ===== TABLA DE PRODUCTOS - CORREGIDA ===== */
 .products-section {
     background: white;
     border-radius: 20px;
@@ -565,39 +582,53 @@ body {
     padding: 0 20px;
 }
 
+/* IMPORTANTE: FORZAR VISUALIZACIÓN CORRECTA DE TABLA */
 .data-table {
     width: 100%;
     border-collapse: collapse;
+    display: table !important;
+}
+
+.data-table thead,
+.data-table tbody,
+.data-table tr {
+    display: table-row-group !important;
+}
+
+.data-table tr {
+    display: table-row !important;
+}
+
+.data-table th,
+.data-table td {
+    display: table-cell !important;
+    padding: 14px 12px !important;
+    color: #1a2c3e !important;
+    font-size: 14px !important;
+    border-bottom: 1px solid #f0f2f5 !important;
+    vertical-align: middle !important;
 }
 
 .data-table th {
-    text-align: left;
-    padding: 14px 12px;
-    color: #6c7a8a;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    border-bottom: 1px solid #eef2f6;
+    text-align: left !important;
+    color: #6c7a8a !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    border-bottom: 1px solid #eef2f6 !important;
 }
 
-.data-table td {
-    padding: 14px 12px;
-    color: #1a2c3e;
-    font-size: 14px;
-    border-bottom: 1px solid #f0f2f5;
-}
-
-.data-table tr:hover td {
-    background: #fafbfc;
+.data-table tbody tr:hover td {
+    background: #fafbfc !important;
 }
 
 .qty-input {
-    width: 70px;
-    padding: 8px;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    text-align: center;
-    font-size: 13px;
+    width: 80px !important;
+    padding: 8px !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 10px !important;
+    text-align: center !important;
+    font-size: 14px !important;
 }
 
 .delete-btn {
@@ -701,54 +732,6 @@ body {
     to { transform: translateX(0); opacity: 1; }
 }
 
-/* Responsive */
-@media (max-width: 1100px) {
-    .capture-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-    
-    .btn-add {
-        grid-column: span 2;
-    }
-}
-
-@media (max-width: 768px) {
-    body {
-        padding: 16px;
-    }
-    
-    .doc-section, .capture-section {
-        padding: 18px;
-    }
-    
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .capture-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .btn-add {
-        grid-column: span 1;
-    }
-    
-    .table-footer {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .btn-save, .btn-clear {
-        width: 100%;
-        justify-content: center;
-    }
-    
-    .modal-excel-content {
-        width: 95%;
-        height: 85vh;
-    }
-}
-
 /* Estilos para evitar interferencia con la tabla de ubicaciones */
 .ubicaciones-wrapper {
     pointer-events: auto;
@@ -788,11 +771,46 @@ body {
 .ubicaciones-cell {
     cursor: default;
 }
+
+/* Responsive para tabla */
+@media (max-width: 768px) {
+    body {
+        padding: 16px;
+    }
+    
+    .doc-section, .capture-section {
+        padding: 18px;
+    }
+    
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .table-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .btn-save, .btn-clear {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .modal-excel-content {
+        width: 95%;
+        height: 85vh;
+    }
+    
+    .data-table th,
+    .data-table td {
+        white-space: nowrap;
+    }
+}
 </style>
 
 <!-- HEADER -->
 <div class="page-header">
-    <h1>Salida de Almacén</h1>
+    <h1><?= $modoEdicion ? '✏️ Editar Salida' : '➕ Nueva Salida de Almacén' ?></h1>
 </div>
 
 <div class="main-container">
@@ -889,7 +907,6 @@ body {
         <div class="capture-title">Agregar productos</div>
         
         <div class="capture-grid">
-            <!-- Campo de producto con botón para abrir modal -->
             <div class="capture-field">
                 <label>🔍 Producto</label>
                 <div style="display: flex; gap: 8px;">
@@ -898,7 +915,6 @@ body {
                 </div>
             </div>
 
-            <!-- Cantidad -->
             <div class="capture-field">
                 <label>🔢 Cantidad</label>
                 <input type="number" id="cantidadInput" value="1" min="1" step="1">
@@ -910,26 +926,22 @@ body {
                 </div>
             </div>
 
-            <!-- Ubicación -->
             <div class="capture-field">
                 <label>📍 Ubicación</label>
                 <input type="text" id="ubicacionInput" list="ubicacionesList" placeholder="Seleccione ubicación">
                 <datalist id="ubicacionesList"></datalist>
             </div>
 
-            <!-- Precio -->
             <div class="capture-field">
                 <label>💰 Precio unitario</label>
                 <input type="number" id="precioInput" step="0.01" value="0.00">
             </div>
 
-            <!-- Botón agregar -->
             <button type="button" class="btn-add" id="agregarBtn">
                 ➕ Agregar producto (Enter)
             </button>
         </div>
 
-        <!-- Info del producto seleccionado -->
         <div id="selectedInfo" style="display: none;">
             <div class="selected-info">
                 <div class="row"><span class="label">📦 Producto:</span><span class="value" id="infoCodigo">-</span></div>
@@ -948,7 +960,7 @@ body {
         </div>
     </div>
 
-    <!-- SECCIÓN 3: TABLA DE PRODUCTOS -->
+    <!-- SECCIÓN 3: TABLA DE PRODUCTOS CORREGIDA -->
     <div class="products-section">
         <div class="products-header">
             <h3>Productos agregados</h3>
@@ -958,14 +970,14 @@ body {
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Cantidad</th>
+                        <th style="width: 100px;">Cantidad</th>
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
                         <th>Ubicación</th>
                         <th>Precio</th>
                         <th>Importe</th>
-                        <th></th>
+                        <th style="width: 60px;"></th>
                     </tr>
                 </thead>
                 <tbody id="detalleBody">
@@ -974,24 +986,30 @@ body {
                             $cantidad = (int)($item['cantidad'] ?? 0);
                             $precio = (float)($item['precio_unitario'] ?? 0);
                             $importe = $cantidad * $precio;
+                            $costoUnitario = (float)($item['costo_unitario'] ?? 0);
+                            $productoId = (int)($item['producto_id'] ?? 0);
+                            $ubicacion = trim($item['ubicacion'] ?? '');
+                            $codigo = e($item['codigo'] ?? '');
+                            $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
+                            $unidad = e($item['unidad_medida'] ?? '');
                         ?>
-                            <tr data-producto-id="<?= (int)($item['producto_id'] ?? 0) ?>">
+                            <tr data-producto-id="<?= $productoId ?>">
                                 <td>
-                                    <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" onchange="actualizarCantidadFila(this)">
-                                    <input type="hidden" name="producto_id[]" value="<?= (int)($item['producto_id'] ?? 0) ?>">
+                                    <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" step="1" onchange="actualizarCantidadFila(this)">
+                                    <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
                                     <input type="hidden" name="cantidad[]" value="<?= $cantidad ?>">
-                                    <input type="hidden" name="costo_unitario[]" value="<?= (float)($item['costo_unitario'] ?? 0) ?>">
+                                    <input type="hidden" name="costo_unitario[]" value="<?= $costoUnitario ?>">
                                     <input type="hidden" name="precio_unitario[]" value="<?= $precio ?>">
-                                    <input type="hidden" name="ubicacion[]" value="<?= e($item['ubicacion'] ?? '') ?>">
+                                    <input type="hidden" name="ubicacion[]" value="<?= e($ubicacion) ?>">
                                 </td>
-                                <td><strong><?= e($item['codigo'] ?? '') ?></strong></td>
-                                <td><?= e(substr($item['descripcion'] ?? '', 0, 45)) ?></td>
-                                <td><?= e($item['unidad_medida'] ?? '') ?></td>
-                                <td><?= e($item['ubicacion'] ?? '') ?></td>
+                                <td><strong><?= $codigo ?></strong></td>
+                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;"><?= $descripcion ?></td>
+                                <td><?= $unidad ?></td>
+                                <td><?= e($ubicacion) ?></td>
                                 <td>$<?= number_format($precio, 2) ?></td>
-                                <td class="importe-fila" data-importe="<?= $importe ?>">$<?= number_format($importe, 2) ?></td>
+                                <td class="importe-fila" data-importe="<?= $importe ?>"><strong>$<?= number_format($importe, 2) ?></strong></td>
                                 <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
-                            </table>
+                            </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr id="filaVacia">
@@ -1058,50 +1076,49 @@ body {
 // ===== VARIABLES =====
 const productos = <?php 
     $productosArray = [];
-foreach ($productos as $p) {
-    $existenciaTotal = 0;
-    $ubicacionesLista = [];
-    
-    if (!empty($p['ubicaciones']) && is_array($p['ubicaciones'])) {
-        foreach ($p['ubicaciones'] as $ubi) {
-            $existenciaTotal += (int)($ubi['existencia_actual'] ?? 0);
-            $ubicacionTmp = strtoupper(trim((string)($ubi['ubicacion'] ?? '')));
-            if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION') {
+    foreach ($productos as $p) {
+        $existenciaTotal = 0;
+        $ubicacionesLista = [];
+        
+        if (!empty($p['ubicaciones']) && is_array($p['ubicaciones'])) {
+            foreach ($p['ubicaciones'] as $ubi) {
+                $existenciaTotal += (int)($ubi['existencia_actual'] ?? 0);
+                $ubicacionTmp = strtoupper(trim((string)($ubi['ubicacion'] ?? '')));
+                if ($ubicacionTmp !== '' && $ubicacionTmp !== 'SIN UBICACION') {
+                    $ubicacionesLista[] = [
+                        'ubicacion' => $ubicacionTmp,
+                        'existencia' => (int)($ubi['existencia_actual'] ?? 0)
+                    ];
+                }
+            }
+        } else {
+            $existenciaTotal = (int)($p['existencia_actual'] ?? $p['existencia_bodega'] ?? 0);
+            $ubicacionNormal = strtoupper(trim((string)($p['ubicacion'] ?? '')));
+            if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION') {
                 $ubicacionesLista[] = [
-                    'ubicacion' => $ubicacionTmp,
-                    'existencia' => (int)($ubi['existencia_actual'] ?? 0)
+                    'ubicacion' => $ubicacionNormal,
+                    'existencia' => $existenciaTotal
                 ];
             }
         }
-    } else {
-        $existenciaTotal = (int)($p['existencia_actual'] ?? $p['existencia_bodega'] ?? 0);
-        $ubicacionNormal = strtoupper(trim((string)($p['ubicacion'] ?? '')));
-        if ($ubicacionNormal !== '' && $ubicacionNormal !== 'SIN UBICACION') {
-            $ubicacionesLista[] = [
-                'ubicacion' => $ubicacionNormal,
-                'existencia' => $existenciaTotal
-            ];
-        }
+        
+        usort($ubicacionesLista, function($a, $b) {
+            return $a['existencia'] - $b['existencia'];
+        });
+        
+        $ubicacionSugerida = !empty($ubicacionesLista) ? $ubicacionesLista[0]['ubicacion'] : '';
+        
+        $productosArray[] = [
+            'id' => (int)$p['id'],
+            'codigo' => $p['codigo'],
+            'descripcion' => $p['descripcion'],
+            'unidad_medida' => $p['unidad_medida'],
+            'precio_compra' => (float)$p['precio_compra'],
+            'existencia_total' => $existenciaTotal,
+            'ubicacion_sugerida' => $ubicacionSugerida,
+            'ubicaciones' => $ubicacionesLista
+        ];
     }
-    
-    // Ordenar ubicaciones por existencia (menor primero)
-    usort($ubicacionesLista, function($a, $b) {
-        return $a['existencia'] - $b['existencia'];
-    });
-    
-    $ubicacionSugerida = !empty($ubicacionesLista) ? $ubicacionesLista[0]['ubicacion'] : '';
-    
-    $productosArray[] = [
-        'id' => (int)$p['id'],
-        'codigo' => $p['codigo'],
-        'descripcion' => $p['descripcion'],
-        'unidad_medida' => $p['unidad_medida'],
-        'precio_compra' => (float)$p['precio_compra'],
-        'existencia_total' => $existenciaTotal,
-        'ubicacion_sugerida' => $ubicacionSugerida,
-        'ubicaciones' => $ubicacionesLista
-    ];
-}
     echo json_encode($productosArray, JSON_UNESCAPED_UNICODE);
 ?>;
 
@@ -1120,7 +1137,7 @@ const precioInput = document.getElementById('precioInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
 
-// ===== FUNCIÓN PARA GENERAR TODAS LAS UBICACIONES =====
+// Generar ubicaciones
 function generarTodasLasUbicaciones() {
     const lista = document.getElementById('ubicacionesList');
     if (!lista) return;
@@ -1153,9 +1170,7 @@ function generarTodasLasUbicaciones() {
         for (let z = 1; z <= 22; z++) add(6, n, z);
     }
     
-    ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1','BODEGA PEDYALITE');
-    
-   
+    ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1', 'BODEGA PEDYALITE');
     
     lista.innerHTML = '';
     ubicaciones.forEach(u => {
@@ -1165,12 +1180,12 @@ function generarTodasLasUbicaciones() {
     });
 }
 
-// ===== FUNCIONES DEL MODAL CORREGIDAS =====
+// Funciones del modal
 function abrirModal() {
     modal.classList.add('active');
     modalSearch.value = '';
     cargarProductosEnModal(productos);
-    modalSearch.focus();
+    setTimeout(() => modalSearch.focus(), 100);
     modalSelectedIndex = -1;
 }
 
@@ -1192,7 +1207,7 @@ function cargarProductosEnModal(productosList) {
         if (p.ubicaciones && p.ubicaciones.length > 0) {
             ubicacionesHtml = `
                 <div class="ubicaciones-wrapper" style="max-height: 120px; overflow-y: auto; font-size: 11px;">
-                    <table class="ubicaciones-interna-table" style="width: 100%; border-collapse: collapse;">
+                    <table style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr style="background: #f0f2f5;">
                                 <th style="padding: 4px 6px; text-align: left;">Ubicación</th>
@@ -1210,9 +1225,6 @@ function cargarProductosEnModal(productosList) {
                     </table>
                 </div>
             `;
-            if (p.ubicaciones.length > 10) {
-                ubicacionesHtml += `<div style="font-size: 10px; color: #6c7a8a; padding-top: 4px; text-align: center;">+ ${p.ubicaciones.length - 10} ubicaciones más...</div>`;
-            }
         } else {
             ubicacionesHtml = `<div style="color: #9ca3af; text-align: center;">Sin ubicaciones</div>`;
         }
@@ -1229,10 +1241,9 @@ function cargarProductosEnModal(productosList) {
         `;
     }).join('');
     
-    // Evento click SOLO para filas de productos
     document.querySelectorAll('#modalTableBody > tr.producto-principal').forEach(row => {
         row.addEventListener('click', (e) => {
-            if (e.target.closest('.ubicaciones-interna-table') || e.target.closest('.ubicaciones-wrapper')) {
+            if (e.target.closest('.ubicaciones-wrapper')) {
                 e.stopPropagation();
                 return;
             }
@@ -1295,7 +1306,7 @@ function seleccionarProductoDelModal(producto) {
     mostrarToast(`✅ Producto seleccionado: ${producto.codigo}`);
 }
 
-// ===== FUNCIONES DE CANTIDAD =====
+// Funciones de cantidad
 function cambiarCantidad(valor) {
     let nuevo = parseInt(cantidadInput.value) + valor;
     if (nuevo < 1) nuevo = 1;
@@ -1312,32 +1323,27 @@ function setMaxCantidad() {
     }
 }
 
-// ===== AGREGAR PRODUCTO =====
+// Agregar producto
 function agregarProducto() {
     if (!productoSeleccionado) {
         mostrarToast('❌ Selecciona un producto (Ctrl+B para buscar)', 'error');
         return;
     }
     
-    const cantidad = parseInt(cantidadInput.value);
+    let cantidad = parseInt(cantidadInput.value);
+    if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
+    
     const precio = parseFloat(precioInput.value);
-    let ubicacion = ubicacionInput.value.trim().toUpperCase();
-    
-    if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
-    
-    if (cantidad <= 0) {
-        mostrarToast('❌ Cantidad inválida', 'error');
+    if (isNaN(precio) || precio < 0) {
+        mostrarToast('❌ Precio inválido', 'error');
         return;
     }
+    
+    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+    if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
     
     if (cantidad > productoSeleccionado.existencia_total) {
         mostrarToast(`❌ Stock insuficiente. Disponible: ${productoSeleccionado.existencia_total}`, 'error');
-        return;
-    }
-    
-    if (ubicacion === 'SIN UBICACION') {
-        mostrarToast('❌ Selecciona una ubicación válida', 'error');
-        ubicacionInput.focus();
         return;
     }
     
@@ -1357,7 +1363,7 @@ function agregarProducto() {
     tr.dataset.productoId = productoSeleccionado.id;
     tr.innerHTML = `
         <td>
-            <input type="number" class="qty-input" value="${cantidad}" min="1" onchange="actualizarCantidadFila(this)">
+            <input type="number" class="qty-input" value="${cantidad}" min="1" step="1" onchange="actualizarCantidadFila(this)">
             <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
             <input type="hidden" name="cantidad[]" value="${cantidad}">
             <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
@@ -1365,7 +1371,7 @@ function agregarProducto() {
             <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
         </td>
         <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
-        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
+        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 60))}</td>
         <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td>$${precio.toFixed(2)}</td>
@@ -1383,7 +1389,7 @@ function agregarProducto() {
     ubicacionInput.value = '';
     precioInput.value = '0.00';
     
-    mostrarToast(`✅ ${cantidad} x producto agregado`);
+    mostrarToast(`✅ ${cantidad} x ${productoSeleccionado?.codigo || 'producto'} agregado`);
 }
 
 function actualizarCantidadFila(input) {
@@ -1391,10 +1397,14 @@ function actualizarCantidadFila(input) {
     let cantidad = parseInt(input.value);
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
     
-    const precioTexto = tr.children[5]?.textContent?.replace('$', '') || '0';
-    const precio = parseFloat(precioTexto);
-    const nuevoImporte = cantidad * precio;
+    const precioTd = tr.children[5];
+    let precio = 0;
+    if (precioTd) {
+        const precioTexto = precioTd.textContent.replace('$', '');
+        precio = parseFloat(precioTexto);
+    }
     
+    const nuevoImporte = cantidad * precio;
     const importeTd = tr.querySelector('.importe-fila');
     if (importeTd) {
         importeTd.dataset.importe = nuevoImporte;
@@ -1408,7 +1418,8 @@ function actualizarCantidadFila(input) {
 }
 
 function eliminarFila(btn) {
-    btn.closest('tr').remove();
+    const tr = btn.closest('tr');
+    tr.remove();
     if (detalleBody.children.length === 0) {
         detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>`;
     }
@@ -1438,7 +1449,9 @@ function actualizarTotales() {
 function mostrarToast(mensaje, tipo = 'success') {
     const toast = document.createElement('div');
     toast.className = 'toast-message';
-    toast.style.borderLeftColor = tipo === 'success' ? '#059669' : (tipo === 'error' ? '#ef4444' : '#f59e0b');
+    if (tipo === 'error') toast.style.borderLeftColor = '#ef4444';
+    else if (tipo === 'warning') toast.style.borderLeftColor = '#f59e0b';
+    else toast.style.borderLeftColor = '#059669';
     toast.innerHTML = mensaje;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
@@ -1454,7 +1467,7 @@ function escapeHtml(str) {
     });
 }
 
-// ===== CONTROL DE FOLIO DE OPERACIÓN =====
+// Control de folio de operación
 const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
 const folioOperacionBox = document.getElementById('folioOperacionBox');
 const folioOperacionInput = document.getElementById('folioOperacionInput');
@@ -1482,7 +1495,7 @@ function controlarFolioOperacion() {
 
 function ponerFechaActual() {
     const fechaInput = document.getElementById('fechaInput');
-    if (fechaInput.value && !<?= $modoEdicion ? 'true' : 'false' ?>) return;
+    if (fechaInput.value && <?= $modoEdicion ? 'true' : 'false' ?>) return;
     if (!fechaInput.value) {
         const ahora = new Date();
         const year = ahora.getFullYear();
@@ -1503,23 +1516,20 @@ function guardarSalida() {
     document.getElementById('formSalida').submit();
 }
 
-// ===== EVENTOS GLOBALES =====
+// Eventos
 document.addEventListener('DOMContentLoaded', () => {
     generarTodasLasUbicaciones();
     actualizarTotales();
     controlarFolioOperacion();
     ponerFechaActual();
     
-    // Ctrl+B para abrir modal
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
             e.preventDefault();
-            e.stopPropagation();
             abrirModal();
         }
     });
     
-    // Enter en cantidad, precio o ubicación
     ['cantidadInput', 'precioInput', 'ubicacionInput'].forEach(id => {
         document.getElementById(id)?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1534,7 +1544,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openModalBtn')?.addEventListener('click', abrirModal);
     document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
     
-    // Ctrl+Enter para guardar
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
@@ -1542,7 +1551,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Cerrar modal con ESC
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             cerrarModal();
@@ -1554,7 +1562,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// ===== EVENTOS DE TECLADO PARA EL MODAL (CORREGIDOS) =====
 if (modalSearch) {
     modalSearch.addEventListener('keydown', (e) => {
         const filasProductos = document.querySelectorAll('#modalTableBody > tr.producto-principal');
@@ -1562,21 +1569,18 @@ if (modalSearch) {
         
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            e.stopPropagation();
             if (totalFilas > 0) {
                 modalSelectedIndex = Math.min(modalSelectedIndex + 1, totalFilas - 1);
                 actualizarSeleccionModal();
             }
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            e.stopPropagation();
             if (totalFilas > 0) {
                 modalSelectedIndex = Math.max(modalSelectedIndex - 1, 0);
                 actualizarSeleccionModal();
             }
         } else if (e.key === 'Enter' && modalSelectedIndex >= 0 && modalProductosFiltrados[modalSelectedIndex]) {
             e.preventDefault();
-            e.stopPropagation();
             seleccionarProductoDelModal(modalProductosFiltrados[modalSelectedIndex]);
         } else if (e.key === 'Escape') {
             e.preventDefault();
@@ -1587,7 +1591,7 @@ if (modalSearch) {
     modalSearch.addEventListener('input', filtrarProductosModal);
 }
 
-tipoOperacionSelect.addEventListener('change', controlarFolioOperacion);
+tipoOperacionSelect?.addEventListener('change', controlarFolioOperacion);
 </script>
 
 <?php

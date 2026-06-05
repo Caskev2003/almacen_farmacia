@@ -156,26 +156,92 @@ function buscarProductoPorCodigo(PDO $conn, string $codigo): ?array
     return $producto ?: null;
 }
 
-function actualizarExistencia(PDO $conn, int $productoId, string $sucursal, int $existencia): bool
+// ===== NUEVA FUNCIÓN: Actualizar ubicación y existencia =====
+function actualizarUbicacionExistencia(PDO $conn, int $productoId, string $sucursal, string $ubicacion, int $existencia): bool
+{
+    $sucursal = strtoupper(trim($sucursal));
+    $ubicacion = strtoupper(trim($ubicacion));
+    
+    if ($ubicacion === '' || $ubicacion === '-' || $ubicacion === 'SIN UBICACION' || $ubicacion === 'SINUBICACION') {
+        $ubicacion = 'SIN UBICACION';
+    }
+    
+    // Verificar si ya existe el registro
+    $stmtCheck = $conn->prepare("
+        SELECT id, existencia
+        FROM producto_existencias
+        WHERE producto_id = ?
+        AND UPPER(sucursal) = UPPER(?)
+        AND UPPER(ubicacion) = UPPER(?)
+    ");
+    
+    $stmtCheck->execute([$productoId, $sucursal, $ubicacion]);
+    $existe = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+    
+    if ($existe) {
+        // Actualizar existencia
+        $stmtUpdate = $conn->prepare("
+            UPDATE producto_existencias
+            SET existencia = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ");
+        return $stmtUpdate->execute([$existencia, $existe['id']]);
+    } else {
+        // Insertar nuevo
+        $stmtInsert = $conn->prepare("
+            INSERT INTO producto_existencias (
+                producto_id,
+                sucursal,
+                ubicacion,
+                existencia,
+                created_at,
+                updated_at
+            ) VALUES (
+                ?, ?, ?, ?,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            )
+        ");
+        return $stmtInsert->execute([$productoId, $sucursal, $ubicacion, $existencia]);
+    }
+}
+
+// ===== NUEVA FUNCIÓN: Actualizar ubicación principal del producto =====
+function actualizarUbicacionPrincipal(PDO $conn, int $productoId, string $sucursal): void
 {
     $stmt = $conn->prepare("
-        INSERT INTO producto_existencias (
-            producto_id,
-            sucursal,
-            existencia
-        ) VALUES (
-            ?, ?, ?
-        )
-        ON DUPLICATE KEY UPDATE
-            existencia = VALUES(existencia),
-            updated_at = CURRENT_TIMESTAMP
+        SELECT ubicacion
+        FROM producto_existencias
+        WHERE producto_id = ?
+        AND UPPER(sucursal) = UPPER(?)
+        AND existencia > 0
+        ORDER BY existencia DESC, ubicacion ASC
+        LIMIT 1
     ");
+    
+    $stmt->execute([$productoId, $sucursal]);
+    $ubicacion = $stmt->fetchColumn();
+    
+    if ($ubicacion) {
+        $stmtUpdate = $conn->prepare("
+            UPDATE productos
+            SET ubicacion = ?
+            WHERE id = ?
+        ");
+        $stmtUpdate->execute([$ubicacion, $productoId]);
+    }
+}
 
-    return $stmt->execute([
-        $productoId,
-        $sucursal,
-        $existencia
-    ]);
+// ===== NUEVA FUNCIÓN: Reactivar un producto si estaba inactivo =====
+function reactivarProducto(PDO $conn, int $productoId): void
+{
+    $stmt = $conn->prepare("
+        UPDATE productos
+        SET estado = 1
+        WHERE id = ? AND estado = 0
+    ");
+    $stmt->execute([$productoId]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -218,6 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $actualizados = 0;
             $omitidos = 0;
             $noEncontrados = 0;
+            $reactivados = 0;
             $detalleErrores = [];
 
             if ($tipoImportacion === 'informacion') {
@@ -229,6 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $colNombre = $encabezados['nombre'] ?? null;
                 $colMarca = $encabezados['descripcioncategoria'] ?? null;
                 $colCategoria = $encabezados['descripcionsubfamilia'] ?? null;
+                $colUbicacion = $encabezados['ubicacion'] ?? null;
 
                 $colPrecioCompra =
                     $encabezados['preciocompra'] ??
@@ -253,6 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $descripcion = valorFila($fila, $colNombre);
                     $marca = valorFila($fila, $colMarca);
                     $categoriaNombre = valorFila($fila, $colCategoria);
+                    $ubicacion = valorFila($fila, $colUbicacion);
                     $precioCompra = numeroExcel(valorFila($fila, $colPrecioCompra));
                     $precioVenta = numeroExcel(valorFila($fila, $colPrecioVenta));
 
@@ -300,7 +369,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     laboratorio = ?,
                                     precio_compra = ?,
                                     precio_venta = ?,
-                                    estado = 1
+                                    estado = 1,
+                                    updated_at = CURRENT_TIMESTAMP
                                 WHERE id = ?
                             ");
 
@@ -314,6 +384,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $nuevoPrecioVenta,
                                 $producto['id']
                             ]);
+                            
+                            // Si el producto estaba inactivo, reactivar
+                            if ((int)($producto['estado'] ?? 0) === 0) {
+                                $reactivados++;
+                            }
 
                             $actualizados++;
 
@@ -342,12 +417,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ubicacion,
                                     existencia_bodega,
                                     sucursal,
-                                    estado
+                                    estado,
+                                    created_at,
+                                    updated_at
                                 ) VALUES (
                                     ?, ?, ?, ?, NULL,
                                     ?, NULL, ?, ?,
-                                    0, 0, NULL,
-                                    0, NULL, 1
+                                    0, 0, ?,
+                                    0, NULL, 1,
+                                    CURRENT_TIMESTAMP,
+                                    CURRENT_TIMESTAMP
                                 )
                             ");
 
@@ -358,7 +437,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $categoriaId,
                                 campoVacio($marca) ? null : $marca,
                                 $precioCompra,
-                                $precioVenta
+                                $precioVenta,
+                                $ubicacion ?: null
                             ]);
 
                             $insertados++;
@@ -377,9 +457,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mensaje = "
                     Importación de <strong>INFORMACIÓN</strong> completada.<br><br>
                     Productos antes de importar: <strong>{$productosActuales}</strong><br>
-                    Insertados: <strong>{$insertados}</strong><br>
-                    Actualizados / comparados: <strong>{$actualizados}</strong><br>
-                    No encontrados y NO insertados: <strong>{$noEncontrados}</strong><br>
+                    Insertados (nuevos): <strong>{$insertados}</strong><br>
+                    Actualizados / Reactivados: <strong>{$actualizados}</strong><br>
+                    Reactivados: <strong>{$reactivados}</strong><br>
+                    No encontrados: <strong>{$noEncontrados}</strong><br>
                     Omitidos: <strong>{$omitidos}</strong><br>
                     Errores: <strong>{$errores}</strong>
                 ";
@@ -394,6 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $colCodigoBarras = $encabezados['codigobarras'] ?? null;
                 $colExistencia = $encabezados['existencia'] ?? null;
+                $colUbicacion = $encabezados['ubicacion'] ?? null;
 
                 if (!$colCodigoBarras || !$colExistencia) {
                     throw new Exception("No se encontraron las columnas obligatorias: CodigoBarras y Existencia.");
@@ -403,6 +485,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $codigo = codigoFila($fila, $colCodigoBarras);
                     $existenciaRaw = valorFila($fila, $colExistencia);
+                    $ubicacion = $colUbicacion ? valorFila($fila, $colUbicacion) : '';
 
                     if (!codigoValido($codigo)) {
                         $omitidos++;
@@ -415,6 +498,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $existencia = 0;
                     }
 
+                    // Limpiar ubicación
+                    $ubicacion = strtoupper(trim($ubicacion));
+                    if ($ubicacion === '' || $ubicacion === '-' || $ubicacion === 'SIN UBICACION' || $ubicacion === 'SINUBICACION') {
+                        $ubicacion = 'SIN UBICACION';
+                    }
+
                     try {
 
                         $producto = buscarProductoPorCodigo($conn, $codigo);
@@ -424,12 +513,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             continue;
                         }
 
-                        actualizarExistencia(
+                        // Reactivar producto si estaba inactivo
+                        reactivarProducto($conn, (int)$producto['id']);
+
+                        // Actualizar ubicación y existencia
+                        actualizarUbicacionExistencia(
                             $conn,
                             (int)$producto['id'],
                             $sucursal,
+                            $ubicacion,
                             $existencia
                         );
+
+                        // Actualizar ubicación principal del producto (la que tiene más stock)
+                        actualizarUbicacionPrincipal($conn, (int)$producto['id'], $sucursal);
 
                         $actualizados++;
 
@@ -445,7 +542,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $mensaje = "
                     Importación de <strong>EXISTENCIAS</strong> completada para <strong>{$sucursal}</strong>.<br><br>
-                    Existencias actualizadas: <strong>{$actualizados}</strong><br>
+                    Existencias actualizadas / insertadas: <strong>{$actualizados}</strong><br>
                     Productos no encontrados en catálogo: <strong>{$noEncontrados}</strong><br>
                     Omitidos: <strong>{$omitidos}</strong><br>
                     Errores: <strong>{$errores}</strong>
@@ -477,6 +574,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <title>Importar Productos</title>
     <link rel="stylesheet" href="assets/css/importar_productos.css">
+    <style>
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        
+        .import-container {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        
+        .import-card {
+            background: white;
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        }
+        
+        .import-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a2c3e;
+            margin-bottom: 8px;
+        }
+        
+        .import-subtitle {
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #334155;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 14px;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+        }
+        
+        .btn-importar {
+            background: #3b82f6;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+        
+        .btn-importar:hover {
+            background: #2563eb;
+        }
+        
+        .btn-volver {
+            display: inline-block;
+            margin-top: 20px;
+            color: #64748b;
+            text-decoration: none;
+        }
+        
+        .btn-volver:hover {
+            color: #3b82f6;
+        }
+        
+        small {
+            color: #64748b;
+            font-size: 12px;
+        }
+    </style>
 </head>
 
 <body>
@@ -486,7 +684,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <h1 class="import-title">Importar Productos</h1>
 
-        <p class="import-subtitle">Importación masiva desde Excel</p>
+        <p class="import-subtitle">Restaura productos desde Excel (incluye aquellos con stock 0)</p>
 
         <form method="POST" enctype="multipart/form-data">
 
@@ -495,8 +693,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <select name="tipo_importacion" id="tipo_importacion" class="form-control" required>
                     <option value="">Seleccione una opción</option>
-                    <option value="informacion">Información de productos</option>
-                    <option value="existencia">Existencias por almacén</option>
+                    <option value="informacion">Información de productos (catálogo)</option>
+                    <option value="existencia">Existencias por almacén (incluye ubicación)</option>
                 </select>
             </div>
 
@@ -507,7 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <option value="">Seleccione una opción</option>
                 </select>
 
-                <small id="ayudaSucursal" style="display:block; margin-top:6px; color:#64748b;">
+                <small id="ayudaSucursal" style="display:block; margin-top:6px;">
                     Selecciona primero el tipo de importación.
                 </small>
             </div>
@@ -522,6 +720,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     accept=".xlsx,.xls"
                     required
                 >
+                <small>Debe contener columnas: Código, Descripción, Existencia, Ubicación (opcional)</small>
             </div>
 
             <button type="submit" class="btn-importar">
@@ -531,7 +730,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <?php if (!empty($mensaje)): ?>
-            <div class="alert <?= $errores > 0 ? 'alert-error' : 'alert-success' ?>">
+            <div class="<?= $errores > 0 ? 'alert-error' : 'alert-success' ?>">
                 <?= $mensaje ?>
             </div>
         <?php endif; ?>
@@ -569,18 +768,18 @@ document.addEventListener('DOMContentLoaded', function () {
         limpiarOpciones();
 
         if (tipo.value === 'informacion') {
-            agregarOpcion('ADMINISTRADOR', 'ADMINISTRADOR', true);
+            agregarOpcion('ADMINISTRADOR', 'ADMINISTRADOR (Catálogo General)', true);
             sucursal.disabled = false;
-            ayuda.textContent = 'La información de productos se carga como catálogo general.';
+            ayuda.textContent = 'La información de productos se carga como catálogo general (sin ubicaciones específicas).';
             return;
         }
 
         if (tipo.value === 'existencia') {
             agregarOpcion('', 'Seleccione una opción');
-            agregarOpcion('CIUDAD HIDALGO', 'CIUDAD HIDALGO');
-            agregarOpcion('TUXTLA', 'TUXTLA');
+            agregarOpcion('CIUDAD HIDALGO', '🏪 CIUDAD HIDALGO');
+            agregarOpcion('TUXTLA', '🏪 TUXTLA');
             sucursal.disabled = false;
-            ayuda.textContent = 'Las existencias sí se cargan por almacén.';
+            ayuda.textContent = 'Las existencias se cargarán con su ubicación específica. Los productos con stock 0 se restaurarán.';
             return;
         }
 

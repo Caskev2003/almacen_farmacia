@@ -51,29 +51,29 @@ class ProductoController
     }
 
     public function index(
-    string $search = '',
-    string $sucursal = '',
-    string $categoriaId = '',
-    string $proveedor = '',
-    string $ubicacion = '',
-    string $estadoStock = ''
-): array {
-    $isAdmin = $this->esAdministrador();
+        string $search = '',
+        string $sucursal = '',
+        string $categoriaId = '',
+        string $proveedor = '',
+        string $ubicacion = '',
+        string $estadoStock = ''
+    ): array {
+        $isAdmin = $this->esAdministrador();
 
-    if (!$isAdmin) {
-        $sucursal = $this->sucursalUsuario();
+        if (!$isAdmin) {
+            $sucursal = $this->sucursalUsuario();
+        }
+
+        return $this->productoModel->getAll(
+            trim($search),
+            trim($sucursal),
+            $isAdmin,
+            trim($categoriaId),
+            '',
+            strtoupper(trim($ubicacion)),
+            trim($estadoStock)
+        );
     }
-
-    return $this->productoModel->getAll(
-        trim($search),
-        trim($sucursal),
-        $isAdmin,
-        trim($categoriaId),
-        '',
-        strtoupper(trim($ubicacion)),
-        trim($estadoStock)
-    );
-}
 
     public function count(string $search = '', string $sucursal = ''): int
     {
@@ -333,10 +333,15 @@ class ProductoController
             'success' => $ok,
             'message' => $ok
                 ? 'Ubicación guardada correctamente.'
-                : 'No se pudo guardar.'
+                : 'No se pudo guardar la ubicación. Verifica que el producto exista.'
         ];
     }
 
+    /**
+     * Editar ubicación y existencia
+     * - Si la existencia es 0, permite actualizar a 0 o eliminar
+     * - Si la ubicación cambia, se renombra
+     */
     public function editarUbicacionExistencia(array $postData): array
     {
         $productoId = (int)($postData['producto_id'] ?? 0);
@@ -345,10 +350,11 @@ class ProductoController
         $ubicacionNueva = strtoupper(trim($postData['ubicacion_nueva'] ?? ''));
         $existencia = (int)($postData['existencia'] ?? 0);
 
+        // Validaciones
         if ($productoId <= 0) {
             return [
                 'success' => false,
-                'message' => 'Producto inválido.'
+                'message' => 'ID de producto inválido.'
             ];
         }
 
@@ -367,21 +373,54 @@ class ProductoController
             $ubicacionNueva = 'SIN UBICACION';
         }
 
-        if ($existencia <= 0) {
-            $ok = $this->productoModel->eliminarUbicacionExistencia(
+        if ($existencia < 0) {
+            $existencia = 0;
+        }
+
+        // Primero, verificar si la ubicación existe
+        $ubicacionExistente = $this->productoModel->getUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacionAnterior
+        );
+
+        if (!$ubicacionExistente && $existencia > 0) {
+            // Si no existe y queremos agregar existencia, crear nueva
+            $ok = $this->productoModel->crearUbicacionExistencia(
                 $productoId,
                 $sucursal,
-                $ubicacionAnterior
+                $ubicacionNueva,
+                $existencia
             );
 
             return [
                 'success' => $ok,
                 'message' => $ok
-                    ? 'Ubicación eliminada correctamente.'
-                    : 'No se pudo eliminar la ubicación.'
+                    ? 'Ubicación creada correctamente.'
+                    : 'No se pudo crear la ubicación.'
             ];
         }
 
+        // Si la existencia es 0, el usuario puede elegir eliminar o mantener en 0
+        if ($existencia === 0) {
+            // Por ahora, solo actualizamos a 0 (no eliminamos automáticamente)
+            $ok = $this->productoModel->actualizarUbicacionExistencia(
+                $productoId,
+                $sucursal,
+                $ubicacionAnterior,
+                $ubicacionNueva,
+                0
+            );
+
+            return [
+                'success' => $ok,
+                'message' => $ok
+                    ? 'Existencia actualizada a 0 unidades.'
+                    : 'No se pudo actualizar la ubicación.'
+            ];
+        }
+
+        // Actualizar ubicación y existencia (existencia > 0)
         $ok = $this->productoModel->actualizarUbicacionExistencia(
             $productoId,
             $sucursal,
@@ -394,7 +433,65 @@ class ProductoController
             'success' => $ok,
             'message' => $ok
                 ? 'Ubicación actualizada correctamente.'
-                : 'No se pudo actualizar la ubicación.'
+                : 'No se pudo actualizar la ubicación. Verifica que los datos sean correctos.'
+        ];
+    }
+
+    /**
+     * NUEVO MÉTODO: Eliminar una ubicación específica
+     */
+    public function eliminarUbicacion(array $postData): array
+    {
+        $productoId = (int)($postData['producto_id'] ?? 0);
+        $sucursal = strtoupper(trim($postData['sucursal'] ?? ''));
+        $ubicacion = strtoupper(trim($postData['ubicacion'] ?? ''));
+
+        if ($productoId <= 0) {
+            return [
+                'success' => false,
+                'message' => 'ID de producto inválido.'
+            ];
+        }
+
+        if ($sucursal === '') {
+            return [
+                'success' => false,
+                'message' => 'Sucursal inválida.'
+            ];
+        }
+
+        if ($ubicacion === '') {
+            return [
+                'success' => false,
+                'message' => 'Ubicación inválida.'
+            ];
+        }
+
+        // Verificar que la existencia sea 0 antes de eliminar
+        $ubicacionData = $this->productoModel->getUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacion
+        );
+
+        if ($ubicacionData && ($ubicacionData['existencia_actual'] ?? 0) > 0) {
+            return [
+                'success' => false,
+                'message' => 'No se puede eliminar una ubicación que tiene existencia. Primero pon la existencia en 0.'
+            ];
+        }
+
+        $ok = $this->productoModel->eliminarUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacion
+        );
+
+        return [
+            'success' => $ok,
+            'message' => $ok
+                ? 'Ubicación eliminada correctamente.'
+                : 'No se pudo eliminar la ubicación. Es posible que no exista.'
         ];
     }
 

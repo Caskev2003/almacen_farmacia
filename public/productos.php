@@ -64,6 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageType = $result['success'] ? 'success' : 'danger';
     }
 
+    if ($action === 'eliminar_ubicacion') {
+        $result = $controller->eliminarUbicacion($_POST);
+        $message = $result['message'];
+        $messageType = $result['success'] ? 'success' : 'danger';
+    }
+
     if ($action === 'delete') {
         $id = (int)($_POST['id'] ?? 0);
         $result = $controller->destroy($id);
@@ -139,25 +145,177 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 }
 ?>
 
-<div class="module-header">
-    <div>
-        <h2>Catálogo de Productos</h2>
-        <p>
-            Catálogo general de productos y control de existencias por almacén.
-            <?php if (!$esAdmin && $sucursalUsuario !== ''): ?>
-                <strong>Almacén actual: <?= e($sucursalUsuario) ?></strong>
-            <?php endif; ?>
-        </p>
-    </div>
-</div>
-
-<?php if ($message): ?>
-    <div class="alert alert-<?= e($messageType) ?>">
-        <?= e($message) ?>
-    </div>
-<?php endif; ?>
-
 <style>
+/* ===== ESTILOS MODALES CORREGIDOS ===== */
+.modal-inventario {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-inventario-card {
+    width: 95%;
+    max-width: 550px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: white;
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+    animation: modalFadeIn 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.modal-inventario-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #eef2f6;
+}
+
+.modal-inventario-header h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a2c3e;
+    margin: 0;
+}
+
+.modal-inventario-header p {
+    margin: 8px 0 0 0;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.modal-inventario-close {
+    background: none;
+    border: none;
+    font-size: 32px;
+    cursor: pointer;
+    color: #94a3b8;
+    transition: all 0.1s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.modal-inventario-close:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+.modal-inventario .form-group {
+    margin-bottom: 20px;
+}
+
+.modal-inventario .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.modal-inventario .form-group input,
+.modal-inventario .form-group select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.modal-inventario .form-group input:focus,
+.modal-inventario .form-group select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+}
+
+.modal-inventario .form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #eef2f6;
+}
+
+.modal-inventario .btn-primary-action {
+    background: #3b82f6;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 40px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    flex: 1;
+}
+
+.modal-inventario .btn-primary-action:hover {
+    background: #2563eb;
+}
+
+.modal-inventario .btn-danger-action {
+    background: #ef4444;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 40px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    flex: 1;
+}
+
+.modal-inventario .btn-danger-action:hover {
+    background: #dc2626;
+}
+
+.modal-inventario .btn-secondary-action {
+    background: #f1f5f9;
+    color: #475569;
+    padding: 12px 24px;
+    border-radius: 40px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    flex: 1;
+}
+
+.modal-inventario .btn-secondary-action:hover {
+    background: #e2e8f0;
+}
+
+.alert-warning {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    padding: 14px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-weight: 500;
+}
+
 .pagination-wrapper {
     display: flex;
     justify-content: space-between;
@@ -240,6 +398,9 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 .filters-grid input,
 .filters-grid select {
     width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
 }
 
 .stock-pill {
@@ -303,6 +464,12 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
     white-space: nowrap;
     border: 1px solid transparent;
     cursor: pointer;
+    transition: all 0.1s;
+}
+
+.ubicacion-badge:hover {
+    transform: scale(1.02);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
 
 .low-stock {
@@ -323,35 +490,44 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
     border-color: #86efac;
 }
 
-.modal-inventario {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.45);
-    z-index: 99999;
-    align-items: center;
-    justify-content: center;
+.zero-stock {
+    background: #f1f5f9;
+    color: #64748b;
+    border-color: #cbd5e1;
 }
 
-.modal-inventario-card {
-    width: 95%;
-    max-width: 520px;
-    background: white;
-    border-radius: 18px;
-    padding: 24px;
-}
-
-.modal-inventario-header {
+.action-buttons {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
-.modal-inventario-close {
+.btn-search {
+    background: #3b82f6;
+    color: white;
     border: none;
-    background: none;
-    font-size: 28px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.btn-edit {
+    background: #f59e0b;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.btn-delete {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
     cursor: pointer;
 }
 
@@ -365,8 +541,32 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
     .filters-grid {
         grid-template-columns: 1fr;
     }
+    
+    .modal-inventario-card {
+        padding: 20px;
+        margin: 16px;
+        max-height: 85vh;
+    }
 }
 </style>
+
+<div class="module-header">
+    <div>
+        <h2>Catálogo de Productos</h2>
+        <p>
+            Catálogo general de productos y control de existencias por almacén.
+            <?php if (!$esAdmin && $sucursalUsuario !== ''): ?>
+                <strong>Almacén actual: <?= e($sucursalUsuario) ?></strong>
+            <?php endif; ?>
+        </p>
+    </div>
+</div>
+
+<?php if ($message): ?>
+    <div class="alert alert-<?= e($messageType) ?>">
+        <?= e($message) ?>
+    </div>
+<?php endif; ?>
 
 <div class="erp-container">
     <div class="erp-form-card">
@@ -418,7 +618,6 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         placeholder="Escribe o selecciona proveedor"
                         value="<?= e($editando['proveedor_nombre'] ?? '') ?>"
                     >
-
                     <datalist id="listaProveedores">
                         <?php foreach ($proveedores as $proveedor): ?>
                             <option value="<?= e($proveedor['nombre']) ?>"></option>
@@ -504,18 +703,17 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                     </select>
                 </div>
 
-
                 <div class="form-group">
-    <label>Rack</label>
-    <select name="ubicacion" class="auto-filter">
-        <option value="">Todos</option>
-        <?php for ($r = 1; $r <= 9; $r++): ?>
-            <option value="R<?= $r ?>" <?= $filtroUbicacion === 'R' . $r ? 'selected' : '' ?>>
-                R<?= $r ?>
-            </option>
-        <?php endfor; ?>
-    </select>
-</div>
+                    <label>Rack</label>
+                    <select name="ubicacion" class="auto-filter">
+                        <option value="">Todos</option>
+                        <?php for ($r = 1; $r <= 9; $r++): ?>
+                            <option value="R<?= $r ?>" <?= $filtroUbicacion === 'R' . $r ? 'selected' : '' ?>>
+                                R<?= $r ?>
+                            </option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
 
                 <div class="form-group">
                     <label>Estado stock</label>
@@ -530,7 +728,8 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                 <div class="form-group">
                     <label>&nbsp;</label>
                     <div style="display:flex; gap:8px;">
-                        <a href="productos.php" class="btn-clear">Limpiar</a>
+                        <button type="submit" class="btn-primary-action">Filtrar</button>
+                        <a href="productos.php" class="btn-secondary-action">Limpiar</a>
                     </div>
                 </div>
             </div>
@@ -551,28 +750,25 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         <th>Cód. barras</th>
                         <th>Descripción</th>
                         <th>Categoría</th>
+                        <th>Proveedor</th>
                         <th>Marca</th>
                         <th>Unidad</th>
-                        <th>Precio Unitario</th>
-
+                        <th>Precio</th>
                         <?php if ($esAdmin): ?>
-                            <th>Ciudad Hidalgo</th>
+                            <th>Cd. Hidalgo</th>
                             <th>Tuxtla</th>
                         <?php else: ?>
                             <th>Existencia</th>
                         <?php endif; ?>
-
-                        <th>Estado stock</th>
+                        <th>Estado</th>
                         <th>Ubicación</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
-
                 <tbody>
                     <?php if (count($productos) > 0): ?>
                         <?php foreach ($productos as $producto): ?>
                             <?php $estadoStock = estadoStockProducto($producto, $esAdmin); ?>
-
                             <tr>
                                 <td><?= (int)$producto['id'] ?></td>
                                 <td><?= e($producto['codigo']) ?></td>
@@ -614,12 +810,14 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                                     $ubi = 'SIN UBICACION';
                                                 }
 
-                                                $classStock = 'high-stock';
-
-                                                if ($exist <= 10) {
+                                                if ($exist <= 0) {
+                                                    $classStock = 'zero-stock';
+                                                } elseif ($exist <= 10) {
                                                     $classStock = 'low-stock';
                                                 } elseif ($exist <= 50) {
                                                     $classStock = 'medium-stock';
+                                                } else {
+                                                    $classStock = 'high-stock';
                                                 }
                                                 ?>
 
@@ -628,7 +826,7 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                                     class="ubicacion-badge <?= $classStock ?>"
                                                     onclick="abrirModalEditarUbicacion(
                                                         '<?= (int)$producto['id'] ?>',
-                                                        '<?= e($producto['descripcion']) ?>',
+                                                        '<?= e(addslashes($producto['descripcion'])) ?>',
                                                         '<?= e($sucursalBadge) ?>',
                                                         '<?= e($ubi) ?>',
                                                         '<?= (int)$exist ?>'
@@ -639,9 +837,9 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                             <?php endforeach; ?>
                                         </div>
                                     <?php else: ?>
-                                        <?= e($producto['ubicacion'] ?? '') ?>
+                                        <?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?>
                                     <?php endif; ?>
-                                </td>
+                                 </td>
 
                                 <td>
                                     <div class="action-buttons">
@@ -650,17 +848,17 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                             class="btn-search"
                                             onclick="abrirModalUbicacion(
                                                 '<?= e($producto['codigo']) ?>',
-                                                '<?= e($producto['descripcion']) ?>'
+                                                '<?= e(addslashes($producto['descripcion'])) ?>'
                                             )"
                                         >
-                                            Ubicaciones
+                                            + Ubicación
                                         </button>
 
                                         <a href="productos.php?edit=<?= (int)$producto['id'] ?>&page=<?= $page ?>&<?= e($queryBase) ?>" class="btn-edit">
                                             Editar
                                         </a>
 
-                                        <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto?');">
+                                        <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto? Se eliminarán todas sus ubicaciones.');">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?= (int)$producto['id'] ?>">
                                             <button type="submit" class="btn-delete">
@@ -668,14 +866,14 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                             </button>
                                         </form>
                                     </div>
-                                </td>
-                            </tr>
+                                 </td>
+                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?= $esAdmin ? '13' : '12' ?>" class="empty-table">
+                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
                                 No hay productos registrados con esos filtros.
-                            </td>
+                             </td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
@@ -723,19 +921,15 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
     </div>
 </div>
 
+<!-- MODAL: AGREGAR UBICACIÓN -->
 <div id="modalUbicacion" class="modal-inventario">
     <div class="modal-inventario-card">
         <div class="modal-inventario-header">
             <div>
-                <h3 id="tituloProductoUbicacion">Ubicaciones</h3>
-                <p style="margin:0;color:#64748b;">
-                    Agrega existencia por ubicación.
-                </p>
+                <h3 id="tituloProductoUbicacion">➕ Agregar ubicación</h3>
+                <p>Agrega una nueva ubicación y su existencia inicial.</p>
             </div>
-
-            <button type="button" onclick="cerrarModalUbicacion()" class="modal-inventario-close">
-                &times;
-            </button>
+            <button type="button" onclick="cerrarModalUbicacion()" class="modal-inventario-close">&times;</button>
         </div>
 
         <form method="POST">
@@ -744,67 +938,47 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 
             <div class="form-group">
                 <label>Sucursal</label>
-
                 <select name="sucursal" required>
                     <?php if ($esAdmin): ?>
                         <option value="CIUDAD HIDALGO">Ciudad Hidalgo</option>
                         <option value="TUXTLA">Tuxtla</option>
                     <?php else: ?>
-                        <option value="<?= e($sucursalUsuario) ?>">
-                            <?= e($sucursalUsuario) ?>
-                        </option>
+                        <option value="<?= e($sucursalUsuario) ?>"><?= e($sucursalUsuario) ?></option>
                     <?php endif; ?>
                 </select>
             </div>
 
             <div class="form-group">
                 <label>Ubicación</label>
-                <input
-                    type="text"
-                    name="ubicacion"
-                    list="listaUbicaciones"
-                    required
-                    autocomplete="off"
-                    placeholder="Ejemplo: R1N1Z01"
-                >
+                <input type="text" name="ubicacion" list="listaUbicaciones" required autocomplete="off" placeholder="Ejemplo: R1N1Z01">
             </div>
 
             <div class="form-group">
-                <label>Existencia</label>
-                <input
-                    type="number"
-                    name="existencia"
-                    min="0"
-                    required
-                    value="0"
-                >
+                <label>Existencia inicial</label>
+                <input type="number" name="existencia" min="0" required value="0">
+                <small style="color: #64748b; display: block; margin-top: 5px;">Puedes iniciar con 0 unidades</small>
             </div>
 
             <div class="form-actions">
-                <button type="submit" class="btn-primary-action">
-                    Guardar ubicación
-                </button>
+                <button type="submit" class="btn-primary-action">Guardar ubicación</button>
+                <button type="button" onclick="cerrarModalUbicacion()" class="btn-secondary-action">Cancelar</button>
             </div>
         </form>
     </div>
 </div>
 
+<!-- MODAL: EDITAR UBICACIÓN (CON OPCIÓN DE ELIMINAR) -->
 <div id="modalEditarUbicacion" class="modal-inventario">
     <div class="modal-inventario-card">
         <div class="modal-inventario-header">
             <div>
-                <h3 id="tituloEditarUbicacion">Editar ubicación</h3>
-                <p style="margin:0;color:#64748b;">
-                    Cambia la ubicación y la cantidad existente.
-                </p>
+                <h3 id="tituloEditarUbicacion">✏️ Editar ubicación</h3>
+                <p>Cambia la ubicación, actualiza la existencia o elimina esta ubicación.</p>
             </div>
-
-            <button type="button" onclick="cerrarModalEditarUbicacion()" class="modal-inventario-close">
-                &times;
-            </button>
+            <button type="button" onclick="cerrarModalEditarUbicacion()" class="modal-inventario-close">&times;</button>
         </div>
 
-        <form method="POST">
+        <form method="POST" id="formEditarUbicacion">
             <input type="hidden" name="action" value="editar_ubicacion_existencia">
             <input type="hidden" name="producto_id" id="editarProductoId">
             <input type="hidden" name="sucursal" id="editarSucursal">
@@ -812,40 +986,30 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 
             <div class="form-group">
                 <label>Ubicación nueva</label>
-                <input
-                    type="text"
-                    name="ubicacion_nueva"
-                    id="editarUbicacionNueva"
-                    list="listaUbicaciones"
-                    required
-                    autocomplete="off"
-                >
+                <input type="text" name="ubicacion_nueva" id="editarUbicacionNueva" list="listaUbicaciones" required autocomplete="off">
             </div>
 
             <div class="form-group">
                 <label>Existencia</label>
-                <input
-                    type="number"
-                    name="existencia"
-                    id="editarExistencia"
-                    min="0"
-                    required
-                >
+                <input type="number" name="existencia" id="editarExistencia" min="0" required>
+                <small style="color: #64748b; display: block; margin-top: 5px;">
+                    Puedes poner 0 para vaciar esta ubicación. Luego podrás eliminarla si lo deseas.
+                </small>
             </div>
 
-            <div class="form-actions">
-                <button type="submit" class="btn-primary-action">
-                    Guardar cambios
-                </button>
+            <div class="form-actions" style="gap: 10px;">
+                <button type="submit" class="btn-primary-action">💾 Guardar cambios</button>
+                <button type="button" id="btnEliminarUbicacion" class="btn-danger-action">🗑️ Eliminar ubicación</button>
+                <button type="button" onclick="cerrarModalEditarUbicacion()" class="btn-secondary-action">Cancelar</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
+// Generar lista de ubicaciones
 document.addEventListener('DOMContentLoaded', function () {
     const lista = document.getElementById('listaUbicaciones');
-
     if (!lista) return;
 
     const ubicaciones = [];
@@ -858,13 +1022,10 @@ document.addEventListener('DOMContentLoaded', function () {
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(1, n, z);
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(2, n, z);
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 20; z++) add(3, n, z);
-
     for (let n = 1; n <= 2; n++) for (let z = 1; z <= 16; z++) add(4, n, z);
     for (let z = 10; z <= 16; z++) add(4, 3, z);
-
     for (let n = 1; n <= 2; n++) for (let z = 1; z <= 15; z++) add(5, n, z);
     for (let z = 10; z <= 15; z++) add(5, 3, z);
-
     for (let n = 1; n <= 3; n++) for (let z = 1; z <= 22; z++) add(6, n, z);
 
     ubicaciones.push('R7N1Z01 - PASILLO 3');
@@ -873,7 +1034,6 @@ document.addEventListener('DOMContentLoaded', function () {
     ubicaciones.push('BODEGA PEDYALITE');
 
     lista.innerHTML = '';
-
     ubicaciones.forEach(u => {
         const option = document.createElement('option');
         option.value = u;
@@ -881,19 +1041,25 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+// Modal Agregar Ubicación
 function abrirModalUbicacion(codigo, descripcion) {
     document.getElementById('modalUbicacion').style.display = 'flex';
     document.getElementById('codigoUbicacion').value = codigo;
-    document.getElementById('tituloProductoUbicacion').innerText = descripcion;
+    document.getElementById('tituloProductoUbicacion').innerHTML = `➕ Agregar ubicación - ${escapeHtml(descripcion)}`;
 }
 
 function cerrarModalUbicacion() {
     document.getElementById('modalUbicacion').style.display = 'none';
 }
 
+// Modal Editar Ubicación
+let currentExistencia = 0;
+
 function abrirModalEditarUbicacion(productoId, descripcion, sucursal, ubicacion, existencia) {
+    currentExistencia = existencia;
+    
     document.getElementById('modalEditarUbicacion').style.display = 'flex';
-    document.getElementById('tituloEditarUbicacion').innerText = descripcion;
+    document.getElementById('tituloEditarUbicacion').innerHTML = `✏️ Editar ubicación - ${escapeHtml(descripcion)}`;
     document.getElementById('editarProductoId').value = productoId;
     document.getElementById('editarSucursal').value = sucursal;
     document.getElementById('editarUbicacionAnterior').value = ubicacion;
@@ -905,18 +1071,57 @@ function cerrarModalEditarUbicacion() {
     document.getElementById('modalEditarUbicacion').style.display = 'none';
 }
 
-const formFiltrosProductos = document.querySelector('.filters-card');
+// Eliminar ubicación (solo cuando existencia es 0)
+document.getElementById('btnEliminarUbicacion')?.addEventListener('click', function() {
+    const existencia = parseInt(document.getElementById('editarExistencia').value);
+    
+    if (existencia > 0) {
+        alert('⚠️ No se puede eliminar una ubicación que tiene existencia. Primero pon la existencia en 0 y luego elimínala.');
+        return;
+    }
+    
+    const confirmar = confirm('¿Estás seguro de eliminar esta ubicación? Esta acción no se puede deshacer.');
+    
+    if (confirmar) {
+        const form = document.getElementById('formEditarUbicacion');
+        const inputAction = document.createElement('input');
+        inputAction.type = 'hidden';
+        inputAction.name = 'action';
+        inputAction.value = 'eliminar_ubicacion';
+        form.appendChild(inputAction);
+        
+        const inputProductoId = document.createElement('input');
+        inputProductoId.type = 'hidden';
+        inputProductoId.name = 'producto_id';
+        inputProductoId.value = document.getElementById('editarProductoId').value;
+        form.appendChild(inputProductoId);
+        
+        const inputSucursal = document.createElement('input');
+        inputSucursal.type = 'hidden';
+        inputSucursal.name = 'sucursal';
+        inputSucursal.value = document.getElementById('editarSucursal').value;
+        form.appendChild(inputSucursal);
+        
+        const inputUbicacion = document.createElement('input');
+        inputUbicacion.type = 'hidden';
+        inputUbicacion.name = 'ubicacion';
+        inputUbicacion.value = document.getElementById('editarUbicacionAnterior').value;
+        form.appendChild(inputUbicacion);
+        
+        form.submit();
+    }
+});
 
+// Auto-filtro
+const formFiltrosProductos = document.querySelector('.filters-card');
 if (formFiltrosProductos) {
     const searchInput = formFiltrosProductos.querySelector('input[name="search"]');
     const selects = formFiltrosProductos.querySelectorAll('select');
-
     let timerFiltro = null;
 
     if (searchInput) {
         searchInput.addEventListener('input', function () {
             clearTimeout(timerFiltro);
-
             timerFiltro = setTimeout(() => {
                 formFiltrosProductos.submit();
             }, 500);
@@ -928,6 +1133,37 @@ if (formFiltrosProductos) {
             formFiltrosProductos.submit();
         });
     });
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// Cerrar modales con ESC
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        cerrarModalUbicacion();
+        cerrarModalEditarUbicacion();
+    }
+});
+
+// Cerrar modal al hacer clic fuera
+window.onclick = function(event) {
+    const modal1 = document.getElementById('modalUbicacion');
+    const modal2 = document.getElementById('modalEditarUbicacion');
+    
+    if (event.target === modal1) {
+        cerrarModalUbicacion();
+    }
+    if (event.target === modal2) {
+        cerrarModalEditarUbicacion();
+    }
 }
 </script>
 

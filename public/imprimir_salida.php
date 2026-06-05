@@ -45,7 +45,10 @@ function obtenerIniciales(string $nombreCompleto): string
     $partes = preg_split('/\s+/', $nombreCompleto);
 
     if (count($partes) >= 2) {
-        return strtoupper(substr($partes[0], 0, 1)) . '.' . strtoupper(substr($partes[1], 0, 1)) . '.';
+        $primeraInicial = strtoupper(substr($partes[0], 0, 1));
+        $segundaInicial = strtoupper(substr($partes[1], 0, 1));
+
+        return $primeraInicial . '.' . $segundaInicial . '.';
     }
 
     return strtoupper(substr($partes[0], 0, 1)) . '.';
@@ -115,9 +118,32 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
             padding: 8px 6px;
         }
 
-        .print-header {
+        table {
             width: 100%;
-            background: #fff;
+            border-collapse: collapse;
+            font-size: 9.5px;
+            margin-top: 8px;
+            table-layout: fixed;
+        }
+
+        th, td {
+            border: 1px solid #d6d6d6;
+            padding: 5px 5px;
+            vertical-align: top;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        th {
+            background: #efefef;
+            text-align: left;
+            font-size: 9.5px;
+        }
+
+        .encabezado-th {
+            border: none !important;
+            background: #fff !important;
+            padding: 0 0 8px 0 !important;
         }
 
         .header {
@@ -202,28 +228,6 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
             word-break: break-word;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 9.5px;
-            margin-top: 8px;
-            table-layout: fixed;
-        }
-
-        th, td {
-            border: 1px solid #d6d6d6;
-            padding: 5px 5px;
-            vertical-align: top;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        th {
-            background: #efefef;
-            text-align: left;
-            font-size: 9.5px;
-        }
-
         .text-right {
             text-align: right;
         }
@@ -288,36 +292,21 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
                 margin: 0;
             }
 
-            .print-header {
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                background: #fff;
-                z-index: 9999;
-                padding: 0 14mm 6px 14mm;
-                box-sizing: border-box;
-            }
-
-            .print-content {
-                margin-top: 145px;
-            }
-
             table {
                 page-break-inside: auto;
-            }
-
-            tr {
-                page-break-inside: avoid;
-                page-break-after: auto;
             }
 
             thead {
                 display: table-header-group;
             }
 
-            tfoot {
-                display: table-footer-group;
+            tbody {
+                display: table-row-group;
+            }
+
+            tr {
+                page-break-inside: avoid;
+                page-break-after: auto;
             }
 
             .firmas-box,
@@ -345,128 +334,126 @@ function imprimirYLimpiar() {
 
 <div class="sheet">
 
-    <div class="print-header">
+    <table>
+        <thead>
+            <tr>
+                <th colspan="6" class="encabezado-th">
+                    <div class="header">
+                        <div class="logo-box">
+                            <img src="assets/img/logo.jpeg" alt="Logo G&D">
+                        </div>
 
-        <div class="header">
-            <div class="logo-box">
-                <img src="assets/img/logo.jpeg" alt="Logo G&D">
-            </div>
+                        <div class="company-box">
+                            <div class="company-name">DISTRIBUCIÓN G&D, S.A. DE C.V.</div>
+                            <div>CP:</div>
+                            <div>RFC: DGD151211PP5</div>
+                        </div>
 
-            <div class="company-box">
-                <div class="company-name">DISTRIBUCIÓN G&D, S.A. DE C.V.</div>
-                <div>CP:</div>
-                <div>RFC: DGD151211PP5</div>
-            </div>
+                        <div class="movement-box">
+                            <h2>Movimientos al Inventario</h2>
+                            <div>
+                                Folio:
+                                <span class="movement-number">
+                                    <?= e($salida['folio']) ?>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
 
-            <div class="movement-box">
-                <h2>Movimientos al Inventario</h2>
-                <div>
-                    Folio:
-                    <span class="movement-number"><?= e($salida['folio']) ?></span>
-                </div>
-            </div>
+                    <div class="line"></div>
+
+                    <div class="tipo-row">Tipo : Salida</div>
+
+                    <div class="line"></div>
+
+                    <div class="info-grid">
+                        <div class="label">Movimiento:</div>
+                        <div><?= e($movimientoTexto) ?></div>
+                    </div>
+
+                    <div class="info-grid">
+                        <div class="label">Fecha:</div>
+                        <div><?= e($fechaImpresa) ?></div>
+
+                        <div class="label">Documento:</div>
+                        <div><?= e($salida['tipo_operacion'] ?? '') ?></div>
+                    </div>
+
+                    <div class="info-grid">
+                        <div class="label">Almacén:</div>
+                        <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
+
+                        <div class="label">Usuario:</div>
+                        <div><?= e($aliasUsuario) ?></div>
+                    </div>
+
+                    <div class="info-grid">
+                        <div class="label">Observaciones:</div>
+                        <div class="observaciones-box"><?= e($salida['observaciones'] ?? '') ?></div>
+                    </div>
+
+                    <div class="line"></div>
+                </th>
+            </tr>
+
+            <tr>
+                <th style="width: 55px;">Cantidad</th>
+                <th style="width: 90px;">Clave</th>
+                <th>Descripción</th>
+                <th style="width: 75px;">Ubicación</th>
+                <th style="width: 65px;">Precio U.</th>
+                <th style="width: 75px;">Importe</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <?php foreach ($salida['detalles'] as $detalle): ?>
+                <tr>
+                    <td><?= (int)$detalle['cantidad'] ?></td>
+                    <td><?= e($detalle['codigo']) ?></td>
+                    <td><?= e($detalle['descripcion']) ?></td>
+                    <td><?= e($detalle['ubicacion']) ?></td>
+                    <td class="text-right">
+                        <?= number_format((float)$detalle['precio_unitario'], 2) ?>
+                    </td>
+                    <td class="text-right">
+                        <?= number_format(
+                            ((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']),
+                            2
+                        ) ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+
+            <tr class="total-row">
+                <td colspan="5" class="text-right">Total</td>
+                <td class="text-right"><?= number_format($total, 2) ?></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="firmas-box">
+        <div class="firma-item">
+            <div class="firma-linea"></div>
+            <div class="firma-titulo">Surtió</div>
+            <div class="firma-nombre">Nombre y firma</div>
         </div>
 
-        <div class="line"></div>
-
-        <div class="tipo-row">Tipo : Salida</div>
-
-        <div class="line"></div>
-
-        <div class="info-grid">
-            <div class="label">Movimiento:</div>
-            <div><?= e($movimientoTexto) ?></div>
+        <div class="firma-item">
+            <div class="firma-linea"></div>
+            <div class="firma-titulo">Verificó</div>
+            <div class="firma-nombre">Nombre y firma</div>
         </div>
 
-        <div class="info-grid">
-            <div class="label">Fecha:</div>
-            <div><?= e($fechaImpresa) ?></div>
-
-            <div class="label">Documento:</div>
-            <div><?= e($salida['tipo_operacion'] ?? '') ?></div>
+        <div class="firma-item">
+            <div class="firma-linea"></div>
+            <div class="firma-titulo">Recibió</div>
+            <div class="firma-nombre">Nombre y firma</div>
         </div>
-
-        <div class="info-grid">
-            <div class="label">Almacén:</div>
-            <div><?= e($salida['almacen_nombre'] ?? '') ?></div>
-
-            <div class="label">Usuario:</div>
-            <div><?= e($aliasUsuario) ?></div>
-        </div>
-
-        <div class="info-grid">
-            <div class="label">Observaciones:</div>
-            <div class="observaciones-box"><?= e($salida['observaciones'] ?? '') ?></div>
-        </div>
-
-        <div class="line"></div>
-
     </div>
 
-    <div class="print-content">
-
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 55px;">Cantidad</th>
-                    <th style="width: 90px;">Clave</th>
-                    <th>Descripción</th>
-                    <th style="width: 75px;">Ubicación</th>
-                    <th style="width: 65px;">Precio U.</th>
-                    <th style="width: 75px;">Importe</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <?php foreach ($salida['detalles'] as $detalle): ?>
-                    <tr>
-                        <td><?= (int)$detalle['cantidad'] ?></td>
-                        <td><?= e($detalle['codigo']) ?></td>
-                        <td><?= e($detalle['descripcion']) ?></td>
-                        <td><?= e($detalle['ubicacion']) ?></td>
-                        <td class="text-right">
-                            <?= number_format((float)$detalle['precio_unitario'], 2) ?>
-                        </td>
-                        <td class="text-right">
-                            <?= number_format(
-                                ((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']),
-                                2
-                            ) ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-
-                <tr class="total-row">
-                    <td colspan="5" class="text-right">Total</td>
-                    <td class="text-right"><?= number_format($total, 2) ?></td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div class="firmas-box">
-            <div class="firma-item">
-                <div class="firma-linea"></div>
-                <div class="firma-titulo">Surtió</div>
-                <div class="firma-nombre">Nombre y firma</div>
-            </div>
-
-            <div class="firma-item">
-                <div class="firma-linea"></div>
-                <div class="firma-titulo">Verificó</div>
-                <div class="firma-nombre">Nombre y firma</div>
-            </div>
-
-            <div class="firma-item">
-                <div class="firma-linea"></div>
-                <div class="firma-titulo">Recibió</div>
-                <div class="firma-nombre">Nombre y firma</div>
-            </div>
-        </div>
-
-        <div class="footer-note">
-            Movimiento Realizado !!!
-        </div>
-
+    <div class="footer-note">
+        Movimiento Realizado !!!
     </div>
 
 </div>

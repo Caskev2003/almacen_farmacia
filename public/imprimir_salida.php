@@ -55,6 +55,34 @@ function obtenerIniciales(string $nombreCompleto): string
 }
 
 $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
+
+// =============================================
+// DETECTAR TIPO DE MOVIMIENTO PARA LAS FIRMAS
+// USANDO el campo correcto: tipo_operacion
+// =============================================
+// IMPORTANTE: usar $salida['tipo_operacion'] que es el campo correcto en tu BD
+$tipoOperacion = strtoupper(trim($salida['tipo_operacion'] ?? ''));
+$mostrarFirmas = true;
+$mostrarEntregado = false;
+
+// Si es AJUSTE -> NO mostrar firmas
+if ($tipoOperacion === 'AJUSTE') {
+    $mostrarFirmas = false;
+    $mostrarEntregado = false;
+} 
+// Si es RESURTIDO -> mostrar 4 firmas (con Entregado)
+elseif ($tipoOperacion === 'RESURTIDO') {
+    $mostrarFirmas = true;
+    $mostrarEntregado = true;
+}
+// Para TICKET, TRASPASO, OTRO (solo 3 firmas, sin Entregado)
+else {
+    $mostrarFirmas = true;
+    $mostrarEntregado = false;
+}
+
+// Diagnóstico (opcional, eliminar después)
+// echo "<!-- tipo_operacion = " . $tipoOperacion . ", mostrarEntregado = " . ($mostrarEntregado ? 'SI' : 'NO') . " -->";
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -240,9 +268,18 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
         .firmas-box {
             margin-top: 45px;
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
             gap: 28px;
             align-items: end;
+        }
+        
+        /* Para 3 firmas (TICKET, TRASPASO, OTRO) */
+        .firmas-3columnas {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        /* Para 4 firmas (SOLO RESURTIDO) */
+        .firmas-4columnas {
+            grid-template-columns: repeat(4, 1fr);
         }
 
         .firma-item {
@@ -432,25 +469,39 @@ function imprimirYLimpiar() {
         </tbody>
     </table>
 
-    <div class="firmas-box">
-        <div class="firma-item">
-            <div class="firma-linea"></div>
-            <div class="firma-titulo">Surtió</div>
-            <div class="firma-nombre">Nombre y firma</div>
-        </div>
+    <?php if ($mostrarFirmas): ?>
+        <div class="firmas-box <?= $mostrarEntregado ? 'firmas-4columnas' : 'firmas-3columnas' ?>">
+            <!-- Surtió (siempre) -->
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Surtió</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
 
-        <div class="firma-item">
-            <div class="firma-linea"></div>
-            <div class="firma-titulo">Verificó</div>
-            <div class="firma-nombre">Nombre y firma</div>
-        </div>
+            <!-- Verificó (siempre) -->
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Verificó</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
 
-        <div class="firma-item">
-            <div class="firma-linea"></div>
-            <div class="firma-titulo">Recibió</div>
-            <div class="firma-nombre">Nombre y firma</div>
+            <!-- Entregó (SOLO si es RESURTIDO) -->
+            <?php if ($mostrarEntregado): ?>
+                <div class="firma-item">
+                    <div class="firma-linea"></div>
+                    <div class="firma-titulo">Entregó</div>
+                    <div class="firma-nombre">Nombre y firma</div>
+                </div>
+            <?php endif; ?>
+            
+            <!-- Recibió (siempre) -->
+            <div class="firma-item">
+                <div class="firma-linea"></div>
+                <div class="firma-titulo">Recibió</div>
+                <div class="firma-nombre">Nombre y firma</div>
+            </div>
         </div>
-    </div>
+    <?php endif; ?>
 
     <div class="footer-note">
         Movimiento Realizado !!!

@@ -1112,29 +1112,38 @@ document.getElementById('btnEliminarUbicacion')?.addEventListener('click', funct
     }
 });
 
-// Auto-filtro
+// FILTROS
 const formFiltrosProductos = document.querySelector('.filters-card');
+
 if (formFiltrosProductos) {
+
     const searchInput = formFiltrosProductos.querySelector('input[name="search"]');
     const selects = formFiltrosProductos.querySelectorAll('select');
-    let timerFiltro = null;
 
+    // Buscar únicamente con ENTER
     if (searchInput) {
-        searchInput.addEventListener('input', function () {
-            clearTimeout(timerFiltro);
-            timerFiltro = setTimeout(() => {
+
+        searchInput.addEventListener('keydown', function(e) {
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
                 formFiltrosProductos.submit();
-            }, 500);
+            }
+
         });
+
     }
 
+    // Los combos siguen siendo automáticos
     selects.forEach(select => {
-        select.addEventListener('change', function () {
+
+        select.addEventListener('change', function() {
             formFiltrosProductos.submit();
         });
-    });
-}
 
+    });
+
+}
 function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/[&<>]/g, function(m) {

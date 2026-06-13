@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../app/helpers/auth.php';
 
 requireLogin();
-
+date_default_timezone_set('America/Mexico_City');
 $user = currentUser();
 
 $rol = strtoupper(trim($user['rol'] ?? ''));

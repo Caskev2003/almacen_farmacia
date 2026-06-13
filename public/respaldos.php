@@ -2,7 +2,9 @@
 require_once __DIR__ . '/../app/helpers/auth.php';
 
 requireLogin();
+
 date_default_timezone_set('America/Mexico_City');
+
 $user = currentUser();
 
 $rol = strtoupper(trim($user['rol'] ?? ''));
@@ -13,9 +15,36 @@ if (!in_array($rol, ['ADMINISTRADOR', 'ENCARGADO'], true)) {
 }
 
 $backupDir = '/backups/inventario';
+$backupScript = '/usr/local/bin/backup_inventario.sh';
+$mensaje = '';
+$error = '';
 
 if (!is_dir($backupDir)) {
     die('La carpeta de respaldos no existe.');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar_backup'])) {
+    if (!file_exists($backupScript)) {
+        $error = 'No se encontró el script de respaldo.';
+    } elseif (!is_executable($backupScript)) {
+        $error = 'El script de respaldo no tiene permisos de ejecución.';
+    } else {
+        $salida = [];
+        $codigo = 0;
+
+        exec($backupScript . ' 2>&1', $salida, $codigo);
+
+        if ($codigo === 0) {
+            header('Location: respaldos.php?ok=1');
+            exit;
+        } else {
+            $error = 'No se pudo generar el respaldo. Detalle: ' . implode(' ', $salida);
+        }
+    }
+}
+
+if (isset($_GET['ok'])) {
+    $mensaje = 'Respaldo generado correctamente.';
 }
 
 $archivos = glob($backupDir . '/*.sql*');
@@ -83,6 +112,47 @@ if (isset($_GET['descargar'])) {
             font-weight:bold;
         }
 
+        .acciones{
+            display:flex;
+            gap:12px;
+            align-items:center;
+            margin-bottom:20px;
+            flex-wrap:wrap;
+        }
+
+        .btn-generar{
+            border:none;
+            cursor:pointer;
+            padding:12px 18px;
+            border-radius:8px;
+            background:#198754;
+            color:white;
+            font-weight:bold;
+            font-size:14px;
+        }
+
+        .btn-generar:hover{
+            background:#146c43;
+        }
+
+        .alerta-ok{
+            margin-bottom:15px;
+            padding:12px;
+            border-radius:8px;
+            background:#d1e7dd;
+            color:#0f5132;
+            font-weight:bold;
+        }
+
+        .alerta-error{
+            margin-bottom:15px;
+            padding:12px;
+            border-radius:8px;
+            background:#f8d7da;
+            color:#842029;
+            font-weight:bold;
+        }
+
         table{
             width:100%;
             border-collapse:collapse;
@@ -147,6 +217,31 @@ if (isset($_GET['descargar'])) {
         Usuario: <?= htmlspecialchars($user['nombre'] ?? '') ?>
         |
         Rol: <?= htmlspecialchars($user['rol'] ?? '') ?>
+    </div>
+
+    <?php if (!empty($mensaje)): ?>
+        <div class="alerta-ok">
+            <?= htmlspecialchars($mensaje) ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($error)): ?>
+        <div class="alerta-error">
+            <?= htmlspecialchars($error) ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="acciones">
+        <form method="POST">
+            <button
+                type="submit"
+                name="generar_backup"
+                class="btn-generar"
+                onclick="return confirm('¿Deseas generar un respaldo ahora?');"
+            >
+                Generar Respaldo Ahora
+            </button>
+        </form>
     </div>
 
     <?php if (empty($archivos)): ?>

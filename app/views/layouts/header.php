@@ -117,6 +117,12 @@ $puedeVerInventarios =
             </a>
         <?php endif; ?>
 
+        <?php if ($esAdmin || $esEncargado): ?>
+            <a href="respaldos.php">
+                Respaldos
+            </a>
+        <?php endif; ?>
+
     </nav>
 
 <?php endif; ?>

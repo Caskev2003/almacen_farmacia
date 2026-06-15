@@ -208,7 +208,7 @@ if (isset($_GET['descargar'])) {
 <div class="contenedor">
 
     <a href="dashboard.php" class="volver">
-        ← Regresar al Dashboard
+        ← Regresar al Inicio
     </a>
 
     <h1>Respaldos de Base de Datos</h1>

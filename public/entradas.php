@@ -37,7 +37,14 @@ if ($modoEdicion) {
     } else {
         $observacionesEditar = (string)($entradaEditar['observaciones'] ?? '');
         $referenciaEditar = (string)($entradaEditar['referencia'] ?? '');
-        $tipoEntradaSeleccionado = (string)($entradaEditar['tipo_entrada'] ?? '');
+        // El tipo de entrada está dentro del campo 'referencia'
+$referenciaCompleta = (string)($entradaEditar['referencia'] ?? '');
+$tipoEntradaSeleccionado = '';
+if (!empty($referenciaCompleta)) {
+    // Extraer solo la primera parte antes del primer "|"
+    $partes = explode('|', $referenciaCompleta);
+    $tipoEntradaSeleccionado = trim($partes[0]);
+}
         $proveedorSeleccionado = (string)($entradaEditar['proveedor'] ?? '');
         
         // Extraer tipo y folio del documento de la referencia

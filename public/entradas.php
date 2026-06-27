@@ -861,7 +861,7 @@ body {
                 </select>
             </div>
 
-            <<div class="form-field">
+            <div class="form-field">
     <label>🏪 Almacén *</label>
 
     <?php

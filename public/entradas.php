@@ -18,6 +18,10 @@ $modoEdicion = $editarId > 0;
 $entradaEditar = null;
 $observacionesEditar = '';
 $referenciaEditar = '';
+$tipoDoc = '';
+$folioDoc = '';
+$tipoEntradaSeleccionado = '';
+$proveedorSeleccionado = '';
 
 if ($modoEdicion) {
     $entradaEditar = $controller->obtenerEntrada($editarId);
@@ -33,12 +37,14 @@ if ($modoEdicion) {
     } else {
         $observacionesEditar = (string)($entradaEditar['observaciones'] ?? '');
         $referenciaEditar = (string)($entradaEditar['referencia'] ?? '');
+        $tipoEntradaSeleccionado = (string)($entradaEditar['tipo_entrada'] ?? '');
+        $proveedorSeleccionado = (string)($entradaEditar['proveedor'] ?? '');
         
-        // Extraer tipo y folio del documento de la referencia si existe
+        // Extraer tipo y folio del documento de la referencia
         if (!empty($referenciaEditar) && strpos($referenciaEditar, ':') !== false) {
-            list($tipoDoc, $folioDoc) = explode(':', $referenciaEditar, 2);
-            $tipoDoc = trim($tipoDoc);
-            $folioDoc = trim($folioDoc);
+            $parts = explode(':', $referenciaEditar, 2);
+            $tipoDoc = trim($parts[0]);
+            $folioDoc = trim($parts[1] ?? '');
         } else {
             $tipoDoc = '';
             $folioDoc = $referenciaEditar;
@@ -830,8 +836,9 @@ body {
                     <option value="">Seleccione...</option>
                     <?php foreach ($tiposEntrada as $tipo): 
                         $tipoValue = $tipo['clave'] . ' - ' . $tipo['descripcion'];
+                        $selected = ($modoEdicion && $tipoValue === $tipoEntradaSeleccionado) ? 'selected' : '';
                     ?>
-                        <option value="<?= e($tipoValue) ?>" <?= $modoEdicion && ($entradaEditar['tipo_entrada'] ?? '') === $tipoValue ? 'selected' : '' ?>>
+                        <option value="<?= e($tipoValue) ?>" <?= $selected ?>>
                             <?= e($tipo['clave']) ?> - <?= e($tipo['descripcion']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -855,26 +862,26 @@ body {
 
             <div class="form-field">
                 <label>🏢 Proveedor</label>
-                <input type="text" name="proveedor_nombre" placeholder="Ingrese el nombre del proveedor" value="<?= $modoEdicion ? e($entradaEditar['proveedor'] ?? '') : '' ?>">
+                <input type="text" name="proveedor_nombre" placeholder="Ingrese el nombre del proveedor" value="<?= $modoEdicion ? e($proveedorSeleccionado) : '' ?>">
             </div>
 
             <div class="form-field">
                 <label>📑 Tipo de documento</label>
                 <select name="tipo_documento" id="tipo_documento">
                     <option value="">Seleccione...</option>
-                    <option value="FACTURA" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'FACTURA' ? 'selected' : '' ?>>📄 Factura</option>
-                    <option value="NOTA" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'NOTA' ? 'selected' : '' ?>>📝 Nota</option>
-                    <option value="REMISION" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'REMISION' ? 'selected' : '' ?>>📋 Remisión</option>
-                    <option value="TICKET" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
-                    <option value="AJUSTE" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
-                    <option value="TRASPASO" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
-                    <option value="OTRO" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'OTRO' ? 'selected' : '' ?>>📎 Otro</option>
+                    <option value="FACTURA" <?= $modoEdicion && $tipoDoc === 'FACTURA' ? 'selected' : '' ?>>📄 Factura</option>
+                    <option value="NOTA" <?= $modoEdicion && $tipoDoc === 'NOTA' ? 'selected' : '' ?>>📝 Nota</option>
+                    <option value="REMISION" <?= $modoEdicion && $tipoDoc === 'REMISION' ? 'selected' : '' ?>>📋 Remisión</option>
+                    <option value="TICKET" <?= $modoEdicion && $tipoDoc === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
+                    <option value="AJUSTE" <?= $modoEdicion && $tipoDoc === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
+                    <option value="TRASPASO" <?= $modoEdicion && $tipoDoc === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
+                    <option value="OTRO" <?= $modoEdicion && $tipoDoc === 'OTRO' ? 'selected' : '' ?>>📎 Otro</option>
                 </select>
             </div>
 
             <div class="form-field">
                 <label>🔢 Folio del documento</label>
-                <input type="text" name="folio_documento" id="folio_documento" placeholder="Ingrese folio" value="<?= $modoEdicion && isset($folioDoc) ? e($folioDoc) : '' ?>">
+                <input type="text" name="folio_documento" id="folio_documento" placeholder="Ingrese folio" value="<?= $modoEdicion ? e($folioDoc) : '' ?>">
             </div>
 
             <div class="form-field">
@@ -1591,6 +1598,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Referencia documento
     tipoDocumento?.addEventListener('change', construirReferencia);
     folioDocumento?.addEventListener('input', construirReferencia);
+    
+    // Forzar construcción de referencia inicial (para edición)
+    construirReferencia();
 });
 </script>
 

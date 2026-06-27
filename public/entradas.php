@@ -12,9 +12,49 @@ $controller = new EntradaController();
 $message = '';
 $messageType = 'danger';
 
+// Variables para edición
+$editarId = isset($_GET['editar']) ? (int)$_GET['editar'] : 0;
+$modoEdicion = $editarId > 0;
+$entradaEditar = null;
+$observacionesEditar = '';
+$referenciaEditar = '';
+
+if ($modoEdicion) {
+    $entradaEditar = $controller->obtenerEntrada($editarId);
+
+    if (!$entradaEditar) {
+        $message = 'La entrada que intentas editar no existe.';
+        $messageType = 'danger';
+        $modoEdicion = false;
+    } elseif ((int)($entradaEditar['cancelado'] ?? 0) === 1) {
+        $message = 'No puedes editar una entrada cancelada.';
+        $messageType = 'danger';
+        $modoEdicion = false;
+    } else {
+        $observacionesEditar = (string)($entradaEditar['observaciones'] ?? '');
+        $referenciaEditar = (string)($entradaEditar['referencia'] ?? '');
+        
+        // Extraer tipo y folio del documento de la referencia si existe
+        if (!empty($referenciaEditar) && strpos($referenciaEditar, ':') !== false) {
+            list($tipoDoc, $folioDoc) = explode(':', $referenciaEditar, 2);
+            $tipoDoc = trim($tipoDoc);
+            $folioDoc = trim($folioDoc);
+        } else {
+            $tipoDoc = '';
+            $folioDoc = $referenciaEditar;
+        }
+    }
+}
+
 // Procesar formulario
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $result = $controller->guardar($_POST, (int)$user['id']);
+    $editarPostId = (int)($_POST['editar_id'] ?? 0);
+
+    if ($editarPostId > 0) {
+        $result = $controller->actualizar($editarPostId, $_POST, (int)$user['id']);
+    } else {
+        $result = $controller->guardar($_POST, (int)$user['id']);
+    }
 
     if ($result['success']) {
         $movimientoId = (int)($result['movimiento_id'] ?? 0);
@@ -42,6 +82,10 @@ $almacenSesion = (int)($user['almacen_id'] ?? 0);
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
 $folio = $controller->generarFolio($almacenSesion);
+if ($modoEdicion && $entradaEditar) {
+    $folio = $entradaEditar['folio'];
+}
+
 $folioAnterior = method_exists($controller, 'ultimoFolioEntrada')
     ? $controller->ultimoFolioEntrada($almacenSesion)
     : '';
@@ -50,6 +94,9 @@ date_default_timezone_set('America/Mexico_City');
 
 // ===== FECHA AUTOMÁTICA =====
 $fechaActual = date('Y-m-d\TH:i');
+if ($modoEdicion && $entradaEditar && !empty($entradaEditar['fecha'])) {
+    $fechaActual = date('Y-m-d\TH:i', strtotime($entradaEditar['fecha']));
+}
 
 // ===== UBICACIONES GENERALES PARA ENTRADAS =====
 $ubicacionesGenerales = [];
@@ -747,7 +794,7 @@ body {
 
 <!-- HEADER -->
 <div class="page-header">
-    <h1>📥 Entrada de Almacén</h1>
+    <h1><?= $modoEdicion ? '✏️ Editar Entrada' : '📥 Nueva Entrada de Almacén' ?></h1>
 </div>
 
 <div class="main-container">
@@ -759,7 +806,10 @@ body {
 <?php endif; ?>
 
 <form method="POST" id="formEntrada">
-    <input type="hidden" name="referencia" id="referencia_final">
+    <?php if ($modoEdicion && $entradaEditar): ?>
+        <input type="hidden" name="editar_id" value="<?= (int)$entradaEditar['id'] ?>">
+    <?php endif; ?>
+    <input type="hidden" name="referencia" id="referencia_final" value="<?= e($referenciaEditar) ?>">
 
     <!-- SECCIÓN 1: DATOS DEL DOCUMENTO -->
     <div class="doc-section">
@@ -778,8 +828,10 @@ body {
                 <label>📋 Tipo de entrada *</label>
                 <select name="tipo_entrada" required>
                     <option value="">Seleccione...</option>
-                    <?php foreach ($tiposEntrada as $tipo): ?>
-                        <option value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>">
+                    <?php foreach ($tiposEntrada as $tipo): 
+                        $tipoValue = $tipo['clave'] . ' - ' . $tipo['descripcion'];
+                    ?>
+                        <option value="<?= e($tipoValue) ?>" <?= $modoEdicion && ($entradaEditar['tipo_entrada'] ?? '') === $tipoValue ? 'selected' : '' ?>>
                             <?= e($tipo['clave']) ?> - <?= e($tipo['descripcion']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -803,31 +855,31 @@ body {
 
             <div class="form-field">
                 <label>🏢 Proveedor</label>
-                <input type="text" name="proveedor_nombre" placeholder="Ingrese el nombre del proveedor">
+                <input type="text" name="proveedor_nombre" placeholder="Ingrese el nombre del proveedor" value="<?= $modoEdicion ? e($entradaEditar['proveedor'] ?? '') : '' ?>">
             </div>
 
             <div class="form-field">
                 <label>📑 Tipo de documento</label>
                 <select name="tipo_documento" id="tipo_documento">
                     <option value="">Seleccione...</option>
-                    <option value="FACTURA">📄 Factura</option>
-                    <option value="NOTA">📝 Nota</option>
-                    <option value="REMISION">📋 Remisión</option>
-                    <option value="TICKET">🎫 Ticket</option>
-                    <option value="AJUSTE">⚙️ Ajuste</option>
-                    <option value="TRASPASO">🚚 Traspaso</option>
-                    <option value="OTRO">📎 Otro</option>
+                    <option value="FACTURA" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'FACTURA' ? 'selected' : '' ?>>📄 Factura</option>
+                    <option value="NOTA" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'NOTA' ? 'selected' : '' ?>>📝 Nota</option>
+                    <option value="REMISION" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'REMISION' ? 'selected' : '' ?>>📋 Remisión</option>
+                    <option value="TICKET" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
+                    <option value="AJUSTE" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
+                    <option value="TRASPASO" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
+                    <option value="OTRO" <?= $modoEdicion && isset($tipoDoc) && $tipoDoc === 'OTRO' ? 'selected' : '' ?>>📎 Otro</option>
                 </select>
             </div>
 
             <div class="form-field">
                 <label>🔢 Folio del documento</label>
-                <input type="text" name="folio_documento" id="folio_documento" placeholder="Ingrese folio">
+                <input type="text" name="folio_documento" id="folio_documento" placeholder="Ingrese folio" value="<?= $modoEdicion && isset($folioDoc) ? e($folioDoc) : '' ?>">
             </div>
 
             <div class="form-field">
                 <label>📝 Observaciones</label>
-                <textarea name="observaciones" placeholder="Información adicional..."></textarea>
+                <textarea name="observaciones" placeholder="Información adicional..."><?= $modoEdicion ? e($observacionesEditar) : '' ?></textarea>
             </div>
         </div>
         
@@ -931,11 +983,46 @@ body {
                     </tr>
                 </thead>
                 <tbody id="detalleBody">
-                    <tr id="filaVacia">
-                        <td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">
-                            📭 No hay productos. Presiona Ctrl+B para buscar
-                        </td>
-                    </tr>
+                    <?php if ($modoEdicion && !empty($entradaEditar['detalles'])): ?>
+                        <?php foreach ($entradaEditar['detalles'] as $item): 
+                            $cantidad = (int)($item['cantidad'] ?? 0);
+                            $precio = (float)($item['precio_unitario'] ?? 0);
+                            $importe = $cantidad * $precio;
+                            $costoUnitario = (float)($item['costo_unitario'] ?? 0);
+                            $productoId = (int)($item['producto_id'] ?? 0);
+                            $ubicacion = trim($item['ubicacion'] ?? '');
+                            $codigo = e($item['codigo'] ?? '');
+                            $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
+                            $lote = e($item['numero_lote'] ?? '');
+                        ?>
+                            <tr data-producto-id="<?= $productoId ?>">
+                                <td>
+                                    <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" onchange="actualizarCantidadFila(this)" style="width:70px; padding:6px;">
+                                    <input type="hidden" name="cantidad[]" value="<?= $cantidad ?>">
+                                    <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
+                                    <input type="hidden" name="costo_unitario[]" value="<?= $costoUnitario ?>">
+                                    <input type="hidden" name="numero_lote[]" value="<?= e($lote) ?>">
+                                    <input type="hidden" name="fecha_caducidad[]" value="">
+                                    <input type="hidden" name="ubicacion[]" value="<?= e($ubicacion) ?>">
+                                </td>
+                                <td><strong><?= $codigo ?></strong></td>
+                                <td><?= $descripcion ?></td>
+                                <td>
+                                    <input type="number" class="price-input" value="<?= number_format($precio, 2) ?>" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
+                                </td>
+                                <td><?= e($lote) ?></td>
+                                <td><?= e($ubicacion) ?></td>
+                                <td class="importe-fila" data-importe="<?= $importe ?>"><strong>$<?= number_format($importe, 2) ?></strong></td>
+                                <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr id="filaVacia">
+                            <td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">
+                                📭 No hay productos. Presiona Ctrl+B para buscar
+                            </td>
+                        </tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>

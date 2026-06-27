@@ -1914,7 +1914,6 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
                              proveedor_id = :proveedor_id,
                              referencia = :referencia,
                              observaciones = :observaciones,
-                             updated_at = NOW()
                          WHERE id = :id";
 
         $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);

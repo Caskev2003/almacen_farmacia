@@ -1123,16 +1123,15 @@ class Movimiento
                 m.folio,
                 m.fecha,
                 m.tipo_movimiento,
-                m.referencia,
+                m.referencia,  // <-- ESTE CAMPO CONTIENE EL TIPO DE ENTRADA
                 m.observaciones,
                 m.cancelado,
-                m.tipo_entrada,  // <-- AGREGAR ESTE CAMPO
                 a.nombre AS almacen_nombre,
-                p.nombre AS proveedor_nombre,
+                pr.nombre AS proveedor,  // <-- ALIAS 'proveedor'
                 u.nombre AS usuario_nombre
             FROM movimientos m
             LEFT JOIN almacenes a ON m.almacen_id = a.id
-            LEFT JOIN proveedores p ON m.proveedor_id = p.id
+            LEFT JOIN proveedores pr ON m.proveedor_id = pr.id
             INNER JOIN usuarios u ON m.usuario_id = u.id
             WHERE m.id = :id
             AND m.tipo_movimiento = 'ENTRADA'
@@ -1174,7 +1173,6 @@ class Movimiento
 
     return $movimiento;
 }
-
     public function obtenerSalidaPorId(int $movimientoId): ?array
     {
         $sql = "SELECT 
@@ -1336,111 +1334,110 @@ class Movimiento
     }
     
     public function historialEntradas(
-        string $buscar = '',
-        int $almacenId = 0,
-        string $fechaInicio = '',
-        string $fechaFinal = ''
-    ): array {
-        $sql = "SELECT
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.referencia,
-                    m.observaciones,
+    string $buscar = '',
+    int $almacenId = 0,
+    string $fechaInicio = '',
+    string $fechaFinal = ''
+): array {
+    $sql = "SELECT
+                m.id,
+                m.folio,
+                m.fecha,
+                m.referencia,  // <-- ESTE CAMPO CONTIENE EL TIPO DE ENTRADA
+                m.observaciones,
 
-                    m.cancelado,
-                    m.fecha_cancelacion,
-                    m.motivo_cancelacion,
+                m.cancelado,
+                m.fecha_cancelacion,
+                m.motivo_cancelacion,
 
-                    a.nombre AS almacen_nombre,
-                    pr.nombre AS proveedor_nombre,
-                    u.nombre AS usuario_nombre,
+                a.nombre AS almacen_nombre,
+                pr.nombre AS proveedor_nombre,
+                u.nombre AS usuario_nombre,
 
-                    COUNT(md.id) AS total_productos,
-                    COALESCE(SUM(md.cantidad), 0) AS total_unidades,
-                    COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
+                COUNT(md.id) AS total_productos,
+                COALESCE(SUM(md.cantidad), 0) AS total_unidades,
+                COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
 
-                FROM movimientos m
+            FROM movimientos m
 
-                LEFT JOIN almacenes a
-                    ON m.almacen_id = a.id
+            LEFT JOIN almacenes a
+                ON m.almacen_id = a.id
 
-                LEFT JOIN proveedores pr
-                    ON m.proveedor_id = pr.id
+            LEFT JOIN proveedores pr
+                ON m.proveedor_id = pr.id
 
-                INNER JOIN usuarios u
-                    ON m.usuario_id = u.id
+            INNER JOIN usuarios u
+                ON m.usuario_id = u.id
 
-                LEFT JOIN movimiento_detalle md
-                    ON m.id = md.movimiento_id
+            LEFT JOIN movimiento_detalle md
+                ON m.id = md.movimiento_id
 
-                WHERE m.tipo_movimiento = 'ENTRADA'";
+            WHERE m.tipo_movimiento = 'ENTRADA'";
 
-        $params = [];
+    $params = [];
 
-        if ($buscar !== '') {
-            $sql .= " AND (
-                        m.folio LIKE :buscar
-                        OR m.referencia LIKE :buscar
-                        OR m.observaciones LIKE :buscar
-                        OR a.nombre LIKE :buscar
-                        OR pr.nombre LIKE :buscar
-                        OR u.nombre LIKE :buscar
-                        OR EXISTS (
-                            SELECT 1
-                            FROM movimiento_detalle md2
-                            INNER JOIN productos p2
-                                ON md2.producto_id = p2.id
-                            WHERE md2.movimiento_id = m.id
-                            AND (
-                                p2.codigo LIKE :buscar
-                                OR p2.codigo_barras LIKE :buscar
-                                OR p2.descripcion LIKE :buscar
-                            )
+    if ($buscar !== '') {
+        $sql .= " AND (
+                    m.folio LIKE :buscar
+                    OR m.referencia LIKE :buscar
+                    OR m.observaciones LIKE :buscar
+                    OR a.nombre LIKE :buscar
+                    OR pr.nombre LIKE :buscar
+                    OR u.nombre LIKE :buscar
+                    OR EXISTS (
+                        SELECT 1
+                        FROM movimiento_detalle md2
+                        INNER JOIN productos p2
+                            ON md2.producto_id = p2.id
+                        WHERE md2.movimiento_id = m.id
+                        AND (
+                            p2.codigo LIKE :buscar
+                            OR p2.codigo_barras LIKE :buscar
+                            OR p2.descripcion LIKE :buscar
                         )
-                    )";
+                    )
+                )";
 
-            $params[':buscar'] = '%' . $buscar . '%';
-        }
-
-        if ($almacenId > 0) {
-            $sql .= " AND m.almacen_id = :almacen_id";
-            $params[':almacen_id'] = $almacenId;
-        }
-
-        if ($fechaInicio !== '') {
-            $sql .= " AND DATE(m.fecha) >= :fecha_inicio";
-            $params[':fecha_inicio'] = $fechaInicio;
-        }
-
-        if ($fechaFinal !== '') {
-            $sql .= " AND DATE(m.fecha) <= :fecha_final";
-            $params[':fecha_final'] = $fechaFinal;
-        }
-
-        $sql .= " GROUP BY
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.referencia,
-                    m.observaciones,
-
-                    m.cancelado,
-                    m.fecha_cancelacion,
-                    m.motivo_cancelacion,
-
-                    a.nombre,
-                    pr.nombre,
-                    u.nombre
-
-                  ORDER BY m.id DESC";
-
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $params[':buscar'] = '%' . $buscar . '%';
     }
 
+    if ($almacenId > 0) {
+        $sql .= " AND m.almacen_id = :almacen_id";
+        $params[':almacen_id'] = $almacenId;
+    }
+
+    if ($fechaInicio !== '') {
+        $sql .= " AND DATE(m.fecha) >= :fecha_inicio";
+        $params[':fecha_inicio'] = $fechaInicio;
+    }
+
+    if ($fechaFinal !== '') {
+        $sql .= " AND DATE(m.fecha) <= :fecha_final";
+        $params[':fecha_final'] = $fechaFinal;
+    }
+
+    $sql .= " GROUP BY
+                m.id,
+                m.folio,
+                m.fecha,
+                m.referencia,
+                m.observaciones,
+
+                m.cancelado,
+                m.fecha_cancelacion,
+                m.motivo_cancelacion,
+
+                a.nombre,
+                pr.nombre,
+                u.nombre
+
+              ORDER BY m.id DESC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
     private function obtenerExistenciaUbicacion(int $productoId, string $sucursal, string $ubicacion): int
     {
         $ubicacion = $this->limpiarUbicacion($ubicacion);

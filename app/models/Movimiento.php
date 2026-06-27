@@ -1376,13 +1376,10 @@ class Movimiento
                         FROM movimiento_detalle md2
                         INNER JOIN productos p2 ON md2.producto_id = p2.id
                         WHERE md2.movimiento_id = m.id
-                        AND (p2.codigo LIKE :buscar2 OR p2.codigo_barras LIKE :buscar3 OR p2.descripcion LIKE :buscar4)
+                        AND (p2.codigo LIKE :buscar OR p2.codigo_barras LIKE :buscar OR p2.descripcion LIKE :buscar)
                     )
                 )";
         $params[':buscar'] = '%' . $buscar . '%';
-        $params[':buscar2'] = '%' . $buscar . '%';
-        $params[':buscar3'] = '%' . $buscar . '%';
-        $params[':buscar4'] = '%' . $buscar . '%';
     }
 
     if ($almacenId > 0) {

@@ -52,21 +52,8 @@ if (
 }
 
 $almacenes = $controller->almacenes();
-
-// OBTENER ENTRADAS - Usar el método del controller
 $entradas = $controller->historialEntradas($buscar, $almacenId, $fechaInicio, $fechaFinal);
-
-// Calcular resumen
-$resumen = [
-    'total_entradas' => count($entradas),
-    'total_productos' => 0,
-    'total_unidades' => 0
-];
-
-foreach ($entradas as $e) {
-    $resumen['total_productos'] += (int)($e['total_productos'] ?? 0);
-    $resumen['total_unidades'] += (int)($e['total_unidades'] ?? 0);
-}
+$resumen = $controller->resumen($entradas);
 
 $moduleCss = 'historial_entradas';
 
@@ -81,14 +68,24 @@ include __DIR__ . '/../app/views/layouts/header.php';
     align-items: center;
 }
 
+.btn-small {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .btn-cancel {
     background: #dc2626;
     color: #fff;
     border: none;
     cursor: pointer;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
 }
 
 .btn-cancel:hover {
@@ -99,9 +96,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #2563eb;
     color: #fff;
     text-decoration: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
 }
 
 .btn-edit:hover {
@@ -113,9 +107,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #6b7280;
     color: #fff;
     text-decoration: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
 }
 
 .btn-print:hover {
@@ -127,9 +118,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #8b5cf6;
     color: #fff;
     border: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
     cursor: pointer;
 }
 
@@ -146,7 +134,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
     border: 1px solid #fca5a5;
     padding: 2px 8px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
     letter-spacing: .3px;
     text-transform: uppercase;
@@ -629,14 +617,14 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                     <button 
                                         type="button" 
-                                        class="btn-detail"
+                                        class="btn-small btn-detail"
                                         onclick="toggleDetalle('<?= e($detalleId) ?>')"
                                     >
                                         Ver detalle
                                     </button>
 
                                     <a 
-                                        class="btn-print"
+                                        class="btn-small btn-print"
                                         href="imprimir_entrada.php?id=<?= (int)$entrada['id'] ?>&preview=1"
                                         target="_blank"
                                     >
@@ -647,7 +635,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                         <a
                                             href="entradas.php?editar=<?= (int)$entrada['id'] ?>"
-                                            class="btn-edit"
+                                            class="btn-small btn-edit"
                                         >
                                             Editar
                                         </a>
@@ -677,7 +665,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                             <button 
                                                 type="submit" 
-                                                class="btn-cancel"
+                                                class="btn-small btn-cancel"
                                             >
                                                 Cancelar
                                             </button>

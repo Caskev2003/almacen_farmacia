@@ -383,4 +383,39 @@ class EntradaController
     {
         return $this->movimientoModel->getTodasUbicacionesPorSucursal($almacenId);
     }
+/**
+ * Obtiene el historial de entradas con filtros
+ */
+public function historialEntradas(
+    string $buscar = '',
+    int $almacenId = 0,
+    string $fechaInicio = '',
+    string $fechaFinal = ''
+): array {
+    return $this->movimientoModel->historialEntradas($buscar, $almacenId, $fechaInicio, $fechaFinal);
+}
+
+/**
+ * Calcula el resumen de las entradas
+ */
+public function resumen(array $entradas): array
+{
+    $totalEntradas = count($entradas);
+    $totalProductos = 0;
+    $totalUnidades = 0;
+    $totalImporte = 0.0;
+
+    foreach ($entradas as $entrada) {
+        $totalProductos += (int)($entrada['total_productos'] ?? 0);
+        $totalUnidades += (int)($entrada['total_unidades'] ?? 0);
+        $totalImporte += (float)($entrada['total'] ?? 0);
+    }
+
+    return [
+        'total_entradas' => $totalEntradas,
+        'total_productos' => $totalProductos,
+        'total_unidades' => $totalUnidades,
+        'total_importe' => $totalImporte,
+    ];
+}
 }

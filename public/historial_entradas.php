@@ -2,13 +2,15 @@
 
 require_once __DIR__ . '/../app/helpers/auth.php';
 require_once __DIR__ . '/../app/helpers/utils.php';
+require_once __DIR__ . '/../app/controllers/HistorialEntradaController.php';
 require_once __DIR__ . '/../app/controllers/EntradaController.php';
 
 requireLogin();
 
 $user = currentUser();
 
-$controller = new EntradaController();
+$controller = new HistorialEntradaController();
+$entradaCancelController = new EntradaController();
 
 $mensaje = '';
 $tipoMensaje = '';
@@ -38,7 +40,7 @@ if (
         ?? 'Cancelado desde historial de entradas'
     );
 
-    $resultado = $controller->cancelarEntrada(
+    $resultado = $entradaCancelController->cancelarEntrada(
         $movimientoId,
         (int)$user['id'],
         $motivo
@@ -52,7 +54,7 @@ if (
 }
 
 $almacenes = $controller->almacenes();
-$entradas = $controller->historialEntradas($buscar, $almacenId, $fechaInicio, $fechaFinal);
+$entradas = $controller->index($buscar, $almacenId, $fechaInicio, $fechaFinal);
 $resumen = $controller->resumen($entradas);
 
 $moduleCss = 'historial_entradas';

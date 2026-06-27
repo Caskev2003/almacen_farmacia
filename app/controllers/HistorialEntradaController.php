@@ -68,4 +68,29 @@ class HistorialEntradaController
     {
         return $this->movimientoModel->obtenerEntradaPorId($id);
     }
+
+    /**
+     * Obtiene el historial de entradas directamente (método adicional para compatibilidad)
+     */
+    public function historialEntradas(
+        string $buscar = '',
+        int $almacenId = 0,
+        string $fechaInicio = '',
+        string $fechaFinal = ''
+    ): array {
+        return $this->movimientoModel->historialEntradas(
+            trim($buscar),
+            $almacenId,
+            trim($fechaInicio),
+            trim($fechaFinal)
+        );
+    }
+
+    /**
+     * Obtiene el resumen directamente (método adicional para compatibilidad)
+     */
+    public function getResumen(array $entradas): array
+    {
+        return $this->resumen($entradas);
+    }
 }

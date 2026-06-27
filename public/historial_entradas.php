@@ -2,15 +2,13 @@
 
 require_once __DIR__ . '/../app/helpers/auth.php';
 require_once __DIR__ . '/../app/helpers/utils.php';
-require_once __DIR__ . '/../app/controllers/HistorialEntradaController.php';
 require_once __DIR__ . '/../app/controllers/EntradaController.php';
 
 requireLogin();
 
 $user = currentUser();
 
-$controller = new HistorialEntradaController();
-$entradaCancelController = new EntradaController();
+$controller = new EntradaController();
 
 $mensaje = '';
 $tipoMensaje = '';
@@ -40,7 +38,7 @@ if (
         ?? 'Cancelado desde historial de entradas'
     );
 
-    $resultado = $entradaCancelController->cancelarEntrada(
+    $resultado = $controller->cancelarEntrada(
         $movimientoId,
         (int)$user['id'],
         $motivo
@@ -54,8 +52,21 @@ if (
 }
 
 $almacenes = $controller->almacenes();
-$entradas = $controller->index($buscar, $almacenId, $fechaInicio, $fechaFinal);
-$resumen = $controller->resumen($entradas);
+
+// OBTENER ENTRADAS - Usar el método del controller
+$entradas = $controller->historialEntradas($buscar, $almacenId, $fechaInicio, $fechaFinal);
+
+// Calcular resumen
+$resumen = [
+    'total_entradas' => count($entradas),
+    'total_productos' => 0,
+    'total_unidades' => 0
+];
+
+foreach ($entradas as $e) {
+    $resumen['total_productos'] += (int)($e['total_productos'] ?? 0);
+    $resumen['total_unidades'] += (int)($e['total_unidades'] ?? 0);
+}
 
 $moduleCss = 'historial_entradas';
 
@@ -75,6 +86,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
     color: #fff;
     border: none;
     cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
 }
 
 .btn-cancel:hover {
@@ -85,10 +99,42 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #2563eb;
     color: #fff;
     text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
 }
 
 .btn-edit:hover {
     background: #1d4ed8;
+    color: #fff;
+}
+
+.btn-print {
+    background: #6b7280;
+    color: #fff;
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.btn-print:hover {
+    background: #4b5563;
+    color: #fff;
+}
+
+.btn-detail {
+    background: #8b5cf6;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.btn-detail:hover {
+    background: #7c3aed;
 }
 
 .badge-cancelado {
@@ -98,13 +144,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
     background: #fee2e2;
     color: #991b1b;
     border: 1px solid #fca5a5;
-    padding: 4px 8px;
+    padding: 2px 8px;
     border-radius: 999px;
     font-size: 10px;
     font-weight: 800;
     letter-spacing: .3px;
     text-transform: uppercase;
-    line-height: 1;
+    line-height: 1.4;
 }
 
 .alert {
@@ -136,6 +182,275 @@ include __DIR__ . '/../app/views/layouts/header.php';
 .folio-text {
     font-weight: 800;
     color: #0f172a;
+}
+
+.module-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: white;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid #e5e7eb;
+}
+
+.module-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+}
+
+.module-header p {
+    color: #6b7280;
+    margin: 4px 0 0 0;
+    font-size: 14px;
+}
+
+.historial-resumen-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.historial-card {
+    background: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+}
+
+.historial-card span {
+    display: block;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.historial-card strong {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.historial-filter-card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 20px;
+}
+
+.historial-filter-form {
+    display: grid;
+    grid-template-columns: 1fr 200px 180px 180px auto;
+    gap: 16px;
+    align-items: end;
+}
+
+.historial-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.historial-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+    text-transform: uppercase;
+}
+
+.historial-field input,
+.historial-field select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+}
+
+.historial-field input:focus,
+.historial-field select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.search-field {
+    grid-column: span 1;
+}
+
+.historial-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-primary-action {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-primary-action:hover {
+    background: #2563eb;
+}
+
+.btn-secondary-action {
+    background: #e5e7eb;
+    color: #1f2937;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.btn-secondary-action:hover {
+    background: #d1d5db;
+}
+
+.erp-table-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+}
+
+.table-topbar {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.table-topbar h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    padding: 0;
+}
+
+.erp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.erp-table th {
+    background: #f8fafc;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.erp-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
+
+.erp-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.erp-table .text-right {
+    text-align: right;
+}
+
+.folio-cell {
+    min-width: 100px;
+}
+
+.detalle-row td {
+    padding: 0 !important;
+    background: #f8fafc;
+}
+
+.detalle-box {
+    padding: 16px 20px;
+    background: #f8fafc;
+}
+
+.detalle-box h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0 0 10px 0;
+}
+
+.detalle-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.detalle-table th {
+    background: #f1f5f9;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #475569;
+}
+
+.detalle-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.detalle-table .text-right {
+    text-align: right;
+}
+
+.empty-table {
+    text-align: center;
+    padding: 40px !important;
+    color: #9ca3af;
+}
+
+.observaciones-detalle {
+    margin-top: 10px;
+    padding: 10px;
+    background: white;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+@media (max-width: 1200px) {
+    .historial-filter-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .historial-actions {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    .historial-resumen-grid {
+        grid-template-columns: 1fr;
+    }
+    .historial-filter-form {
+        grid-template-columns: 1fr;
+    }
+    .historial-actions {
+        grid-column: span 1;
+    }
 }
 </style>
 
@@ -314,14 +629,14 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                     <button 
                                         type="button" 
-                                        class="btn-small btn-detail"
+                                        class="btn-detail"
                                         onclick="toggleDetalle('<?= e($detalleId) ?>')"
                                     >
                                         Ver detalle
                                     </button>
 
                                     <a 
-                                        class="btn-small btn-print"
+                                        class="btn-print"
                                         href="imprimir_entrada.php?id=<?= (int)$entrada['id'] ?>&preview=1"
                                         target="_blank"
                                     >
@@ -332,7 +647,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                         <a
                                             href="entradas.php?editar=<?= (int)$entrada['id'] ?>"
-                                            class="btn-small btn-edit"
+                                            class="btn-edit"
                                         >
                                             Editar
                                         </a>
@@ -362,7 +677,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                             <button 
                                                 type="submit" 
-                                                class="btn-small btn-cancel"
+                                                class="btn-cancel"
                                             >
                                                 Cancelar
                                             </button>

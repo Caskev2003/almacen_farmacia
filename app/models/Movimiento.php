@@ -1333,7 +1333,7 @@ class Movimiento
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     
-    public function historialEntradas(
+   public function historialEntradas(
     string $buscar = '',
     int $almacenId = 0,
     string $fechaInicio = '',
@@ -1343,35 +1343,22 @@ class Movimiento
                 m.id,
                 m.folio,
                 m.fecha,
-                m.referencia,  // <-- ESTE CAMPO CONTIENE EL TIPO DE ENTRADA
+                m.referencia,
                 m.observaciones,
-
                 m.cancelado,
                 m.fecha_cancelacion,
                 m.motivo_cancelacion,
-
                 a.nombre AS almacen_nombre,
                 pr.nombre AS proveedor_nombre,
                 u.nombre AS usuario_nombre,
-
                 COUNT(md.id) AS total_productos,
                 COALESCE(SUM(md.cantidad), 0) AS total_unidades,
                 COALESCE(SUM(md.cantidad * md.costo_unitario), 0) AS total
-
             FROM movimientos m
-
-            LEFT JOIN almacenes a
-                ON m.almacen_id = a.id
-
-            LEFT JOIN proveedores pr
-                ON m.proveedor_id = pr.id
-
-            INNER JOIN usuarios u
-                ON m.usuario_id = u.id
-
-            LEFT JOIN movimiento_detalle md
-                ON m.id = md.movimiento_id
-
+            LEFT JOIN almacenes a ON m.almacen_id = a.id
+            LEFT JOIN proveedores pr ON m.proveedor_id = pr.id
+            INNER JOIN usuarios u ON m.usuario_id = u.id
+            LEFT JOIN movimiento_detalle md ON m.id = md.movimiento_id
             WHERE m.tipo_movimiento = 'ENTRADA'";
 
     $params = [];
@@ -1387,18 +1374,15 @@ class Movimiento
                     OR EXISTS (
                         SELECT 1
                         FROM movimiento_detalle md2
-                        INNER JOIN productos p2
-                            ON md2.producto_id = p2.id
+                        INNER JOIN productos p2 ON md2.producto_id = p2.id
                         WHERE md2.movimiento_id = m.id
-                        AND (
-                            p2.codigo LIKE :buscar
-                            OR p2.codigo_barras LIKE :buscar
-                            OR p2.descripcion LIKE :buscar
-                        )
+                        AND (p2.codigo LIKE :buscar2 OR p2.codigo_barras LIKE :buscar3 OR p2.descripcion LIKE :buscar4)
                     )
                 )";
-
         $params[':buscar'] = '%' . $buscar . '%';
+        $params[':buscar2'] = '%' . $buscar . '%';
+        $params[':buscar3'] = '%' . $buscar . '%';
+        $params[':buscar4'] = '%' . $buscar . '%';
     }
 
     if ($almacenId > 0) {
@@ -1422,15 +1406,12 @@ class Movimiento
                 m.fecha,
                 m.referencia,
                 m.observaciones,
-
                 m.cancelado,
                 m.fecha_cancelacion,
                 m.motivo_cancelacion,
-
                 a.nombre,
                 pr.nombre,
                 u.nombre
-
               ORDER BY m.id DESC";
 
     $stmt = $this->conn->prepare($sql);

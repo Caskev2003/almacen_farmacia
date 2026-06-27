@@ -1913,7 +1913,7 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
                              usuario_id = :usuario_id,
                              proveedor_id = :proveedor_id,
                              referencia = :referencia,
-                             observaciones = :observaciones,
+                             observaciones = :observaciones
                          WHERE id = :id";
 
         $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);

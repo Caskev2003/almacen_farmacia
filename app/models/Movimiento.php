@@ -1123,11 +1123,15 @@ class Movimiento
                 m.folio,
                 m.fecha,
                 m.tipo_movimiento,
-                m.referencia,  // <-- ESTE CAMPO CONTIENE EL TIPO DE ENTRADA
+                m.almacen_id,
+                m.referencia,
                 m.observaciones,
                 m.cancelado,
+                m.fecha_cancelacion,
+                m.motivo_cancelacion,
                 a.nombre AS almacen_nombre,
-                pr.nombre AS proveedor,  // <-- ALIAS 'proveedor'
+                pr.nombre AS proveedor,
+                pr.nombre AS proveedor_nombre,
                 u.nombre AS usuario_nombre
             FROM movimientos m
             LEFT JOIN almacenes a ON m.almacen_id = a.id
@@ -1149,6 +1153,7 @@ class Movimiento
     }
 
     $sqlDetalle = "SELECT 
+                        md.producto_id,
                         md.cantidad,
                         md.costo_unitario,
                         md.precio_unitario,

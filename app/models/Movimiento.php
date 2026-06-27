@@ -1116,61 +1116,64 @@ class Movimiento
         }
     }
 
-    public function obtenerEntradaPorId(int $movimientoId): ?array
-    {
-        $sql = "SELECT 
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.tipo_movimiento,
-                    m.referencia,
-                    m.observaciones,
-                    a.nombre AS almacen_nombre,
-                    p.nombre AS proveedor_nombre,
-                    u.nombre AS usuario_nombre
-                FROM movimientos m
-                LEFT JOIN almacenes a ON m.almacen_id = a.id
-                LEFT JOIN proveedores p ON m.proveedor_id = p.id
-                INNER JOIN usuarios u ON m.usuario_id = u.id
-                WHERE m.id = :id
-                AND m.tipo_movimiento = 'ENTRADA'
-                LIMIT 1";
+   public function obtenerEntradaPorId(int $movimientoId): ?array
+{
+    $sql = "SELECT 
+                m.id,
+                m.folio,
+                m.fecha,
+                m.tipo_movimiento,
+                m.referencia,
+                m.observaciones,
+                m.cancelado,
+                m.tipo_entrada,  // <-- AGREGAR ESTE CAMPO
+                a.nombre AS almacen_nombre,
+                p.nombre AS proveedor_nombre,
+                u.nombre AS usuario_nombre
+            FROM movimientos m
+            LEFT JOIN almacenes a ON m.almacen_id = a.id
+            LEFT JOIN proveedores p ON m.proveedor_id = p.id
+            INNER JOIN usuarios u ON m.usuario_id = u.id
+            WHERE m.id = :id
+            AND m.tipo_movimiento = 'ENTRADA'
+            LIMIT 1";
 
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':id' => $movimientoId
-        ]);
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute([
+        ':id' => $movimientoId
+    ]);
 
-        $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+    $movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$movimiento) {
-            return null;
-        }
-
-        $sqlDetalle = "SELECT 
-                            md.cantidad,
-                            md.costo_unitario,
-                            md.ubicacion,
-                            p.codigo,
-                            p.descripcion,
-                            p.unidad_medida,
-                            l.numero_lote,
-                            l.fecha_caducidad
-                       FROM movimiento_detalle md
-                       INNER JOIN productos p ON md.producto_id = p.id
-                       LEFT JOIN lotes l ON md.lote_id = l.id
-                       WHERE md.movimiento_id = :movimiento_id
-                       ORDER BY md.id ASC";
-
-        $stmtDetalle = $this->conn->prepare($sqlDetalle);
-        $stmtDetalle->execute([
-            ':movimiento_id' => $movimientoId
-        ]);
-
-        $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
-
-        return $movimiento;
+    if (!$movimiento) {
+        return null;
     }
+
+    $sqlDetalle = "SELECT 
+                        md.cantidad,
+                        md.costo_unitario,
+                        md.precio_unitario,
+                        md.ubicacion,
+                        p.codigo,
+                        p.descripcion,
+                        p.unidad_medida,
+                        l.numero_lote,
+                        l.fecha_caducidad
+                   FROM movimiento_detalle md
+                   INNER JOIN productos p ON md.producto_id = p.id
+                   LEFT JOIN lotes l ON md.lote_id = l.id
+                   WHERE md.movimiento_id = :movimiento_id
+                   ORDER BY md.id ASC";
+
+    $stmtDetalle = $this->conn->prepare($sqlDetalle);
+    $stmtDetalle->execute([
+        ':movimiento_id' => $movimientoId
+    ]);
+
+    $movimiento['detalles'] = $stmtDetalle->fetchAll(PDO::FETCH_ASSOC);
+
+    return $movimiento;
+}
 
     public function obtenerSalidaPorId(int $movimientoId): ?array
     {
@@ -1866,4 +1869,177 @@ class Movimiento
         
         return $resultados;
     }
+    /**
+ * ACTUALIZAR MOVIMIENTO Y SUS DETALLES (para edición de entradas)
+ */
+public function actualizarMovimiento(int $movimientoId, array $data, array $detalle): array
+{
+    try {
+        $this->conn->beginTransaction();
+
+        $almacenId = (int)($data['almacen_id'] ?? 0);
+        $sucursal = $this->obtenerSucursalPorAlmacenId($almacenId);
+
+        if ($sucursal === '') {
+            throw new Exception('No se pudo identificar la sucursal del almacén.');
+        }
+
+        // Obtener detalles originales para revertir inventario
+        $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion, lote_id
+                               FROM movimiento_detalle
+                               WHERE movimiento_id = :movimiento_id";
+
+        $stmtDetalleOriginal = $this->conn->prepare($sqlDetalleOriginal);
+        $stmtDetalleOriginal->execute([':movimiento_id' => $movimientoId]);
+        $detallesOriginales = $stmtDetalleOriginal->fetchAll(PDO::FETCH_ASSOC);
+
+        // Revertir inventario (restar lo que se sumó en la entrada)
+        foreach ($detallesOriginales as $item) {
+            $productoId = (int)$item['producto_id'];
+            $cantidad = (int)$item['cantidad'];
+            $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+            // Restar existencia (revertir entrada)
+            $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+            $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacion);
+            $this->actualizarProductoSiQuedoSinStock($productoId, $sucursal);
+
+            // Si tiene lote, revertir también
+            $loteId = (int)($item['lote_id'] ?? 0);
+            if ($loteId > 0) {
+                $sqlLote = "UPDATE lotes
+                            SET existencia = GREATEST(existencia - :cantidad, 0)
+                            WHERE id = :lote_id";
+
+                $stmtLote = $this->conn->prepare($sqlLote);
+                $stmtLote->execute([
+                    ':cantidad' => $cantidad,
+                    ':lote_id' => $loteId
+                ]);
+            }
+        }
+
+        // Eliminar detalles antiguos
+        $sqlDeleteDetalle = "DELETE FROM movimiento_detalle
+                             WHERE movimiento_id = :movimiento_id";
+
+        $stmtDeleteDetalle = $this->conn->prepare($sqlDeleteDetalle);
+        $stmtDeleteDetalle->execute([':movimiento_id' => $movimientoId]);
+
+        // Actualizar movimiento
+        $sqlUpdateMov = "UPDATE movimientos
+                         SET fecha = :fecha,
+                             almacen_id = :almacen_id,
+                             usuario_id = :usuario_id,
+                             proveedor_id = :proveedor_id,
+                             referencia = :referencia,
+                             observaciones = :observaciones,
+                             updated_at = NOW()
+                         WHERE id = :id";
+
+        $stmtUpdateMov = $this->conn->prepare($sqlUpdateMov);
+        $stmtUpdateMov->execute([
+            ':fecha' => $data['fecha'],
+            ':almacen_id' => $almacenId,
+            ':usuario_id' => $data['usuario_id'],
+            ':proveedor_id' => $data['proveedor_id'] ?: null,
+            ':referencia' => $data['referencia'] ?: null,
+            ':observaciones' => $data['observaciones'] ?: null,
+            ':id' => $movimientoId
+        ]);
+
+        // Insertar nuevos detalles
+        $sqlDetalle = "INSERT INTO movimiento_detalle (
+                            movimiento_id, producto_id, lote_id, cantidad,
+                            costo_unitario, precio_unitario, ubicacion
+                       ) VALUES (
+                            :movimiento_id, :producto_id, :lote_id, :cantidad,
+                            :costo_unitario, :precio_unitario, :ubicacion
+                       )";
+
+        $stmtDetalle = $this->conn->prepare($sqlDetalle);
+
+        $sqlLote = "INSERT INTO lotes (
+                        producto_id, numero_lote, fecha_caducidad,
+                        existencia, costo_unitario, almacen_id, ubicacion, estado
+                    ) VALUES (
+                        :producto_id, :numero_lote, :fecha_caducidad,
+                        :existencia, :costo_unitario, :almacen_id, :ubicacion, 1
+                    )";
+
+        $stmtLote = $this->conn->prepare($sqlLote);
+
+        $sqlActualizarProducto = "UPDATE productos
+                                  SET precio_compra = :precio_compra,
+                                      ubicacion = :ubicacion
+                                  WHERE id = :producto_id";
+
+        $stmtActualizarProducto = $this->conn->prepare($sqlActualizarProducto);
+
+        foreach ($detalle as $item) {
+            $loteId = null;
+
+            $productoId = (int)$item['producto_id'];
+            $cantidad = (int)$item['cantidad'];
+            $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+            if ($cantidad <= 0) {
+                throw new Exception('La cantidad debe ser mayor a 0.');
+            }
+
+            // Crear lote si tiene número
+            if (!empty($item['numero_lote'])) {
+                $stmtLote->execute([
+                    ':producto_id' => $productoId,
+                    ':numero_lote' => $item['numero_lote'],
+                    ':fecha_caducidad' => $item['fecha_caducidad'] ?: null,
+                    ':existencia' => $cantidad,
+                    ':costo_unitario' => $item['costo_unitario'],
+                    ':almacen_id' => $almacenId ?: null,
+                    ':ubicacion' => $ubicacion,
+                ]);
+
+                $loteId = (int)$this->conn->lastInsertId();
+            }
+
+            $stmtDetalle->execute([
+                ':movimiento_id' => $movimientoId,
+                ':producto_id' => $productoId,
+                ':lote_id' => $loteId,
+                ':cantidad' => $cantidad,
+                ':costo_unitario' => $item['costo_unitario'],
+                ':precio_unitario' => $item['precio_unitario'] ?? 0,
+                ':ubicacion' => $ubicacion,
+            ]);
+
+            // Sumar existencia (es una entrada)
+            $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+
+            $stmtActualizarProducto->execute([
+                ':precio_compra' => $item['costo_unitario'],
+                ':ubicacion' => $ubicacion,
+                ':producto_id' => $productoId,
+            ]);
+        }
+
+        $this->conn->commit();
+
+        return [
+            'success' => true,
+            'message' => 'Entrada actualizada correctamente.',
+            'folio' => $data['folio'] ?? '',
+            'movimiento_id' => $movimientoId
+        ];
+
+    } catch (Throwable $e) {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Error al actualizar: ' . $e->getMessage()
+        ];
+    }
+}
 }

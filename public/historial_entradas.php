@@ -29,7 +29,8 @@ if ($rolUsuario === 'ADMINISTRADOR') {
 $fechaInicio = trim($_GET['fecha_inicio'] ?? '');
 $fechaFinal = trim($_GET['fecha_final'] ?? '');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST'
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
     && ($_POST['accion'] ?? '') === 'cancelar_entrada'
 ) {
     $movimientoId = (int)($_POST['movimiento_id'] ?? 0);
@@ -57,6 +58,7 @@ $entradas = $controller->index($buscar, $almacenId, $fechaInicio, $fechaFinal);
 $resumen = $controller->resumen($entradas);
 
 $moduleCss = 'historial_entradas';
+
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
@@ -77,6 +79,16 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
 .btn-cancel:hover {
     background: #b91c1c;
+}
+
+.btn-edit {
+    background: #2563eb;
+    color: #fff;
+    text-decoration: none;
+}
+
+.btn-edit:hover {
+    background: #1d4ed8;
 }
 
 .badge-cancelado {
@@ -130,7 +142,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <div class="module-header">
     <div>
         <h2>Historial de Entradas</h2>
-        <p>Consulta, filtra y reimprime entradas registradas en el almacén.</p>
+        <p>Consulta, filtra, reimprime, edita o cancela entradas registradas en el almacén.</p>
     </div>
 </div>
 
@@ -159,6 +171,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
 <div class="historial-filter-card">
     <form method="GET" action="historial_entradas.php" class="historial-filter-form">
+
         <div class="historial-field search-field">
             <label>Buscar</label>
             <input 
@@ -213,6 +226,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <button type="submit" class="btn-primary-action">Filtrar</button>
             <a href="historial_entradas.php" class="btn-secondary-action">Limpiar</a>
         </div>
+
     </form>
 </div>
 
@@ -240,6 +254,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <tbody>
                 <?php if (!empty($entradas)): ?>
+
                     <?php foreach ($entradas as $entrada): ?>
                         <?php
                             $entradaDetalle = $controller->obtenerEntrada((int)$entrada['id']);
@@ -265,22 +280,38 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </span>
 
                                     <?php if ($estaCancelada): ?>
-                                        <span class="badge-cancelado">Cancelado</span>
+                                        <span class="badge-cancelado">
+                                            CANCELADO
+                                        </span>
                                     <?php endif; ?>
                                 </div>
                             </td>
 
                             <td><?= e($fecha) ?></td>
+
                             <td><?= e($movimientoTexto) ?></td>
+
                             <td><?= e($entrada['almacen_nombre'] ?? '') ?></td>
+
                             <td><?= e($entrada['proveedor_nombre'] ?? '') ?></td>
+
                             <td><?= e($entrada['usuario_nombre'] ?? '') ?></td>
-                            <td class="text-right"><?= number_format((int)$entrada['total_productos']) ?></td>
-                            <td class="text-right"><?= number_format((int)$entrada['total_unidades']) ?></td>
-                            <td class="text-right">$<?= number_format((float)$entrada['total'], 2) ?></td>
+
+                            <td class="text-right">
+                                <?= number_format((int)$entrada['total_productos']) ?>
+                            </td>
+
+                            <td class="text-right">
+                                <?= number_format((int)$entrada['total_unidades']) ?>
+                            </td>
+
+                            <td class="text-right">
+                                $<?= number_format((float)$entrada['total'], 2) ?>
+                            </td>
 
                             <td>
                                 <div class="table-actions">
+
                                     <button 
                                         type="button" 
                                         class="btn-small btn-detail"
@@ -298,22 +329,53 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </a>
 
                                     <?php if (!$estaCancelada): ?>
+
+                                        <a
+                                            href="entradas.php?editar=<?= (int)$entrada['id'] ?>"
+                                            class="btn-small btn-edit"
+                                        >
+                                            Editar
+                                        </a>
+
                                         <form 
                                             method="POST" 
                                             style="display:inline;"
                                             onsubmit="return confirm('¿Seguro que deseas cancelar esta entrada? Se descontará el stock ingresado.');"
                                         >
-                                            <input type="hidden" name="accion" value="cancelar_entrada">
-                                            <input type="hidden" name="movimiento_id" value="<?= (int)$entrada['id'] ?>">
-                                            <input type="hidden" name="motivo_cancelacion" value="Cancelado desde historial de entradas">
+                                            <input 
+                                                type="hidden" 
+                                                name="accion" 
+                                                value="cancelar_entrada"
+                                            >
 
-                                            <button type="submit" class="btn-small btn-cancel">
+                                            <input 
+                                                type="hidden" 
+                                                name="movimiento_id" 
+                                                value="<?= (int)$entrada['id'] ?>"
+                                            >
+
+                                            <input 
+                                                type="hidden" 
+                                                name="motivo_cancelacion" 
+                                                value="Cancelado desde historial de entradas"
+                                            >
+
+                                            <button 
+                                                type="submit" 
+                                                class="btn-small btn-cancel"
+                                            >
                                                 Cancelar
                                             </button>
                                         </form>
+
                                     <?php else: ?>
-                                        <span class="badge-cancelado">CANCELADO</span>
+
+                                        <span class="badge-cancelado">
+                                            CANCELADO
+                                        </span>
+
                                     <?php endif; ?>
+
                                 </div>
                             </td>
                         </tr>
@@ -326,6 +388,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     <?php if ($estaCancelada): ?>
                                         <div class="alert alert-error" style="margin: 10px 0;">
                                             Esta entrada fue cancelada.
+
                                             <?php if (!empty($entrada['fecha_cancelacion'])): ?>
                                                 Fecha de cancelación:
                                                 <?= e(date('d/m/Y H:i', strtotime($entrada['fecha_cancelacion']))) ?>.
@@ -354,6 +417,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                         <tbody>
                                             <?php if (!empty($entradaDetalle['detalles'])): ?>
+
                                                 <?php foreach ($entradaDetalle['detalles'] as $detalle): ?>
                                                     <?php
                                                         $cantidad = (int)($detalle['cantidad'] ?? 0);
@@ -367,22 +431,48 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                                     ?>
 
                                                     <tr>
-                                                        <td class="text-right"><?= number_format($cantidad) ?></td>
-                                                        <td><?= e($detalle['codigo'] ?? '') ?></td>
-                                                        <td><?= e($detalle['descripcion'] ?? '') ?></td>
-                                                        <td><?= e($detalle['numero_lote'] ?? '') ?></td>
-                                                        <td><?= e($caducidad) ?></td>
-                                                        <td><?= e($detalle['ubicacion'] ?? '') ?></td>
-                                                        <td class="text-right">$<?= number_format($costo, 2) ?></td>
-                                                        <td class="text-right">$<?= number_format($importe, 2) ?></td>
+                                                        <td class="text-right">
+                                                            <?= number_format($cantidad) ?>
+                                                        </td>
+
+                                                        <td>
+                                                            <?= e($detalle['codigo'] ?? '') ?>
+                                                        </td>
+
+                                                        <td>
+                                                            <?= e($detalle['descripcion'] ?? '') ?>
+                                                        </td>
+
+                                                        <td>
+                                                            <?= e($detalle['numero_lote'] ?? '') ?>
+                                                        </td>
+
+                                                        <td>
+                                                            <?= e($caducidad) ?>
+                                                        </td>
+
+                                                        <td>
+                                                            <?= e($detalle['ubicacion'] ?? '') ?>
+                                                        </td>
+
+                                                        <td class="text-right">
+                                                            $<?= number_format($costo, 2) ?>
+                                                        </td>
+
+                                                        <td class="text-right">
+                                                            $<?= number_format($importe, 2) ?>
+                                                        </td>
                                                     </tr>
                                                 <?php endforeach; ?>
+
                                             <?php else: ?>
+
                                                 <tr>
                                                     <td colspan="8" class="empty-table">
                                                         No hay productos en esta entrada.
                                                     </td>
                                                 </tr>
+
                                             <?php endif; ?>
                                         </tbody>
                                     </table>
@@ -396,13 +486,17 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                 </div>
                             </td>
                         </tr>
+
                     <?php endforeach; ?>
+
                 <?php else: ?>
+
                     <tr>
                         <td colspan="10" class="empty-table">
                             No se encontraron entradas con los filtros seleccionados.
                         </td>
                     </tr>
+
                 <?php endif; ?>
             </tbody>
         </table>
@@ -412,10 +506,15 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <script>
 function toggleDetalle(id) {
     const fila = document.getElementById(id);
+
     if (!fila) return;
 
-    fila.style.display = fila.style.display === 'none' ? 'table-row' : 'none';
+    fila.style.display = fila.style.display === 'none'
+        ? 'table-row'
+        : 'none';
 }
 </script>
 
-<?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>
+<?php
+include __DIR__ . '/../app/views/layouts/footer.php';
+?>

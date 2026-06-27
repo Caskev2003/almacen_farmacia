@@ -35,27 +35,36 @@ if ($modoEdicion) {
         $messageType = 'danger';
         $modoEdicion = false;
     } else {
-        $observacionesEditar = (string)($entradaEditar['observaciones'] ?? '');
-        $referenciaEditar = (string)($entradaEditar['referencia'] ?? '');
-        // El tipo de entrada está dentro del campo 'referencia'
-$referenciaCompleta = (string)($entradaEditar['referencia'] ?? '');
+      $observacionesEditar = (string)($entradaEditar['observaciones'] ?? '');
+$referenciaEditar = (string)($entradaEditar['referencia'] ?? '');
+
 $tipoEntradaSeleccionado = '';
-if (!empty($referenciaCompleta)) {
-    // Extraer solo la primera parte antes del primer "|"
-    $partes = explode('|', $referenciaCompleta);
-    $tipoEntradaSeleccionado = trim($partes[0]);
-}
-        $proveedorSeleccionado = (string)($entradaEditar['proveedor'] ?? '');
-        
-        // Extraer tipo y folio del documento de la referencia
-        if (!empty($referenciaEditar) && strpos($referenciaEditar, ':') !== false) {
-            $parts = explode(':', $referenciaEditar, 2);
-            $tipoDoc = trim($parts[0]);
-            $folioDoc = trim($parts[1] ?? '');
+$proveedorSeleccionado = '';
+$tipoDoc = '';
+$folioDoc = '';
+
+$partesReferencia = array_map('trim', explode('|', $referenciaEditar));
+
+$tipoEntradaSeleccionado = $partesReferencia[0] ?? '';
+
+foreach ($partesReferencia as $parte) {
+    if (stripos($parte, 'Proveedor:') === 0) {
+        $proveedorSeleccionado = trim(substr($parte, strlen('Proveedor:')));
+    }
+
+    if (stripos($parte, 'Ref:') === 0) {
+        $documento = trim(substr($parte, strlen('Ref:')));
+
+        if (strpos($documento, ':') !== false) {
+            [$tipoDocTmp, $folioDocTmp] = explode(':', $documento, 2);
+
+            $tipoDoc = strtoupper(trim($tipoDocTmp));
+            $folioDoc = trim($folioDocTmp);
         } else {
-            $tipoDoc = '';
-            $folioDoc = $referenciaEditar;
+            $folioDoc = $documento;
         }
+    }
+}
     }
 }
 
@@ -852,20 +861,46 @@ body {
                 </select>
             </div>
 
-            <div class="form-field">
-                <label>🏪 Almacén *</label>
-                <select name="almacen_id" required <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
-                    <option value="">Seleccione...</option>
-                    <?php foreach ($almacenes as $almacen): ?>
-                        <option value="<?= (int)$almacen['id'] ?>" <?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>>
-                            <?= e($almacen['nombre']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
-                    <input type="hidden" name="almacen_id" value="<?= (int)$almacenSesion ?>">
-                <?php endif; ?>
-            </div>
+            <<div class="form-field">
+    <label>🏪 Almacén *</label>
+
+    <?php
+    $almacenSeleccionado = $modoEdicion && $entradaEditar
+        ? (int)($entradaEditar['almacen_id'] ?? $almacenSesion)
+        : $almacenSesion;
+
+    $puedeEditarAlmacen = in_array(
+        strtoupper(trim($rolUsuario)),
+        ['ADMINISTRADOR', 'ENCARGADO'],
+        true
+    );
+    ?>
+
+    <select
+        name="almacen_id"
+        required
+        <?= !$puedeEditarAlmacen ? 'disabled' : '' ?>
+    >
+        <option value="">Seleccione...</option>
+
+        <?php foreach ($almacenes as $almacen): ?>
+            <option
+                value="<?= (int)$almacen['id'] ?>"
+                <?= (int)$almacen['id'] === $almacenSeleccionado ? 'selected' : '' ?>
+            >
+                <?= e($almacen['nombre']) ?>
+            </option>
+        <?php endforeach; ?>
+    </select>
+
+    <?php if (!$puedeEditarAlmacen): ?>
+        <input
+            type="hidden"
+            name="almacen_id"
+            value="<?= (int)$almacenSeleccionado ?>"
+        >
+    <?php endif; ?>
+</div>
 
             <div class="form-field">
                 <label>🏢 Proveedor</label>

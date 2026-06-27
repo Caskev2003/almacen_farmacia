@@ -1118,7 +1118,7 @@ function ponerFechaActual() {
 function abrirModal() {
     console.log('Abriendo modal, productos:', productos.length);
     if (productos.length === 0) {
-        mostrarToast('⚠️ No hay productos disponibles', 'warning');
+        mostrarToast('⚠️ No hay productos disponible', 'warning');
         return;
     }
     modal.classList.add('active');

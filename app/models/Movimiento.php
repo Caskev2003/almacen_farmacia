@@ -2021,4 +2021,102 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
         ];
     }
 }
+
+public function generarKardex(
+    int $productoId,
+    int $almacenId = 0,
+    string $fechaInicio = '',
+    string $fechaFinal = ''
+): array {
+    if ($productoId <= 0) {
+        return [];
+    }
+
+    $params = [
+        ':producto_id' => $productoId
+    ];
+
+    $sql = "SELECT
+                m.id,
+                m.fecha,
+                m.folio,
+                m.tipo_movimiento,
+                m.referencia,
+                m.tipo_operacion,
+                m.observaciones,
+                a.nombre AS almacen_nombre,
+                u.nombre AS usuario_nombre,
+                md.cantidad,
+                md.ubicacion
+            FROM movimientos m
+            INNER JOIN movimiento_detalle md
+                ON m.id = md.movimiento_id
+            LEFT JOIN almacenes a
+                ON m.almacen_id = a.id
+            INNER JOIN usuarios u
+                ON m.usuario_id = u.id
+            WHERE md.producto_id = :producto_id
+            AND COALESCE(m.cancelado, 0) = 0";
+
+    if ($almacenId > 0) {
+        $sql .= " AND m.almacen_id = :almacen_id";
+        $params[':almacen_id'] = $almacenId;
+    }
+
+    if ($fechaInicio !== '') {
+        $sql .= " AND m.fecha >= :fecha_inicio";
+        $params[':fecha_inicio'] = $fechaInicio . ' 00:00:00';
+    }
+
+    if ($fechaFinal !== '') {
+        $sql .= " AND m.fecha <= :fecha_final";
+        $params[':fecha_final'] = $fechaFinal . ' 23:59:59';
+    }
+
+    $sql .= " ORDER BY m.fecha ASC, m.id ASC, md.id ASC";
+
+    $stmt = $this->conn->prepare($sql);
+    $stmt->execute($params);
+
+    $movimientos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $kardex = [];
+    $saldo = 0;
+
+    foreach ($movimientos as $mov) {
+        $cantidad = (int)$mov['cantidad'];
+        $tipo = strtoupper(trim($mov['tipo_movimiento'] ?? ''));
+
+        $inventarioInicial = $saldo;
+
+        if ($tipo === 'ENTRADA') {
+            $saldo += $cantidad;
+            $efecto = '+';
+        } elseif ($tipo === 'SALIDA') {
+            $saldo -= $cantidad;
+            if ($saldo < 0) {
+                $saldo = 0;
+            }
+            $efecto = '-';
+        } else {
+            $efecto = '';
+        }
+
+        $kardex[] = [
+            'fecha' => $mov['fecha'],
+            'folio' => $mov['folio'],
+            'tipo_movimiento' => $tipo,
+            'almacen_afectado' => $mov['almacen_nombre'] ?? '',
+            'almacen_destino' => $mov['tipo_operacion'] ?: ($mov['referencia'] ?? ''),
+            'inventario_inicial' => $inventarioInicial,
+            'cantidad' => $cantidad,
+            'inventario_final' => $saldo,
+            'efecto' => $efecto,
+            'notas' => trim(($mov['observaciones'] ?? '') . ' ' . ($mov['ubicacion'] ?? '')),
+            'usuario' => $mov['usuario_nombre'] ?? ''
+        ];
+    }
+
+    return $kardex;
+}
 }

@@ -8,11 +8,11 @@ requireLogin();
 
 $model = new Movimiento();
 
-$productos = $model->getProductosActivos();
+$productos = $model->getProductosCatalogo();
 $almacenes = $model->getAlmacenes();
 
 $usuario = $_SESSION['user'] ?? [];
-$rol = $usuario['rol'] ?? '';
+$rol = strtoupper(trim($usuario['rol'] ?? ''));
 $almacenSesion = (int)($usuario['almacen_id'] ?? 0);
 
 $productoId = isset($_GET['producto_id']) ? (int)$_GET['producto_id'] : 0;
@@ -37,19 +37,40 @@ foreach ($almacenes as $almacen) {
     }
 }
 
+foreach ($productos as $producto) {
+    if ((int)$producto['id'] === $productoId) {
+        $productoSeleccionado = $producto;
+        break;
+    }
+}
+
 if ($rol !== 'ADMINISTRADOR' && $almacenId <= 0) {
     $almacenSeleccionado = 'SIN ALMACÉN ASIGNADO';
 }
 
 if ($productoId > 0 && ($rol === 'ADMINISTRADOR' || $almacenId > 0)) {
     $kardex = $model->generarKardex($productoId, $almacenId, $fechaInicio, $fechaFinal);
+}
 
-    foreach ($productos as $producto) {
-        if ((int)$producto['id'] === $productoId) {
-            $productoSeleccionado = $producto;
-            break;
-        }
-    }
+$productosJson = [];
+
+foreach ($productos as $producto) {
+    $texto = trim(($producto['codigo'] ?? '') . ' - ' . ($producto['descripcion'] ?? ''));
+
+    $productosJson[] = [
+        'id' => (int)$producto['id'],
+        'codigo' => $producto['codigo'] ?? '',
+        'descripcion' => $producto['descripcion'] ?? '',
+        'texto' => $texto
+    ];
+}
+
+$productoTextoActual = '';
+
+if ($productoSeleccionado) {
+    $productoTextoActual = trim(
+        ($productoSeleccionado['codigo'] ?? '') . ' - ' . ($productoSeleccionado['descripcion'] ?? '')
+    );
 }
 
 $moduleCss = 'kardex';
@@ -91,6 +112,21 @@ include __DIR__ . '/../app/views/layouts/header.php';
     border: 1px solid #cfd8e3;
     border-radius: 8px;
     font-size: 14px;
+}
+
+.product-desc-box {
+    margin-top: 7px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    color: #334155;
+    font-size: 13px;
+    min-height: 36px;
+}
+
+.product-desc-box strong {
+    color: #0f172a;
 }
 
 .kardex-actions {
@@ -206,12 +242,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         gap: 8px !important;
     }
 
-    .print-logo {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
     .print-logo img {
         width: 58px !important;
         height: auto !important;
@@ -240,7 +270,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
         font-weight: bold !important;
         text-transform: uppercase !important;
         letter-spacing: .5px !important;
-        white-space: normal !important;
     }
 
     .print-number {
@@ -350,7 +379,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
 </div>
 
 <div class="kardex-card no-print">
-    <form method="GET" class="kardex-filtros">
+    <form method="GET" class="kardex-filtros" onsubmit="return validarProductoKardex();">
         <div class="kardex-field">
             <label>Almacén</label>
             <select name="almacen_id" <?= $rol !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
@@ -375,17 +404,38 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
         <div class="kardex-field">
             <label>Producto</label>
-            <select name="producto_id" required>
-                <option value="">Seleccione producto</option>
+
+            <input
+                type="text"
+                id="productoBuscar"
+                list="productosKardexList"
+                value="<?= e($productoTextoActual) ?>"
+                placeholder="Escribe código o descripción del producto"
+                autocomplete="off"
+                required
+            >
+
+            <input
+                type="hidden"
+                name="producto_id"
+                id="producto_id"
+                value="<?= (int)$productoId ?>"
+            >
+
+            <datalist id="productosKardexList">
                 <?php foreach ($productos as $producto): ?>
-                    <option 
-                        value="<?= (int)$producto['id'] ?>" 
-                        <?= $productoId === (int)$producto['id'] ? 'selected' : '' ?>
-                    >
-                        <?= e($producto['codigo']) ?> - <?= e($producto['descripcion']) ?>
-                    </option>
+                    <option value="<?= e(($producto['codigo'] ?? '') . ' - ' . ($producto['descripcion'] ?? '')) ?>"></option>
                 <?php endforeach; ?>
-            </select>
+            </datalist>
+
+            <div class="product-desc-box" id="productoDescripcionBox">
+                <?php if ($productoSeleccionado): ?>
+                    <strong>Descripción:</strong>
+                    <?= e($productoSeleccionado['descripcion'] ?? '') ?>
+                <?php else: ?>
+                    Escribe o selecciona un producto.
+                <?php endif; ?>
+            </div>
         </div>
 
         <div class="kardex-field">
@@ -501,6 +551,105 @@ include __DIR__ . '/../app/views/layouts/header.php';
     </div>
 
 </div>
+
+<script>
+const productosKardex = <?= json_encode($productosJson, JSON_UNESCAPED_UNICODE) ?>;
+
+const productoBuscar = document.getElementById('productoBuscar');
+const productoIdInput = document.getElementById('producto_id');
+const productoDescripcionBox = document.getElementById('productoDescripcionBox');
+
+function normalizarTexto(valor) {
+    return String(valor || '').trim().toLowerCase();
+}
+
+function buscarProductoPorTexto(texto) {
+    const limpio = normalizarTexto(texto);
+
+    if (!limpio) {
+        return null;
+    }
+
+    let producto = productosKardex.find(p =>
+        normalizarTexto(p.texto) === limpio
+    );
+
+    if (producto) {
+        return producto;
+    }
+
+    producto = productosKardex.find(p =>
+        normalizarTexto(p.codigo) === limpio
+    );
+
+    if (producto) {
+        return producto;
+    }
+
+    producto = productosKardex.find(p =>
+        normalizarTexto(p.descripcion) === limpio
+    );
+
+    if (producto) {
+        return producto;
+    }
+
+    producto = productosKardex.find(p =>
+        normalizarTexto(p.codigo).includes(limpio) ||
+        normalizarTexto(p.descripcion).includes(limpio) ||
+        normalizarTexto(p.texto).includes(limpio)
+    );
+
+    return producto || null;
+}
+
+function actualizarProductoSeleccionado() {
+    const producto = buscarProductoPorTexto(productoBuscar.value);
+
+    if (!producto) {
+        productoIdInput.value = '';
+        productoDescripcionBox.innerHTML = 'Producto no encontrado. Escribe el código o selecciona una opción de la lista.';
+        return false;
+    }
+
+    productoIdInput.value = producto.id;
+    productoBuscar.value = producto.texto;
+    productoDescripcionBox.innerHTML = '<strong>Descripción:</strong> ' + escapeHtml(producto.descripcion);
+
+    return true;
+}
+
+function validarProductoKardex() {
+    return actualizarProductoSeleccionado();
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, function(m) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        }[m];
+    });
+}
+
+productoBuscar.addEventListener('input', function() {
+    const producto = buscarProductoPorTexto(this.value);
+
+    if (!producto) {
+        productoIdInput.value = '';
+        productoDescripcionBox.innerHTML = 'Escribe código o descripción del producto.';
+        return;
+    }
+
+    productoIdInput.value = producto.id;
+    productoDescripcionBox.innerHTML = '<strong>Descripción:</strong> ' + escapeHtml(producto.descripcion);
+});
+
+productoBuscar.addEventListener('change', actualizarProductoSeleccionado);
+</script>
 
 <?php
 if (file_exists(__DIR__ . '/../app/views/layouts/footer.php')) {

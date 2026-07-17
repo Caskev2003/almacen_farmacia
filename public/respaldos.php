@@ -1,4 +1,5 @@
 <?php
+
 require_once __DIR__ . '/../app/helpers/auth.php';
 
 requireLogin();
@@ -6,7 +7,6 @@ requireLogin();
 date_default_timezone_set('America/Mexico_City');
 
 $user = currentUser();
-
 $rol = strtoupper(trim($user['rol'] ?? ''));
 
 if (!in_array($rol, ['ADMINISTRADOR', 'ENCARGADO'], true)) {
@@ -14,234 +14,571 @@ if (!in_array($rol, ['ADMINISTRADOR', 'ENCARGADO'], true)) {
     exit('Acceso denegado.');
 }
 
-$backupDir = '/backups/inventario';
-$backupScript = '/usr/local/bin/backup_inventario.sh';
+// ======================================================
+// CONFIGURACIÓN DEL RESPALDO PARA WINDOWS Y XAMPP
+// ======================================================
+
+// La carpeta se creará en:
+// carpeta-del-proyecto/backups/inventario
+$backupDir = dirname(__DIR__)
+    . DIRECTORY_SEPARATOR
+    . 'backups'
+    . DIRECTORY_SEPARATOR
+    . 'inventario';
+
+// Ruta de mysqldump de XAMPP.
+$mysqldump = 'C:\\xampp\\mysql\\bin\\mysqldump.exe';
+
+// Configuración de la base de datos.
+$dbHost = '127.0.0.1';
+$dbPort = '3307';
+$dbName = 'almacen_farmacia';
+$dbUser = 'root';
+$dbPassword = '';
+
 $mensaje = '';
 $error = '';
 
+// ======================================================
+// CREAR CARPETA DE RESPALDOS
+// ======================================================
+
 if (!is_dir($backupDir)) {
-    die('La carpeta de respaldos no existe.');
+    if (!mkdir($backupDir, 0775, true)) {
+        die(
+            'No se pudo crear la carpeta de respaldos: '
+            . htmlspecialchars($backupDir, ENT_QUOTES, 'UTF-8')
+        );
+    }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar_backup'])) {
-    if (!file_exists($backupScript)) {
-        $error = 'No se encontró el script de respaldo.';
-    } elseif (!is_executable($backupScript)) {
-        $error = 'El script de respaldo no tiene permisos de ejecución.';
+// ======================================================
+// GENERAR TOKEN DE SEGURIDAD
+// ======================================================
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+if (empty($_SESSION['csrf_respaldo'])) {
+    $_SESSION['csrf_respaldo'] = bin2hex(random_bytes(32));
+}
+
+// ======================================================
+// GENERAR RESPALDO
+// ======================================================
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['generar_backup'])
+) {
+    $tokenRecibido = $_POST['csrf_token'] ?? '';
+
+    if (
+        !is_string($tokenRecibido)
+        || !hash_equals($_SESSION['csrf_respaldo'], $tokenRecibido)
+    ) {
+        $error = 'La solicitud no es válida. Recarga la página e inténtalo nuevamente.';
+    } elseif (!file_exists($mysqldump)) {
+        $error = 'No se encontró mysqldump.exe en la ruta: ' . $mysqldump;
+    } elseif (!is_file($mysqldump)) {
+        $error = 'La ruta configurada para mysqldump no es válida.';
     } else {
+        $fecha = date('Y-m-d_H-i-s');
+
+        $nombreArchivo =
+            'respaldo_' . $dbName . '_' . $fecha . '.sql';
+
+        $rutaArchivo =
+            $backupDir
+            . DIRECTORY_SEPARATOR
+            . $nombreArchivo;
+
+        /*
+         * --result-file se utiliza en lugar de > para evitar
+         * problemas con rutas y caracteres especiales en Windows.
+         */
+        $comando =
+            '"' . $mysqldump . '"'
+            . ' --host=' . escapeshellarg($dbHost)
+            . ' --port=' . escapeshellarg($dbPort)
+            . ' --user=' . escapeshellarg($dbUser);
+
+        if ($dbPassword !== '') {
+            $comando .=
+                ' --password=' . escapeshellarg($dbPassword);
+        }
+
+        $comando .=
+            ' --single-transaction'
+            . ' --routines'
+            . ' --triggers'
+            . ' --events'
+            . ' --hex-blob'
+            . ' --default-character-set=utf8mb4'
+            . ' --databases ' . escapeshellarg($dbName)
+            . ' --result-file=' . escapeshellarg($rutaArchivo)
+            . ' 2>&1';
+
         $salida = [];
         $codigo = 0;
 
-        exec($backupScript . ' 2>&1', $salida, $codigo);
+        exec($comando, $salida, $codigo);
 
-        if ($codigo === 0) {
+        if (
+            $codigo === 0
+            && file_exists($rutaArchivo)
+            && filesize($rutaArchivo) > 0
+        ) {
+            $_SESSION['csrf_respaldo'] = bin2hex(random_bytes(32));
+
             header('Location: respaldos.php?ok=1');
             exit;
-        } else {
-            $error = 'No se pudo generar el respaldo. Detalle: ' . implode(' ', $salida);
+        }
+
+        // Eliminar un respaldo vacío o incompleto.
+        if (
+            file_exists($rutaArchivo)
+            && filesize($rutaArchivo) === 0
+        ) {
+            unlink($rutaArchivo);
+        }
+
+        $detalle = trim(implode(' ', $salida));
+
+        $error = 'No se pudo generar el respaldo.';
+
+        if ($detalle !== '') {
+            $error .= ' Detalle: ' . $detalle;
+        } elseif ($codigo !== 0) {
+            $error .= ' Código de salida: ' . $codigo . '.';
         }
     }
 }
 
-if (isset($_GET['ok'])) {
+// ======================================================
+// MENSAJE DE CONFIRMACIÓN
+// ======================================================
+
+if (isset($_GET['ok']) && $_GET['ok'] === '1') {
     $mensaje = 'Respaldo generado correctamente.';
 }
 
-$archivos = glob($backupDir . '/*.sql*');
+// ======================================================
+// OBTENER RESPALDOS DISPONIBLES
+// ======================================================
+
+$archivos = glob(
+    $backupDir . DIRECTORY_SEPARATOR . '*.sql'
+);
+
+if ($archivos === false) {
+    $archivos = [];
+}
 
 usort($archivos, function ($a, $b) {
-    return filemtime($b) - filemtime($a);
+    return filemtime($b) <=> filemtime($a);
 });
 
-if (isset($_GET['descargar'])) {
-    $archivo = basename($_GET['descargar']);
-    $rutaArchivo = $backupDir . '/' . $archivo;
+// ======================================================
+// DESCARGAR RESPALDO
+// ======================================================
 
-    if (!file_exists($rutaArchivo)) {
-        die('El archivo no existe.');
+if (isset($_GET['descargar'])) {
+    $archivo = basename((string) $_GET['descargar']);
+
+    // Únicamente permite descargar los respaldos SQL generados.
+    if (
+        !preg_match(
+            '/^respaldo_[a-zA-Z0-9_-]+\.sql$/',
+            $archivo
+        )
+    ) {
+        http_response_code(400);
+        exit('El nombre del archivo no es válido.');
     }
 
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . $archivo . '"');
+    $rutaArchivo =
+        $backupDir
+        . DIRECTORY_SEPARATOR
+        . $archivo;
+
+    if (!is_file($rutaArchivo)) {
+        http_response_code(404);
+        exit('El archivo solicitado no existe.');
+    }
+
+    if (!is_readable($rutaArchivo)) {
+        http_response_code(500);
+        exit('No se puede leer el archivo solicitado.');
+    }
+
+    // Limpiar cualquier contenido previo.
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    header('Content-Type: application/sql');
+    header(
+        'Content-Disposition: attachment; filename="' .
+        str_replace('"', '', $archivo) .
+        '"'
+    );
     header('Content-Length: ' . filesize($rutaArchivo));
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+    header('X-Content-Type-Options: nosniff');
 
     readfile($rutaArchivo);
     exit;
 }
+
+// ======================================================
+// FUNCIÓN PARA MOSTRAR EL TAMAÑO
+// ======================================================
+
+function formatearTamano(int $bytes): string
+{
+    if ($bytes >= 1073741824) {
+        return number_format(
+            $bytes / 1073741824,
+            2
+        ) . ' GB';
+    }
+
+    if ($bytes >= 1048576) {
+        return number_format(
+            $bytes / 1048576,
+            2
+        ) . ' MB';
+    }
+
+    if ($bytes >= 1024) {
+        return number_format(
+            $bytes / 1024,
+            2
+        ) . ' KB';
+    }
+
+    return $bytes . ' bytes';
+}
+
 ?>
 
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
     <title>Respaldos de Base de Datos</title>
 
     <style>
-        *{
-            box-sizing:border-box;
+        * {
+            box-sizing: border-box;
         }
 
-        body{
-            margin:0;
-            padding:30px;
-            background:#f4f6f9;
-            font-family:Arial,sans-serif;
+        body {
+            margin: 0;
+            padding: 30px;
+            background: #f4f6f9;
+            font-family: Arial, sans-serif;
+            color: #212529;
         }
 
-        .contenedor{
-            max-width:1200px;
-            margin:auto;
-            background:#fff;
-            border-radius:12px;
-            padding:25px;
-            box-shadow:0 4px 14px rgba(0,0,0,.12);
+        .contenedor {
+            width: 100%;
+            max-width: 1200px;
+            margin: auto;
+            padding: 25px;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
         }
 
-        h1{
-            margin-top:0;
-            color:#1f5ea8;
+        h1 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #1f5ea8;
         }
 
-        .info{
-            margin-bottom:20px;
-            padding:12px;
-            border-radius:8px;
-            background:#eef5ff;
-            color:#1f5ea8;
-            font-weight:bold;
+        .info {
+            margin-bottom: 20px;
+            padding: 12px;
+            border: 1px solid #cfe2ff;
+            border-radius: 8px;
+            background: #eef5ff;
+            color: #1f5ea8;
+            font-weight: bold;
         }
 
-        .acciones{
-            display:flex;
-            gap:12px;
-            align-items:center;
-            margin-bottom:20px;
-            flex-wrap:wrap;
+        .ruta-respaldo {
+            margin-bottom: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            color: #555;
+            font-size: 14px;
+            overflow-wrap: anywhere;
         }
 
-        .btn-generar{
-            border:none;
-            cursor:pointer;
-            padding:12px 18px;
-            border-radius:8px;
-            background:#198754;
-            color:white;
-            font-weight:bold;
-            font-size:14px;
+        .ruta-respaldo strong {
+            color: #333;
         }
 
-        .btn-generar:hover{
-            background:#146c43;
+        .acciones {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
-        .alerta-ok{
-            margin-bottom:15px;
-            padding:12px;
-            border-radius:8px;
-            background:#d1e7dd;
-            color:#0f5132;
-            font-weight:bold;
+        .acciones form {
+            margin: 0;
         }
 
-        .alerta-error{
-            margin-bottom:15px;
-            padding:12px;
-            border-radius:8px;
-            background:#f8d7da;
-            color:#842029;
-            font-weight:bold;
+        .btn-generar {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            background: #198754;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition:
+                background-color .2s ease,
+                transform .2s ease;
         }
 
-        table{
-            width:100%;
-            border-collapse:collapse;
+        .btn-generar:hover {
+            background: #146c43;
+            transform: translateY(-1px);
         }
 
-        th{
-            background:#1f5ea8;
-            color:white;
-            padding:12px;
+        .btn-generar:active {
+            transform: translateY(0);
         }
 
-        td{
-            padding:12px;
-            border-bottom:1px solid #ddd;
-            text-align:center;
+        .alerta-ok,
+        .alerta-error {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            overflow-wrap: anywhere;
         }
 
-        tr:hover{
-            background:#f8f9fa;
+        .alerta-ok {
+            border: 1px solid #badbcc;
+            background: #d1e7dd;
+            color: #0f5132;
         }
 
-        .boton{
-            display:inline-block;
-            padding:8px 14px;
-            border-radius:6px;
-            text-decoration:none;
-            background:#1f5ea8;
-            color:white;
-            font-weight:bold;
+        .alerta-error {
+            border: 1px solid #f5c2c7;
+            background: #f8d7da;
+            color: #842029;
         }
 
-        .boton:hover{
-            background:#164579;
+        .tabla-contenedor {
+            width: 100%;
+            overflow-x: auto;
         }
 
-        .volver{
-            display:inline-block;
-            margin-bottom:15px;
-            text-decoration:none;
-            color:#1f5ea8;
-            font-weight:bold;
+        table {
+            width: 100%;
+            min-width: 700px;
+            border-collapse: collapse;
         }
 
-        .vacio{
-            text-align:center;
-            padding:25px;
-            color:#777;
+        th {
+            padding: 12px;
+            background: #1f5ea8;
+            color: #ffffff;
+            text-align: center;
+        }
+
+        th:first-child {
+            border-radius: 8px 0 0 0;
+        }
+
+        th:last-child {
+            border-radius: 0 8px 0 0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #dddddd;
+            text-align: center;
+        }
+
+        td:first-child {
+            max-width: 400px;
+            overflow-wrap: anywhere;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .boton {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 6px;
+            background: #1f5ea8;
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color .2s ease;
+        }
+
+        .boton:hover {
+            background: #164579;
+        }
+
+        .volver {
+            display: inline-block;
+            margin-bottom: 15px;
+            color: #1f5ea8;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .volver:hover {
+            text-decoration: underline;
+        }
+
+        .vacio {
+            padding: 25px;
+            border: 1px dashed #cccccc;
+            border-radius: 8px;
+            color: #777777;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+
+            .contenedor {
+                padding: 18px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .btn-generar {
+                width: 100%;
+            }
+
+            .acciones,
+            .acciones form {
+                width: 100%;
+            }
         }
     </style>
 </head>
+
 <body>
 
 <div class="contenedor">
 
     <a href="dashboard.php" class="volver">
-        ← Regresar al Inicio
+        ← Regresar al inicio
     </a>
 
     <h1>Respaldos de Base de Datos</h1>
 
     <div class="info">
-        Usuario: <?= htmlspecialchars($user['nombre'] ?? '') ?>
+        Usuario:
+        <?= htmlspecialchars(
+            $user['nombre'] ?? '',
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>
+
         |
-        Rol: <?= htmlspecialchars($user['rol'] ?? '') ?>
+
+        Rol:
+        <?= htmlspecialchars(
+            $user['rol'] ?? '',
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>
     </div>
 
-    <?php if (!empty($mensaje)): ?>
+    <div class="ruta-respaldo">
+        <strong>Ubicación de los respaldos:</strong>
+
+        <?= htmlspecialchars(
+            $backupDir,
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>
+    </div>
+
+    <?php if ($mensaje !== ''): ?>
+
         <div class="alerta-ok">
-            <?= htmlspecialchars($mensaje) ?>
+            <?= htmlspecialchars(
+                $mensaje,
+                ENT_QUOTES,
+                'UTF-8'
+            ) ?>
         </div>
+
     <?php endif; ?>
 
-    <?php if (!empty($error)): ?>
+    <?php if ($error !== ''): ?>
+
         <div class="alerta-error">
-            <?= htmlspecialchars($error) ?>
+            <?= htmlspecialchars(
+                $error,
+                ENT_QUOTES,
+                'UTF-8'
+            ) ?>
         </div>
+
     <?php endif; ?>
 
     <div class="acciones">
-        <form method="POST">
+
+        <form method="POST" action="respaldos.php">
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="<?= htmlspecialchars(
+                    $_SESSION['csrf_respaldo'],
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>"
+            >
+
             <button
                 type="submit"
                 name="generar_backup"
+                value="1"
                 class="btn-generar"
-                onclick="return confirm('¿Deseas generar un respaldo ahora?');"
+                onclick="return confirm(
+                    '¿Deseas generar un respaldo de la base de datos ahora?'
+                );"
             >
-                Generar Respaldo Ahora
+                Generar respaldo ahora
             </button>
+
         </form>
+
     </div>
 
     <?php if (empty($archivos)): ?>
@@ -252,44 +589,80 @@ if (isset($_GET['descargar'])) {
 
     <?php else: ?>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Archivo</th>
-                    <th>Fecha</th>
-                    <th>Tamaño</th>
-                    <th>Acción</th>
-                </tr>
-            </thead>
+        <div class="tabla-contenedor">
 
-            <tbody>
+            <table>
 
-            <?php foreach ($archivos as $ruta): ?>
+                <thead>
+                    <tr>
+                        <th>Archivo</th>
+                        <th>Fecha</th>
+                        <th>Tamaño</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
 
-                <?php
-                $nombre = basename($ruta);
-                $fecha = date('d/m/Y H:i:s', filemtime($ruta));
-                $tamano = round(filesize($ruta) / 1024 / 1024, 2) . ' MB';
-                ?>
+                <tbody>
 
-                <tr>
-                    <td><?= htmlspecialchars($nombre) ?></td>
-                    <td><?= $fecha ?></td>
-                    <td><?= $tamano ?></td>
-                    <td>
-                        <a
-                            class="boton"
-                            href="?descargar=<?= urlencode($nombre) ?>"
-                        >
-                            Descargar
-                        </a>
-                    </td>
-                </tr>
+                <?php foreach ($archivos as $ruta): ?>
 
-            <?php endforeach; ?>
+                    <?php
+                    $nombre = basename($ruta);
 
-            </tbody>
-        </table>
+                    $fechaArchivo = date(
+                        'd/m/Y H:i:s',
+                        filemtime($ruta)
+                    );
+
+                    $tamano = formatearTamano(
+                        filesize($ruta)
+                    );
+                    ?>
+
+                    <tr>
+
+                        <td>
+                            <?= htmlspecialchars(
+                                $nombre,
+                                ENT_QUOTES,
+                                'UTF-8'
+                            ) ?>
+                        </td>
+
+                        <td>
+                            <?= htmlspecialchars(
+                                $fechaArchivo,
+                                ENT_QUOTES,
+                                'UTF-8'
+                            ) ?>
+                        </td>
+
+                        <td>
+                            <?= htmlspecialchars(
+                                $tamano,
+                                ENT_QUOTES,
+                                'UTF-8'
+                            ) ?>
+                        </td>
+
+                        <td>
+                            <a
+                                class="boton"
+                                href="?descargar=<?= urlencode($nombre) ?>"
+                            >
+                                Descargar
+                            </a>
+                        </td>
+
+                    </tr>
+
+                <?php endforeach; ?>
+
+                </tbody>
+
+            </table>
+
+        </div>
 
     <?php endif; ?>
 

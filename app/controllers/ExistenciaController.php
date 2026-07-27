@@ -220,18 +220,28 @@ class ExistenciaController
         }
 
         if (!empty($filtros['buscar'])) {
-            $sql .= " AND (
-                p.codigo LIKE :buscar
-                OR p.codigo_barras LIKE :buscar
-                OR p.descripcion LIKE :buscar
-                OR c.nombre LIKE :buscar
-                OR pr.nombre LIKE :buscar
-                OR p.laboratorio LIKE :buscar
-                OR stock.ubicacion LIKE :buscar
-                OR stock.sucursales LIKE :buscar
-            )";
-            $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
-        }
+    $sql .= " AND (
+        p.codigo LIKE :buscar_codigo
+        OR p.codigo_barras LIKE :buscar_barras
+        OR p.descripcion LIKE :buscar_descripcion
+        OR c.nombre LIKE :buscar_categoria
+        OR pr.nombre LIKE :buscar_proveedor
+        OR p.laboratorio LIKE :buscar_laboratorio
+        OR stock.ubicacion LIKE :buscar_ubicacion
+        OR stock.sucursales LIKE :buscar_sucursal
+    )";
+
+    $valorBuscar = '%' . trim($filtros['buscar']) . '%';
+
+    $params[':buscar_codigo'] = $valorBuscar;
+    $params[':buscar_barras'] = $valorBuscar;
+    $params[':buscar_descripcion'] = $valorBuscar;
+    $params[':buscar_categoria'] = $valorBuscar;
+    $params[':buscar_proveedor'] = $valorBuscar;
+    $params[':buscar_laboratorio'] = $valorBuscar;
+    $params[':buscar_ubicacion'] = $valorBuscar;
+    $params[':buscar_sucursal'] = $valorBuscar;
+}
 
         if (!empty($filtros['categoria_id'])) {
             $sql .= " AND p.categoria_id = :categoria_id";

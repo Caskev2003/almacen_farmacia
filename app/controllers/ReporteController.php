@@ -37,7 +37,9 @@ class ReporteController
             LIMIT 1
         ");
 
-        $stmt->execute([':id' => $id]);
+        $stmt->execute([
+            ':id' => $id
+        ]);
 
         return strtoupper(trim($stmt->fetchColumn() ?: ''));
     }
@@ -51,11 +53,18 @@ class ReporteController
         }
 
         if (str_contains($almacen, 'HIDALGO')) {
-            return ['CIUDAD HIDALGO', 'CD HIDALGO'];
+            return [
+                'CIUDAD HIDALGO',
+                'CD HIDALGO'
+            ];
         }
 
         if (str_contains($almacen, 'TUXTLA')) {
-            return ['TUXTLA', 'TUXTLA GUTIERREZ', 'TUXTLA GUTIÉRREZ'];
+            return [
+                'TUXTLA',
+                'TUXTLA GUTIERREZ',
+                'TUXTLA GUTIÉRREZ'
+            ];
         }
 
         return [$almacen];
@@ -65,19 +74,27 @@ class ReporteController
     {
         if ($this->rol === 'ADMINISTRADOR') {
             if (!empty($filtros['sucursal'])) {
-                return $this->normalizarSucursales($filtros['sucursal']);
+                return $this->normalizarSucursales(
+                    (string)$filtros['sucursal']
+                );
             }
 
             return [];
         }
 
-        $almacen = $this->obtenerNombreAlmacenPorId($this->almacenId);
+        $almacen = $this->obtenerNombreAlmacenPorId(
+            $this->almacenId
+        );
 
         return $this->normalizarSucursales($almacen);
     }
 
-    private function agregarFiltroSucursal(string &$sql, array &$params, array $filtros, string $alias = 'pe'): void
-    {
+    private function agregarFiltroSucursal(
+        string &$sql,
+        array &$params,
+        array $filtros,
+        string $alias = 'pe'
+    ): void {
         $sucursales = $this->sucursalesPermitidas($filtros);
 
         if (empty($sucursales)) {
@@ -88,115 +105,205 @@ class ReporteController
 
         foreach ($sucursales as $index => $sucursal) {
             $key = ":sucursal_{$alias}_{$index}";
+
             $placeholders[] = $key;
             $params[$key] = $sucursal;
         }
 
-        $sql .= " AND UPPER({$alias}.sucursal) IN (" . implode(',', $placeholders) . ") ";
+        $sql .= "
+            AND UPPER(COALESCE({$alias}.sucursal, ''))
+                COLLATE utf8mb4_general_ci
+                IN (" . implode(',', $placeholders) . ")
+        ";
     }
 
-    public function obtenerDatosReporte(array $filtros, array $columnas, bool $isAdmin = false, string $sucursalUsuario = ''): array
-    {
+    public function obtenerDatosReporte(
+        array $filtros,
+        array $columnas,
+        bool $isAdmin = false,
+        string $sucursalUsuario = ''
+    ): array {
         $params = [];
 
-        $subquery = "SELECT
-                        pe.producto_id,
-                        SUM(COALESCE(pe.existencia, 0)) AS existencia,
-                        GROUP_CONCAT(
-                            DISTINCT COALESCE(NULLIF(TRIM(pe.ubicacion), ''), 'SIN UBICACION')
-                            ORDER BY pe.ubicacion ASC
-                            SEPARATOR ', '
-                        ) AS ubicacion,
-                        MIN(pe.sucursal) AS sucursal
-                     FROM producto_existencias pe
-                     WHERE 1 = 1";
+        $subquery = "
+            SELECT
+                pe.producto_id,
 
-        $this->agregarFiltroSucursal($subquery, $params, $filtros, 'pe');
+                SUM(
+                    COALESCE(pe.existencia, 0)
+                ) AS existencia,
+
+                GROUP_CONCAT(
+                    DISTINCT COALESCE(
+                        NULLIF(TRIM(pe.ubicacion), ''),
+                        'SIN UBICACION'
+                    )
+                    ORDER BY pe.ubicacion ASC
+                    SEPARATOR ', '
+                ) AS ubicacion,
+
+                MIN(
+                    NULLIF(TRIM(pe.sucursal), '')
+                ) AS sucursal
+
+            FROM producto_existencias pe
+
+            WHERE 1 = 1
+        ";
+
+        $this->agregarFiltroSucursal(
+            $subquery,
+            $params,
+            $filtros,
+            'pe'
+        );
 
         if (!empty($filtros['rack'])) {
-            $subquery .= " AND UPPER(COALESCE(pe.ubicacion, '')) LIKE :rack ";
-            $params[':rack'] = strtoupper(trim($filtros['rack'])) . '%';
+            $subquery .= "
+                AND UPPER(
+                    COALESCE(pe.ubicacion, '')
+                ) LIKE :rack
+            ";
+
+            $params[':rack'] =
+                strtoupper(trim((string)$filtros['rack'])) . '%';
         }
 
-        $subquery .= " GROUP BY pe.producto_id";
+        $subquery .= "
+            GROUP BY pe.producto_id
+        ";
 
-        $sql = "SELECT
-                    p.id,
-                    p.codigo,
-                    p.codigo_barras,
-                    p.descripcion,
-                    c.nombre AS categoria,
-                    pr.nombre AS proveedor,
-                    p.laboratorio,
-                    p.unidad_medida,
-                    p.precio_compra,
+        $sql = "
+            SELECT
+                p.id,
+                p.codigo,
+                p.codigo_barras,
+                p.descripcion,
 
-                    COALESCE(stock.sucursal, :almacen_default) AS sucursal,
-                    COALESCE(stock.ubicacion, NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
-                    COALESCE(stock.existencia, 0) AS existencia,
+                c.nombre AS categoria,
+                pr.nombre AS proveedor,
 
-                    CASE
-                        WHEN COALESCE(stock.existencia, 0) <= 0 THEN 'AGOTADO'
-                        WHEN COALESCE(stock.existencia, 0) > 0
-                         AND COALESCE(stock.existencia, 0) <= {$this->limiteBajoStock} THEN 'BAJO STOCK'
-                        ELSE 'NORMAL'
-                    END AS estado_stock
+                p.laboratorio,
+                p.unidad_medida,
+                p.precio_compra,
 
-                FROM productos p
+                COALESCE(
+                    stock.sucursal,
+                    :almacen_default
+                ) AS sucursal,
 
-                LEFT JOIN categorias c 
-                    ON p.categoria_id = c.id
+                COALESCE(
+                    stock.ubicacion,
+                    NULLIF(TRIM(p.ubicacion), ''),
+                    'SIN UBICACION'
+                ) AS ubicacion,
 
-                LEFT JOIN proveedores pr 
-                    ON p.proveedor_id = pr.id
+                COALESCE(
+                    stock.existencia,
+                    0
+                ) AS existencia,
 
-                LEFT JOIN ({$subquery}) AS stock
-                    ON stock.producto_id = p.id
+                CASE
+                    WHEN COALESCE(stock.existencia, 0) <= 0
+                    THEN 'AGOTADO'
 
-                WHERE p.estado = 1";
+                    WHEN COALESCE(stock.existencia, 0) > 0
+                         AND COALESCE(stock.existencia, 0)
+                             <= {$this->limiteBajoStock}
+                    THEN 'BAJO STOCK'
+
+                    ELSE 'NORMAL'
+                END AS estado_stock
+
+            FROM productos p
+
+            LEFT JOIN categorias c
+                ON p.categoria_id = c.id
+
+            LEFT JOIN proveedores pr
+                ON p.proveedor_id = pr.id
+
+            LEFT JOIN ({$subquery}) AS stock
+                ON stock.producto_id = p.id
+
+            WHERE p.estado = 1
+        ";
 
         $almacenDefault = 'SIN ALMACEN';
 
         if ($this->rol !== 'ADMINISTRADOR') {
-            $almacenDefault = $this->obtenerNombreAlmacenPorId($this->almacenId);
+            $almacenDefault =
+                $this->obtenerNombreAlmacenPorId(
+                    $this->almacenId
+                );
         } elseif (!empty($filtros['sucursal'])) {
-            $almacenDefault = strtoupper(trim($filtros['sucursal']));
+            $almacenDefault =
+                strtoupper(trim((string)$filtros['sucursal']));
         }
 
         $params[':almacen_default'] = $almacenDefault;
 
         if (!empty($filtros['rack'])) {
-            $sql .= " AND stock.producto_id IS NOT NULL";
+            $sql .= "
+                AND stock.producto_id IS NOT NULL
+            ";
         }
 
+        /*
+         * Cada campo utiliza un parámetro diferente porque
+         * PDO::ATTR_EMULATE_PREPARES está configurado en false.
+         */
         if (!empty($filtros['buscar'])) {
-            $sql .= " AND (
-                        p.codigo LIKE :buscar
-                        OR p.codigo_barras LIKE :buscar
-                        OR p.descripcion LIKE :buscar
-                        OR c.nombre LIKE :buscar
-                        OR pr.nombre LIKE :buscar
-                        OR p.laboratorio LIKE :buscar
-                        OR stock.ubicacion LIKE :buscar
-                    )";
+            $sql .= "
+                AND (
+                    p.codigo LIKE :buscar_codigo
+                    OR p.codigo_barras LIKE :buscar_barras
+                    OR p.descripcion LIKE :buscar_descripcion
+                    OR c.nombre LIKE :buscar_categoria
+                    OR pr.nombre LIKE :buscar_proveedor
+                    OR p.laboratorio LIKE :buscar_laboratorio
+                    OR stock.ubicacion LIKE :buscar_ubicacion
+                )
+            ";
 
-            $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
+            $valorBuscar =
+                '%' . trim((string)$filtros['buscar']) . '%';
+
+            $params[':buscar_codigo'] = $valorBuscar;
+            $params[':buscar_barras'] = $valorBuscar;
+            $params[':buscar_descripcion'] = $valorBuscar;
+            $params[':buscar_categoria'] = $valorBuscar;
+            $params[':buscar_proveedor'] = $valorBuscar;
+            $params[':buscar_laboratorio'] = $valorBuscar;
+            $params[':buscar_ubicacion'] = $valorBuscar;
         }
 
         if (!empty($filtros['existencia'])) {
-            if ($filtros['existencia'] === 'agotado') {
-                $sql .= " AND COALESCE(stock.existencia, 0) <= 0";
-            }
+            $existencia = trim(
+                (string)$filtros['existencia']
+            );
 
-            if ($filtros['existencia'] === 'bajo') {
-                $sql .= " AND COALESCE(stock.existencia, 0) > 0
-                          AND COALESCE(stock.existencia, 0) <= :limite_bajo";
-                $params[':limite_bajo'] = $this->limiteBajoStock;
-            }
+            if ($existencia === 'agotado') {
+                $sql .= "
+                    AND COALESCE(stock.existencia, 0) <= 0
+                ";
+            } elseif ($existencia === 'bajo') {
+                $sql .= "
+                    AND COALESCE(stock.existencia, 0) > 0
+                    AND COALESCE(stock.existencia, 0)
+                        <= :limite_bajo
+                ";
 
-            if ($filtros['existencia'] === 'normal') {
-                $sql .= " AND COALESCE(stock.existencia, 0) > :limite_normal";
-                $params[':limite_normal'] = $this->limiteBajoStock;
+                $params[':limite_bajo'] =
+                    $this->limiteBajoStock;
+            } elseif ($existencia === 'normal') {
+                $sql .= "
+                    AND COALESCE(stock.existencia, 0)
+                        > :limite_normal
+                ";
+
+                $params[':limite_normal'] =
+                    $this->limiteBajoStock;
             }
         }
 
@@ -208,10 +315,16 @@ class ReporteController
             'sucursal' => 'sucursal',
         ];
 
-        $orden = $filtros['orden'] ?? 'descripcion';
-        $ordenSql = $ordenPermitido[$orden] ?? 'p.descripcion';
+        $orden = trim(
+            (string)($filtros['orden'] ?? 'descripcion')
+        );
 
-        $sql .= " ORDER BY {$ordenSql} ASC";
+        $ordenSql =
+            $ordenPermitido[$orden] ?? 'p.descripcion';
+
+        $sql .= "
+            ORDER BY {$ordenSql} ASC
+        ";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
@@ -221,12 +334,17 @@ class ReporteController
 
     public function obtenerAlmacenes(): array
     {
-        $sql = "SELECT nombre AS sucursal
-                FROM almacenes
-                WHERE estado = 1
-                ORDER BY nombre ASC";
+        $sql = "
+            SELECT
+                nombre AS sucursal
+            FROM almacenes
+            WHERE estado = 1
+            ORDER BY nombre ASC
+        ";
 
-        return $this->conn->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        return $this->conn
+            ->query($sql)
+            ->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function columnasDisponibles(): array

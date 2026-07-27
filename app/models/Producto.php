@@ -230,15 +230,22 @@ class Producto
 
         if ($search !== '') {
             $sql .= " AND (
-                        p.codigo LIKE :search
-                        OR p.codigo_barras LIKE :search
-                        OR p.descripcion LIKE :search
-                        OR p.laboratorio LIKE :search
-                        OR p.ubicacion LIKE :search
-                        OR pe.ubicacion LIKE :search
+                        p.codigo LIKE :search_codigo
+                        OR p.codigo_barras LIKE :search_barras
+                        OR p.descripcion LIKE :search_descripcion
+                        OR p.laboratorio LIKE :search_laboratorio
+                        OR p.ubicacion LIKE :search_ubicacion_producto
+                        OR pe.ubicacion LIKE :search_ubicacion_existencia
                     )";
 
-            $params[':search'] = "%{$search}%";
+            $valorSearch = "%{$search}%";
+
+            $params[':search_codigo'] = $valorSearch;
+            $params[':search_barras'] = $valorSearch;
+            $params[':search_descripcion'] = $valorSearch;
+            $params[':search_laboratorio'] = $valorSearch;
+            $params[':search_ubicacion_producto'] = $valorSearch;
+            $params[':search_ubicacion_existencia'] = $valorSearch;
         }
 
         if ($categoriaId !== '') {
@@ -249,18 +256,24 @@ class Producto
         if ($ubicacion !== '') {
             if (preg_match('/^R[1-9]$/', $ubicacion)) {
                 $sql .= " AND (
-                            UPPER(p.ubicacion) LIKE :ubicacion_rack
-                            OR UPPER(pe.ubicacion) LIKE :ubicacion_rack
+                            UPPER(COALESCE(p.ubicacion, '')) LIKE :rack_producto
+                            OR UPPER(COALESCE(pe.ubicacion, '')) LIKE :rack_existencia
                         )";
 
-                $params[':ubicacion_rack'] = $ubicacion . 'N%';
+                $valorRack = $ubicacion . 'N%';
+
+                $params[':rack_producto'] = $valorRack;
+                $params[':rack_existencia'] = $valorRack;
             } else {
                 $sql .= " AND (
-                            UPPER(p.ubicacion) LIKE :ubicacion
-                            OR UPPER(pe.ubicacion) LIKE :ubicacion
+                            UPPER(COALESCE(p.ubicacion, '')) LIKE :ubicacion_producto
+                            OR UPPER(COALESCE(pe.ubicacion, '')) LIKE :ubicacion_existencia
                         )";
 
-                $params[':ubicacion'] = "%{$ubicacion}%";
+                $valorUbicacion = "%{$ubicacion}%";
+
+                $params[':ubicacion_producto'] = $valorUbicacion;
+                $params[':ubicacion_existencia'] = $valorUbicacion;
             }
         }
 
@@ -404,12 +417,16 @@ class Producto
 
         if ($search !== '') {
             $sql .= " AND (
-                        p.codigo LIKE :search
-                        OR p.codigo_barras LIKE :search
-                        OR p.descripcion LIKE :search
+                        p.codigo LIKE :count_codigo
+                        OR p.codigo_barras LIKE :count_barras
+                        OR p.descripcion LIKE :count_descripcion
                     )";
 
-            $params[':search'] = "%{$search}%";
+            $valorSearch = "%{$search}%";
+
+            $params[':count_codigo'] = $valorSearch;
+            $params[':count_barras'] = $valorSearch;
+            $params[':count_descripcion'] = $valorSearch;
         }
 
         $sql .= " GROUP BY p.id
@@ -446,13 +463,15 @@ class Producto
     {
         $sql = "SELECT *
                 FROM productos
-                WHERE codigo = :codigo
-                   OR codigo_barras = :codigo
+                WHERE codigo = :codigo_producto
+                   OR codigo_barras = :codigo_barras
                 LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
+
         $stmt->execute([
-            ':codigo' => $codigo
+            ':codigo_producto' => $codigo,
+            ':codigo_barras' => $codigo
         ]);
 
         $producto = $stmt->fetch(PDO::FETCH_ASSOC);

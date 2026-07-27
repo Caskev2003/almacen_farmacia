@@ -240,17 +240,36 @@ class AgotadoController
         }
 
         if (!empty($filtros['buscar'])) {
-            $sql .= " AND (
-                        p.codigo COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.codigo_barras COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.descripcion COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR c.nombre COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR pr.nombre COLLATE utf8mb4_general_ci LIKE :buscar
-                        OR p.laboratorio COLLATE utf8mb4_general_ci LIKE :buscar
-                    )";
+    $sql .= " AND (
+                p.codigo COLLATE utf8mb4_general_ci
+                    LIKE :buscar_codigo
 
-            $params[':buscar'] = '%' . trim($filtros['buscar']) . '%';
-        }
+                OR p.codigo_barras COLLATE utf8mb4_general_ci
+                    LIKE :buscar_barras
+
+                OR p.descripcion COLLATE utf8mb4_general_ci
+                    LIKE :buscar_descripcion
+
+                OR c.nombre COLLATE utf8mb4_general_ci
+                    LIKE :buscar_categoria
+
+                OR pr.nombre COLLATE utf8mb4_general_ci
+                    LIKE :buscar_proveedor
+
+                OR p.laboratorio COLLATE utf8mb4_general_ci
+                    LIKE :buscar_laboratorio
+            )";
+
+    $valorBuscar =
+        '%' . trim((string)$filtros['buscar']) . '%';
+
+    $params[':buscar_codigo'] = $valorBuscar;
+    $params[':buscar_barras'] = $valorBuscar;
+    $params[':buscar_descripcion'] = $valorBuscar;
+    $params[':buscar_categoria'] = $valorBuscar;
+    $params[':buscar_proveedor'] = $valorBuscar;
+    $params[':buscar_laboratorio'] = $valorBuscar;
+}
 
         $sqlCount = "SELECT COUNT(*) AS total FROM ({$sql}) AS tabla";
 

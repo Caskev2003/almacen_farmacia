@@ -1,15 +1,31 @@
 <?php
 
+declare(strict_types=1);
+
 require_once __DIR__ . '/../app/helpers/auth.php';
-require_once __DIR__ . '/../app/config/database.php';
 require_once __DIR__ . '/../app/controllers/ResurtidoController.php';
 
 requireLogin();
 
 date_default_timezone_set('America/Mexico_City');
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
 $user = currentUser();
-$rol = strtoupper(trim($user['rol'] ?? ''));
+
+$rol = strtoupper(
+    trim($user['rol'] ?? '')
+);
+
+$usuarioId = (int) (
+    $user['id'] ?? 0
+);
+
+$almacenId = (int) (
+    $user['almacen_id'] ?? 0
+);
 
 $rolesPermitidos = [
     'ADMINISTRADOR',
@@ -22,11 +38,22 @@ if (!in_array($rol, $rolesPermitidos, true)) {
     exit('Acceso denegado.');
 }
 
+if (empty($_SESSION['csrf_resurtidos'])) {
+    $_SESSION['csrf_resurtidos'] = bin2hex(
+        random_bytes(32)
+    );
+}
+
+$csrfToken = $_SESSION['csrf_resurtidos'];
+
 $controller = new ResurtidoController();
-$action = trim($_GET['action'] ?? '');
+
+$action = trim(
+    (string) ($_GET['action'] ?? '')
+);
 
 // ======================================================
-// FUNCIÓN PARA RESPONDER JSON
+// RESPONDER EN FORMATO JSON
 // ======================================================
 
 function responderJson(
@@ -48,13 +75,109 @@ function responderJson(
             'datos' => $datos
         ],
         JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
     );
 
     exit;
 }
 
 // ======================================================
-// ACCIONES INTERNAS DEL MISMO ARCHIVO
+// LEER JSON ENVIADO POR JAVASCRIPT
+// ======================================================
+
+function leerJson(): array
+{
+    $contenido = file_get_contents('php://input');
+
+    $datos = json_decode(
+        $contenido ?: '',
+        true
+    );
+
+    if (!is_array($datos)) {
+        responderJson(
+            false,
+            'Los datos enviados no son válidos.',
+            [],
+            422
+        );
+    }
+
+    return $datos;
+}
+
+// ======================================================
+// VALIDAR TOKEN DE SEGURIDAD
+// ======================================================
+
+function validarTokenResurtidos(array $datos): void
+{
+    $tokenRecibido = (string) (
+        $datos['csrf_token'] ?? ''
+    );
+
+    $tokenSesion = (string) (
+        $_SESSION['csrf_resurtidos'] ?? ''
+    );
+
+    if (
+        $tokenRecibido === ''
+        || $tokenSesion === ''
+        || !hash_equals($tokenSesion, $tokenRecibido)
+    ) {
+        responderJson(
+            false,
+            'La sesión de seguridad venció. Recargue la página.',
+            [],
+            419
+        );
+    }
+}
+
+// ======================================================
+// VERIFICAR ACCESO A UN RESURTIDO
+// ======================================================
+
+function verificarAccesoResurtido(
+    array $resurtido,
+    string $rol,
+    int $usuarioId,
+    int $almacenId
+): void {
+    if ($rol === 'ADMINISTRADOR') {
+        return;
+    }
+
+    if (
+        $rol === 'GERENTE'
+        && (int) $resurtido['solicitante_id'] !== $usuarioId
+    ) {
+        responderJson(
+            false,
+            'No tiene permiso para consultar esta solicitud.',
+            [],
+            403
+        );
+    }
+
+    if (
+        $rol === 'ENCARGADO'
+        && (
+            $almacenId <= 0
+            || (int) $resurtido['almacen_id'] !== $almacenId
+        )
+    ) {
+        responderJson(
+            false,
+            'Esta solicitud no pertenece a su almacén.',
+            [],
+            403
+        );
+    }
+}
+
+// ======================================================
+// ACCIONES DEL MISMO ARCHIVO
 // ======================================================
 
 if ($action !== '') {
@@ -64,7 +187,24 @@ if ($action !== '') {
     // --------------------------------------------------
 
     if ($action === 'buscar_producto') {
-        $codigo = trim($_GET['codigo'] ?? '');
+        if (
+            !in_array(
+                $rol,
+                ['GERENTE', 'ADMINISTRADOR'],
+                true
+            )
+        ) {
+            responderJson(
+                false,
+                'No tiene permisos para buscar productos.',
+                [],
+                403
+            );
+        }
+
+        $codigo = trim(
+            (string) ($_GET['codigo'] ?? '')
+        );
 
         if (!preg_match('/^\d{4}$/', $codigo)) {
             responderJson(
@@ -76,9 +216,10 @@ if ($action !== '') {
         }
 
         try {
-            $productos = $controller->buscarPorUltimosDigitos(
-                $codigo
-            );
+            $productos =
+                $controller->buscarPorUltimosDigitos(
+                    $codigo
+                );
 
             responderJson(
                 true,
@@ -88,6 +229,11 @@ if ($action !== '') {
                 ]
             );
         } catch (Throwable $e) {
+            error_log(
+                'Error al buscar producto para resurtido: '
+                . $e->getMessage()
+            );
+
             responderJson(
                 false,
                 'No fue posible buscar el producto.',
@@ -111,7 +257,13 @@ if ($action !== '') {
             );
         }
 
-        if (!in_array($rol, ['GERENTE', 'ADMINISTRADOR'], true)) {
+        if (
+            !in_array(
+                $rol,
+                ['GERENTE', 'ADMINISTRADOR'],
+                true
+            )
+        ) {
             responderJson(
                 false,
                 'No tiene permisos para crear resurtidos.',
@@ -120,24 +272,18 @@ if ($action !== '') {
             );
         }
 
-        $contenido = file_get_contents('php://input');
-        $datos = json_decode($contenido, true);
-
-        if (!is_array($datos)) {
-            responderJson(
-                false,
-                'Los datos enviados no son válidos.',
-                [],
-                422
-            );
-        }
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
 
         $productos = $datos['productos'] ?? [];
+
         $observaciones = trim(
-            $datos['observaciones'] ?? ''
+            (string) (
+                $datos['observaciones'] ?? ''
+            )
         );
 
-        if (empty($productos)) {
+        if (!is_array($productos) || empty($productos)) {
             responderJson(
                 false,
                 'Debe agregar por lo menos un producto.',
@@ -148,8 +294,8 @@ if ($action !== '') {
 
         try {
             $resultado = $controller->crear([
-                'usuario_id' => (int) ($user['id'] ?? 0),
-                'almacen_id' => (int) ($user['almacen_id'] ?? 0),
+                'usuario_id' => $usuarioId,
+                'almacen_id' => $almacenId,
                 'observaciones' => $observaciones,
                 'productos' => $productos
             ]);
@@ -160,6 +306,11 @@ if ($action !== '') {
                 $resultado
             );
         } catch (Throwable $e) {
+            error_log(
+                'Error al guardar resurtido: '
+                . $e->getMessage()
+            );
+
             responderJson(
                 false,
                 'No se pudo registrar la solicitud de resurtido.',
@@ -170,7 +321,7 @@ if ($action !== '') {
     }
 
     // --------------------------------------------------
-    // OBTENER UN RESURTIDO
+    // OBTENER RESURTIDO PARA EL MODAL
     // --------------------------------------------------
 
     if ($action === 'obtener') {
@@ -191,7 +342,7 @@ if ($action !== '') {
 
         try {
             $resurtido = $controller->obtenerPorId(
-                $resurtidoId
+                (int) $resurtidoId
             );
 
             if (!$resurtido) {
@@ -203,6 +354,13 @@ if ($action !== '') {
                 );
             }
 
+            verificarAccesoResurtido(
+                $resurtido,
+                $rol,
+                $usuarioId,
+                $almacenId
+            );
+
             responderJson(
                 true,
                 'Resurtido encontrado.',
@@ -211,9 +369,110 @@ if ($action !== '') {
                 ]
             );
         } catch (Throwable $e) {
+            error_log(
+                'Error al consultar resurtido: '
+                . $e->getMessage()
+            );
+
             responderJson(
                 false,
                 'No fue posible consultar el resurtido.',
+                [],
+                500
+            );
+        }
+    }
+
+    // --------------------------------------------------
+    // INICIAR SURTIDO
+    // --------------------------------------------------
+
+    if ($action === 'iniciar_surtido') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            responderJson(
+                false,
+                'Método no permitido.',
+                [],
+                405
+            );
+        }
+
+        if (
+            !in_array(
+                $rol,
+                ['ENCARGADO', 'ADMINISTRADOR'],
+                true
+            )
+        ) {
+            responderJson(
+                false,
+                'No tiene permisos para surtir solicitudes.',
+                [],
+                403
+            );
+        }
+
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
+
+        $resurtidoId = (int) (
+            $datos['id'] ?? 0
+        );
+
+        if ($resurtidoId <= 0) {
+            responderJson(
+                false,
+                'La solicitud indicada no es válida.',
+                [],
+                422
+            );
+        }
+
+        try {
+            $resurtido = $controller->obtenerPorId(
+                $resurtidoId
+            );
+
+            if (!$resurtido) {
+                responderJson(
+                    false,
+                    'No se encontró la solicitud.',
+                    [],
+                    404
+                );
+            }
+
+            verificarAccesoResurtido(
+                $resurtido,
+                $rol,
+                $usuarioId,
+                $almacenId
+            );
+
+            $resultado = $controller->iniciarSurtido(
+                $resurtidoId,
+                $usuarioId
+            );
+
+            responderJson(
+                true,
+                'La solicitud está lista para surtirse.',
+                [
+                    'resurtido' => $resultado,
+                    'url' =>
+                        'salidas.php?resurtido_id='
+                        . $resurtidoId
+                ]
+            );
+        } catch (Throwable $e) {
+            error_log(
+                'Error al iniciar surtido: '
+                . $e->getMessage()
+            );
+
+            responderJson(
+                false,
+                $e->getMessage(),
                 [],
                 500
             );
@@ -241,9 +500,15 @@ if ($action !== '') {
         }
 
         try {
-            $notificaciones = $controller->obtenerPendientes(
-                (int) ($user['almacen_id'] ?? 0)
-            );
+            $filtroAlmacen =
+                $rol === 'ADMINISTRADOR'
+                    ? null
+                    : $almacenId;
+
+            $notificaciones =
+                $controller->obtenerPendientes(
+                    $filtroAlmacen
+                );
 
             responderJson(
                 true,
@@ -254,6 +519,11 @@ if ($action !== '') {
                 ]
             );
         } catch (Throwable $e) {
+            error_log(
+                'Error al consultar notificaciones: '
+                . $e->getMessage()
+            );
+
             responderJson(
                 false,
                 'No fue posible consultar las notificaciones.',
@@ -264,7 +534,7 @@ if ($action !== '') {
     }
 
     // --------------------------------------------------
-    // CAMBIAR ESTADO DEL RESURTIDO
+    // CAMBIAR ESTADO
     // --------------------------------------------------
 
     if ($action === 'cambiar_estado') {
@@ -292,12 +562,19 @@ if ($action !== '') {
             );
         }
 
-        $contenido = file_get_contents('php://input');
-        $datos = json_decode($contenido, true);
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
 
-        $resurtidoId = (int) ($datos['id'] ?? 0);
+        $resurtidoId = (int) (
+            $datos['id'] ?? 0
+        );
+
         $estado = strtoupper(
-            trim($datos['estado'] ?? '')
+            trim(
+                (string) (
+                    $datos['estado'] ?? ''
+                )
+            )
         );
 
         $estadosPermitidos = [
@@ -310,7 +587,11 @@ if ($action !== '') {
 
         if (
             $resurtidoId <= 0
-            || !in_array($estado, $estadosPermitidos, true)
+            || !in_array(
+                $estado,
+                $estadosPermitidos,
+                true
+            )
         ) {
             responderJson(
                 false,
@@ -321,10 +602,30 @@ if ($action !== '') {
         }
 
         try {
+            $resurtido = $controller->obtenerPorId(
+                $resurtidoId
+            );
+
+            if (!$resurtido) {
+                responderJson(
+                    false,
+                    'No se encontró la solicitud.',
+                    [],
+                    404
+                );
+            }
+
+            verificarAccesoResurtido(
+                $resurtido,
+                $rol,
+                $usuarioId,
+                $almacenId
+            );
+
             $controller->cambiarEstado(
                 $resurtidoId,
                 $estado,
-                (int) ($user['id'] ?? 0)
+                $usuarioId
             );
 
             responderJson(
@@ -332,9 +633,14 @@ if ($action !== '') {
                 'El estado se actualizó correctamente.'
             );
         } catch (Throwable $e) {
+            error_log(
+                'Error al cambiar estado: '
+                . $e->getMessage()
+            );
+
             responderJson(
                 false,
-                'No se pudo actualizar el estado.',
+                $e->getMessage(),
                 [],
                 500
             );
@@ -350,53 +656,44 @@ if ($action !== '') {
 }
 
 // ======================================================
-// CARGAR INFORMACIÓN PARA MOSTRAR LA PÁGINA
+// CARGAR SOLICITUDES PARA LA PÁGINA
 // ======================================================
+
+$errorPagina = '';
 
 try {
     if ($rol === 'GERENTE') {
         $resurtidos = $controller->obtenerPorGerente(
-            (int) ($user['id'] ?? 0)
+            $usuarioId
+        );
+    } elseif ($rol === 'ENCARGADO') {
+        $resurtidos = $controller->obtenerTodos(
+            $almacenId > 0 ? $almacenId : null
         );
     } else {
         $resurtidos = $controller->obtenerTodos();
     }
 } catch (Throwable $e) {
+    error_log(
+        'Error al cargar resurtidos: '
+        . $e->getMessage()
+    );
+
     $resurtidos = [];
-    $errorPagina = 'No fue posible cargar los resurtidos.';
+
+    $errorPagina =
+        'No fue posible cargar las solicitudes de resurtido.';
 }
+
+// El encabezado ya genera DOCTYPE, head y body.
+$moduleCss = 'resurtidos';
+
+require __DIR__
+    . '/../app/views/layouts/header.php';
 
 ?>
 
-<!DOCTYPE html>
-<html lang="es">
-
-<head>
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>Resurtidos</title>
-
-    <link
-        rel="stylesheet"
-        href="assets/css/global.css"
-    >
-
-    <link
-        rel="stylesheet"
-        href="assets/css/resurtidos.css"
-    >
-</head>
-
-<body>
-
-<?php require __DIR__ . '/../app/views/layouts/header.php'; ?>
-
-<main class="resurtidos-contenedor">
+<div class="resurtidos-contenedor">
 
     <section class="resurtidos-encabezado">
 
@@ -408,7 +705,13 @@ try {
             </p>
         </div>
 
-        <?php if ($rol === 'GERENTE'): ?>
+        <?php if (
+            in_array(
+                $rol,
+                ['GERENTE', 'ADMINISTRADOR'],
+                true
+            )
+        ): ?>
 
             <button
                 type="button"
@@ -422,7 +725,7 @@ try {
 
     </section>
 
-    <?php if (!empty($errorPagina)): ?>
+    <?php if ($errorPagina !== ''): ?>
 
         <div class="alerta alerta-error">
             <?= htmlspecialchars(
@@ -434,7 +737,13 @@ try {
 
     <?php endif; ?>
 
-    <?php if ($rol === 'GERENTE'): ?>
+    <?php if (
+        in_array(
+            $rol,
+            ['GERENTE', 'ADMINISTRADOR'],
+            true
+        )
+    ): ?>
 
         <section
             id="formularioResurtido"
@@ -488,6 +797,7 @@ try {
                 <textarea
                     id="observaciones"
                     rows="3"
+                    maxlength="1000"
                     placeholder="Escriba una observación opcional"
                 ></textarea>
 
@@ -525,6 +835,28 @@ try {
 
                 <?php foreach ($resurtidos as $resurtido): ?>
 
+                    <?php
+                    $estado = strtoupper(
+                        (string) $resurtido['estado']
+                    );
+
+                    $puedeSurtir =
+                        in_array(
+                            $rol,
+                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            true
+                        )
+                        && in_array(
+                            $estado,
+                            [
+                                'PENDIENTE',
+                                'EN_PROCESO',
+                                'PARCIAL'
+                            ],
+                            true
+                        );
+                    ?>
+
                     <article class="resurtido-item">
 
                         <div class="resurtido-informacion">
@@ -547,13 +879,15 @@ try {
 
                             <span
                                 class="estado estado-<?=
-                                    strtolower(
-                                        $resurtido['estado']
-                                    )
+                                    strtolower($estado)
                                 ?>"
                             >
                                 <?= htmlspecialchars(
-                                    $resurtido['estado'],
+                                    str_replace(
+                                        '_',
+                                        ' ',
+                                        $estado
+                                    ),
                                     ENT_QUOTES,
                                     'UTF-8'
                                 ) ?>
@@ -566,28 +900,26 @@ try {
                             <button
                                 type="button"
                                 class="btn-ver"
-                                data-id="<?= (int) $resurtido['id'] ?>"
+                                data-ver-resurtido="<?=
+                                    (int) $resurtido['id']
+                                ?>"
                             >
                                 Ver
                             </button>
 
-                            <?php if (
-                                in_array(
-                                    $rol,
-                                    ['ENCARGADO', 'ADMINISTRADOR'],
-                                    true
-                                )
-                                && $resurtido['estado'] === 'PENDIENTE'
-                            ): ?>
+                            <?php if ($puedeSurtir): ?>
 
-                                <a
+                                <button
+                                    type="button"
                                     class="btn-surtir"
-                                    href="salidas.php?resurtido_id=<?=
+                                    data-surtir-resurtido="<?=
                                         (int) $resurtido['id']
                                     ?>"
                                 >
-                                    Surtir
-                                </a>
+                                    <?= $estado === 'PENDIENTE'
+                                        ? 'Surtir'
+                                        : 'Continuar' ?>
+                                </button>
 
                             <?php endif; ?>
 
@@ -603,10 +935,71 @@ try {
 
     </section>
 
-</main>
+</div>
+
+<!-- ===================================================
+     MODAL PARA VER RESURTIDO
+==================================================== -->
+
+<div
+    id="resurtidoModal"
+    class="resurtido-modal"
+    aria-hidden="true"
+>
+
+    <div
+        class="resurtido-modal-contenido"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tituloModalResurtido"
+    >
+
+        <div class="resurtido-modal-encabezado">
+
+            <h2 id="tituloModalResurtido">
+                Detalle del resurtido
+            </h2>
+
+            <button
+                type="button"
+                id="cerrarModalResurtido"
+                class="resurtido-modal-cerrar"
+                aria-label="Cerrar"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <div
+            id="contenidoModalResurtido"
+            class="resurtido-modal-cuerpo"
+        >
+            Cargando solicitud...
+        </div>
+
+        <div class="resurtido-modal-acciones">
+
+            <button
+                type="button"
+                id="cerrarModalResurtidoInferior"
+                class="btn-cancelar"
+            >
+                Cerrar
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
 
 <script>
+    'use strict';
+
     const rolActual = <?= json_encode($rol) ?>;
+    const csrfToken = <?= json_encode($csrfToken) ?>;
+
     const productosSolicitud = [];
 
     const codigoInput =
@@ -624,48 +1017,104 @@ try {
     const botonGuardar =
         document.getElementById('btnGuardarResurtido');
 
+    const botonNuevo =
+        document.getElementById('btnNuevoResurtido');
+
+    const formularioResurtido =
+        document.getElementById('formularioResurtido');
+
+    const modal =
+        document.getElementById('resurtidoModal');
+
+    const contenidoModal =
+        document.getElementById(
+            'contenidoModalResurtido'
+        );
+
+    // ==================================================
+    // BOTÓN NUEVO RESURTIDO
+    // ==================================================
+
+    botonNuevo?.addEventListener('click', function () {
+        formularioResurtido?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+
+        window.setTimeout(function () {
+            codigoInput?.focus();
+        }, 400);
+    });
+
     // ==================================================
     // BUSCAR PRODUCTOS
     // ==================================================
 
-    botonBuscar?.addEventListener('click', buscarProducto);
+    botonBuscar?.addEventListener(
+        'click',
+        buscarProducto
+    );
 
-    codigoInput?.addEventListener('input', function () {
-        this.value = this.value.replace(/\D/g, '').slice(0, 4);
-    });
-
-    codigoInput?.addEventListener('keydown', function (evento) {
-        if (evento.key === 'Enter') {
-            evento.preventDefault();
-            buscarProducto();
+    codigoInput?.addEventListener(
+        'input',
+        function () {
+            this.value = this.value
+                .replace(/\D/g, '')
+                .slice(0, 4);
         }
-    });
+    );
+
+    codigoInput?.addEventListener(
+        'keydown',
+        function (evento) {
+            if (evento.key === 'Enter') {
+                evento.preventDefault();
+                buscarProducto();
+            }
+        }
+    );
 
     async function buscarProducto() {
+        if (!codigoInput || !resultados) {
+            return;
+        }
+
         const codigo = codigoInput.value.trim();
 
         if (!/^\d{4}$/.test(codigo)) {
-            alert('Ingrese exactamente los últimos 4 dígitos.');
+            alert(
+                'Ingrese exactamente los últimos 4 dígitos.'
+            );
+
             codigoInput.focus();
             return;
         }
 
-        resultados.innerHTML = 'Buscando producto...';
+        resultados.innerHTML =
+            '<div class="lista-vacia">'
+            + 'Buscando producto...'
+            + '</div>';
 
         try {
             const respuesta = await fetch(
                 'resurtidos.php?action=buscar_producto&codigo='
-                + encodeURIComponent(codigo)
+                + encodeURIComponent(codigo),
+                {
+                    cache: 'no-store'
+                }
             );
 
             const resultado = await respuesta.json();
 
-            if (!resultado.ok) {
-                throw new Error(resultado.mensaje);
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible buscar.'
+                );
             }
 
             mostrarResultados(
-                resultado.datos.productos
+                resultado.datos.productos ?? []
             );
         } catch (error) {
             resultados.innerHTML =
@@ -676,6 +1125,10 @@ try {
     }
 
     function mostrarResultados(productos) {
+        if (!resultados) {
+            return;
+        }
+
         resultados.innerHTML = '';
 
         if (!productos.length) {
@@ -688,29 +1141,43 @@ try {
         }
 
         productos.forEach(function (producto) {
-            const elemento = document.createElement('button');
+            const elemento =
+                document.createElement('button');
 
             elemento.type = 'button';
             elemento.className = 'resultado-producto';
 
-            elemento.innerHTML =
-                '<strong>'
-                + escaparHtml(producto.descripcion)
-                + '</strong>'
-                + '<span>Código: '
-                + escaparHtml(producto.codigo)
-                + '</span>';
+            elemento.innerHTML = `
+                <strong>
+                    ${escaparHtml(producto.descripcion)}
+                </strong>
 
-            elemento.addEventListener('click', function () {
-                agregarProducto(producto);
-            });
+                <span>
+                    Código:
+                    ${escaparHtml(producto.codigo)}
+                </span>
+
+                <span>
+                    Unidad:
+                    ${escaparHtml(
+                        producto.unidad ?? 'PIEZA'
+                    )}
+                </span>
+            `;
+
+            elemento.addEventListener(
+                'click',
+                function () {
+                    agregarProducto(producto);
+                }
+            );
 
             resultados.appendChild(elemento);
         });
     }
 
     // ==================================================
-    // AGREGAR PRODUCTOS
+    // AGREGAR Y QUITAR PRODUCTOS
     // ==================================================
 
     function agregarProducto(producto) {
@@ -733,85 +1200,124 @@ try {
             });
         }
 
-        codigoInput.value = '';
-        resultados.innerHTML = '';
+        if (codigoInput) {
+            codigoInput.value = '';
+            codigoInput.focus();
+        }
+
+        if (resultados) {
+            resultados.innerHTML = '';
+        }
 
         renderizarProductos();
-        codigoInput.focus();
     }
 
     function renderizarProductos() {
+        if (!contenedorProductos) {
+            return;
+        }
+
         contenedorProductos.innerHTML = '';
 
-        productosSolicitud.forEach(function (producto, indice) {
-            const fila = document.createElement('div');
+        productosSolicitud.forEach(
+            function (producto, indice) {
+                const fila =
+                    document.createElement('div');
 
-            fila.className = 'producto-agregado';
+                fila.className = 'producto-agregado';
 
-            fila.innerHTML = `
-                <div class="producto-datos">
-                    <strong>
-                        ${escaparHtml(producto.descripcion)}
-                    </strong>
+                fila.innerHTML = `
+                    <div class="producto-datos">
+                        <strong>
+                            ${escaparHtml(
+                                producto.descripcion
+                            )}
+                        </strong>
 
-                    <span>
-                        Código: ${escaparHtml(producto.codigo)}
-                    </span>
-                </div>
+                        <span>
+                            Código:
+                            ${escaparHtml(producto.codigo)}
+                        </span>
 
-                <div class="producto-cantidad">
-                    <label>
-                        Cantidad
-                    </label>
+                        <span>
+                            Unidad:
+                            ${escaparHtml(producto.unidad)}
+                        </span>
+                    </div>
 
-                    <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value="${producto.cantidad}"
-                        data-indice="${indice}"
-                        class="cantidad-producto"
+                    <div class="producto-cantidad">
+                        <label>
+                            Cantidad
+                        </label>
+
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value="${producto.cantidad}"
+                            data-indice="${indice}"
+                            class="cantidad-producto"
+                        >
+                    </div>
+
+                    <button
+                        type="button"
+                        class="btn-eliminar"
+                        data-eliminar="${indice}"
                     >
-                </div>
+                        Eliminar
+                    </button>
+                `;
 
-                <button
-                    type="button"
-                    class="btn-eliminar"
-                    data-eliminar="${indice}"
-                >
-                    Eliminar
-                </button>
-            `;
-
-            contenedorProductos.appendChild(fila);
-        });
+                contenedorProductos.appendChild(fila);
+            }
+        );
 
         document
             .querySelectorAll('.cantidad-producto')
             .forEach(function (input) {
-                input.addEventListener('change', function () {
-                    const indice = Number(this.dataset.indice);
-                    const cantidad = Number(this.value);
+                input.addEventListener(
+                    'change',
+                    function () {
+                        const indice = Number(
+                            this.dataset.indice
+                        );
 
-                    productosSolicitud[indice].cantidad =
-                        cantidad > 0 ? cantidad : 1;
+                        const cantidad = Number(
+                            this.value
+                        );
 
-                    this.value =
-                        productosSolicitud[indice].cantidad;
-                });
+                        productosSolicitud[indice].cantidad =
+                            Number.isFinite(cantidad)
+                            && cantidad > 0
+                                ? cantidad
+                                : 1;
+
+                        this.value =
+                            productosSolicitud[indice]
+                                .cantidad;
+                    }
+                );
             });
 
         document
             .querySelectorAll('[data-eliminar]')
             .forEach(function (boton) {
-                boton.addEventListener('click', function () {
-                    const indice = Number(
-                        this.dataset.eliminar
-                    );
+                boton.addEventListener(
+                    'click',
+                    function () {
+                        const indice = Number(
+                            this.dataset.eliminar
+                        );
 
-                    productosSolicitud.splice(indice, 1);
-                    renderizarProductos();
-                });
+                        productosSolicitud.splice(
+                            indice,
+                            1
+                        );
+
+                        renderizarProductos();
+                    }
+                );
             });
     }
 
@@ -826,15 +1332,18 @@ try {
 
     async function guardarResurtido() {
         if (!productosSolicitud.length) {
-            alert('Agregue por lo menos un producto.');
+            alert(
+                'Agregue por lo menos un producto.'
+            );
+
             return;
         }
 
-        const confirmar = confirm(
-            '¿Desea enviar esta solicitud de resurtido?'
-        );
-
-        if (!confirmar) {
+        if (
+            !confirm(
+                '¿Desea enviar esta solicitud de resurtido?'
+            )
+        ) {
             return;
         }
 
@@ -847,14 +1356,20 @@ try {
                 {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type':
+                            'application/json'
                     },
                     body: JSON.stringify({
+                        csrf_token: csrfToken,
+
                         observaciones:
                             document
-                                .getElementById('observaciones')
-                                .value
-                                .trim(),
+                                .getElementById(
+                                    'observaciones'
+                                )
+                                ?.value
+                                .trim()
+                            ?? '',
 
                         productos: productosSolicitud
                     })
@@ -863,72 +1378,364 @@ try {
 
             const resultado = await respuesta.json();
 
-            if (!resultado.ok) {
-                throw new Error(resultado.mensaje);
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible guardar.'
+                );
             }
 
             alert(resultado.mensaje);
-            window.location.href = 'resurtidos.php';
+
+            window.location.href =
+                'resurtidos.php';
         } catch (error) {
             alert(error.message);
 
             botonGuardar.disabled = false;
-            botonGuardar.textContent = 'Enviar solicitud';
+            botonGuardar.textContent =
+                'Enviar solicitud';
         }
     }
 
     // ==================================================
-    // CONSULTAR NOTIFICACIONES
+    // VER RESURTIDO
     // ==================================================
 
-    if (
-        rolActual === 'ENCARGADO'
-        || rolActual === 'ADMINISTRADOR'
-    ) {
-        consultarNotificaciones();
+    document
+        .querySelectorAll('[data-ver-resurtido]')
+        .forEach(function (boton) {
+            boton.addEventListener(
+                'click',
+                function () {
+                    verResurtido(
+                        Number(
+                            this.dataset.verResurtido
+                        )
+                    );
+                }
+            );
+        });
 
-        setInterval(
-            consultarNotificaciones,
-            30000
-        );
-    }
+    async function verResurtido(id) {
+        if (!id || !modal || !contenidoModal) {
+            return;
+        }
 
-    async function consultarNotificaciones() {
+        abrirModal();
+
+        contenidoModal.innerHTML =
+            '<div class="lista-vacia">'
+            + 'Cargando solicitud...'
+            + '</div>';
+
         try {
             const respuesta = await fetch(
-                'resurtidos.php?action=notificaciones'
+                'resurtidos.php?action=obtener&id='
+                + encodeURIComponent(id),
+                {
+                    cache: 'no-store'
+                }
             );
 
             const resultado = await respuesta.json();
 
-            if (!resultado.ok) {
-                return;
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible consultar.'
+                );
             }
 
-            const cantidad = resultado.datos.cantidad;
-
-            // Después conectaremos este valor con la campana
-            // del encabezado del sistema.
-            console.log(
-                'Resurtidos pendientes:',
-                cantidad
+            mostrarDetalleResurtido(
+                resultado.datos.resurtido
             );
         } catch (error) {
-            console.error(
-                'No se pudieron consultar las notificaciones.'
-            );
+            contenidoModal.innerHTML =
+                '<div class="alerta alerta-error">'
+                + escaparHtml(error.message)
+                + '</div>';
         }
     }
 
+    function mostrarDetalleResurtido(resurtido) {
+        const productos =
+            Array.isArray(resurtido.productos)
+                ? resurtido.productos
+                : [];
+
+        let productosHtml = '';
+
+        if (!productos.length) {
+            productosHtml =
+                '<div class="lista-vacia">'
+                + 'Esta solicitud no tiene productos.'
+                + '</div>';
+        } else {
+            productosHtml = productos
+                .map(function (producto) {
+                    return `
+                        <div class="producto-agregado">
+                            <div class="producto-datos">
+                                <strong>
+                                    ${escaparHtml(
+                                        producto.descripcion
+                                    )}
+                                </strong>
+
+                                <span>
+                                    Código:
+                                    ${escaparHtml(
+                                        producto.codigo
+                                    )}
+                                </span>
+
+                                <span>
+                                    Unidad:
+                                    ${escaparHtml(
+                                        producto.unidad
+                                        ?? 'PIEZA'
+                                    )}
+                                </span>
+                            </div>
+
+                            <div class="producto-cantidad">
+                                <label>
+                                    Solicitado
+                                </label>
+
+                                <strong>
+                                    ${formatearCantidad(
+                                        producto
+                                            .cantidad_solicitada
+                                    )}
+                                </strong>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+
+        contenidoModal.innerHTML = `
+            <div class="detalle-resurtido">
+
+                <p>
+                    <strong>Folio:</strong>
+                    ${escaparHtml(resurtido.folio)}
+                </p>
+
+                <p>
+                    <strong>Fecha:</strong>
+                    ${escaparHtml(
+                        resurtido.fecha_solicitud
+                    )}
+                </p>
+
+                <p>
+                    <strong>Solicitante:</strong>
+                    ${escaparHtml(
+                        resurtido.solicitante_nombre
+                        ?? 'Sin información'
+                    )}
+                </p>
+
+                <p>
+                    <strong>Almacén:</strong>
+                    ${escaparHtml(
+                        resurtido.almacen_nombre
+                        ?? 'Sin información'
+                    )}
+                </p>
+
+                <p>
+                    <strong>Estado:</strong>
+                    ${escaparHtml(
+                        String(resurtido.estado)
+                            .replaceAll('_', ' ')
+                    )}
+                </p>
+
+                <p>
+                    <strong>Observaciones:</strong>
+                    ${escaparHtml(
+                        resurtido.observaciones
+                        || 'Sin observaciones'
+                    )}
+                </p>
+
+                <h3>Productos solicitados</h3>
+
+                <div class="lista-productos-modal">
+                    ${productosHtml}
+                </div>
+
+            </div>
+        `;
+    }
+
+    // ==================================================
+    // INICIAR SURTIDO
+    // ==================================================
+
+    document
+        .querySelectorAll('[data-surtir-resurtido]')
+        .forEach(function (boton) {
+            boton.addEventListener(
+                'click',
+                function () {
+                    iniciarSurtido(
+                        Number(
+                            this.dataset
+                                .surtirResurtido
+                        ),
+                        this
+                    );
+                }
+            );
+        });
+
+    async function iniciarSurtido(id, boton) {
+        if (!id) {
+            return;
+        }
+
+        if (
+            !confirm(
+                '¿Desea abrir esta solicitud en el módulo de salidas?'
+            )
+        ) {
+            return;
+        }
+
+        const textoOriginal =
+            boton.textContent;
+
+        boton.disabled = true;
+        boton.textContent = 'Abriendo...';
+
+        try {
+            const respuesta = await fetch(
+                'resurtidos.php?action=iniciar_surtido',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: id,
+                        csrf_token: csrfToken
+                    })
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible iniciar el surtido.'
+                );
+            }
+
+            window.location.href =
+                resultado.datos.url;
+        } catch (error) {
+            alert(error.message);
+
+            boton.disabled = false;
+            boton.textContent = textoOriginal;
+        }
+    }
+
+    // ==================================================
+    // ABRIR Y CERRAR MODAL
+    // ==================================================
+
+    function abrirModal() {
+        modal.classList.add('activo');
+        modal.setAttribute('aria-hidden', 'false');
+
+        document.body.style.overflow = 'hidden';
+    }
+
+    function cerrarModal() {
+        modal.classList.remove('activo');
+        modal.setAttribute('aria-hidden', 'true');
+
+        document.body.style.overflow = '';
+    }
+
+    document
+        .getElementById('cerrarModalResurtido')
+        ?.addEventListener(
+            'click',
+            cerrarModal
+        );
+
+    document
+        .getElementById(
+            'cerrarModalResurtidoInferior'
+        )
+        ?.addEventListener(
+            'click',
+            cerrarModal
+        );
+
+    modal?.addEventListener(
+        'click',
+        function (evento) {
+            if (evento.target === modal) {
+                cerrarModal();
+            }
+        }
+    );
+
+    document.addEventListener(
+        'keydown',
+        function (evento) {
+            if (
+                evento.key === 'Escape'
+                && modal?.classList.contains('activo')
+            ) {
+                cerrarModal();
+            }
+        }
+    );
+
+    // ==================================================
+    // UTILIDADES
+    // ==================================================
+
+    function formatearCantidad(valor) {
+        const numero = Number(valor);
+
+        if (!Number.isFinite(numero)) {
+            return '0';
+        }
+
+        return Number.isInteger(numero)
+            ? String(numero)
+            : numero.toFixed(3)
+                .replace(/0+$/, '')
+                .replace(/\.$/, '');
+    }
+
     function escaparHtml(valor) {
-        const elemento = document.createElement('div');
-        elemento.textContent = String(valor ?? '');
+        const elemento =
+            document.createElement('div');
+
+        elemento.textContent =
+            String(valor ?? '');
 
         return elemento.innerHTML;
     }
 </script>
 
-<?php require __DIR__ . '/../app/views/layouts/footer.php'; ?>
+<?php
 
-</body>
-</html>
+require __DIR__
+    . '/../app/views/layouts/footer.php';
+
+?>

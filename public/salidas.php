@@ -3,8 +3,11 @@
 require_once __DIR__ . '/../app/helpers/auth.php';
 require_once __DIR__ . '/../app/helpers/utils.php';
 require_once __DIR__ . '/../app/controllers/SalidaController.php';
+require_once __DIR__ . '/../app/controllers/ResurtidoController.php';
 
 requireLogin();
+
+date_default_timezone_set('America/Mexico_City');
 
 $user = currentUser();
 $controller = new SalidaController();
@@ -12,7 +15,122 @@ $controller = new SalidaController();
 $message = '';
 $messageType = 'danger';
 
-// Variables para edición
+/* =========================================================
+   FUNCIONES AUXILIARES DEL MODULO
+========================================================= */
+
+if (!function_exists('salidasNormalizarTexto')) {
+    function salidasNormalizarTexto(?string $texto): string
+    {
+        $texto = strtoupper(trim((string)$texto));
+
+        $texto = strtr($texto, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
+            'À' => 'A', 'È' => 'E', 'Ì' => 'I', 'Ò' => 'O', 'Ù' => 'U',
+            'Ñ' => 'N'
+        ]);
+
+        return preg_replace('/\s+/', ' ', $texto) ?? '';
+    }
+}
+
+if (!function_exists('salidasSugerirTipoSalida')) {
+    /**
+     * Intenta seleccionar automáticamente el tipo de salida
+     * comparando el nombre de la tienda que solicitó el resurtido
+     * contra las descripciones de los tipos de salida.
+     */
+    function salidasSugerirTipoSalida(string $almacenDestino, array $tiposSalida): string
+    {
+        $destino = salidasNormalizarTexto($almacenDestino);
+
+        if ($destino === '') {
+            return '';
+        }
+
+        $ignoradas = ['TIENDA', 'ALMACEN', 'SUCURSAL', 'BODEGA', 'MATRIZ', 'SALIDA'];
+
+        $palabras = array_filter(
+            explode(' ', $destino),
+            static function ($palabra) use ($ignoradas) {
+                return mb_strlen($palabra) > 3 && !in_array($palabra, $ignoradas, true);
+            }
+        );
+
+        $mejorValor = '';
+        $mejorPuntaje = 0;
+
+        foreach ($tiposSalida as $tipo) {
+            $descripcion = salidasNormalizarTexto($tipo['descripcion'] ?? '');
+
+            if (strpos($descripcion, 'TIENDA') === false) {
+                continue;
+            }
+
+            $puntaje = 0;
+
+            foreach ($palabras as $palabra) {
+                if (strpos($descripcion, $palabra) !== false) {
+                    $puntaje++;
+                }
+            }
+
+            if ($puntaje > $mejorPuntaje) {
+                $mejorPuntaje = $puntaje;
+                $mejorValor = $tipo['clave'] . ' - ' . $tipo['descripcion'];
+            }
+        }
+
+        return $mejorValor;
+    }
+}
+
+if (!function_exists('salidasCantidadesSurtidas')) {
+    /**
+     * Toma lo capturado en la salida y deja únicamente los productos
+     * que sí pertenecen al resurtido, sumando cantidades repetidas.
+     */
+    function salidasCantidadesSurtidas(array $postData, array $detallesResurtido): array
+    {
+        $permitidos = [];
+
+        foreach ($detallesResurtido as $detalle) {
+            $permitidos[(int)($detalle['producto_id'] ?? 0)] = 0.0;
+        }
+
+        $productoIds = $postData['producto_id'] ?? [];
+        $cantidades = $postData['cantidad'] ?? [];
+
+        foreach ($productoIds as $indice => $productoId) {
+            $productoId = (int)$productoId;
+
+            if (!array_key_exists($productoId, $permitidos)) {
+                continue;
+            }
+
+            $permitidos[$productoId] += (float)($cantidades[$indice] ?? 0);
+        }
+
+        $resultado = [];
+
+        foreach ($permitidos as $productoId => $cantidad) {
+            if ($cantidad > 0) {
+                $resultado[] = [
+                    'producto_id' => $productoId,
+                    'cantidad_surtida' => $cantidad
+                ];
+            }
+        }
+
+        return $resultado;
+    }
+}
+
+/* =========================================================
+   MODO EDICION
+========================================================= */
+
 $folioOperacionEditar = '';
 $observacionesLimpiasEditar = '';
 $editarId = isset($_GET['editar']) ? (int)$_GET['editar'] : 0;
@@ -50,7 +168,63 @@ if ($modoEdicion) {
     }
 }
 
-// Procesar formulario
+/* =========================================================
+   RESURTIDO QUE SE VA A SURTIR
+========================================================= */
+
+$resurtidoId = (int)($_GET['resurtido_id'] ?? 0);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $resurtidoId = (int)($_POST['resurtido_id'] ?? $resurtidoId);
+}
+
+$resurtido = null;
+$resurtidoController = null;
+$resurtidoAviso = '';
+$resurtidoAvisoTipo = 'warning';
+$resurtidoBloqueado = false;
+
+if ($resurtidoId > 0 && !$modoEdicion) {
+    try {
+        $resurtidoController = new ResurtidoController();
+        $resurtido = $resurtidoController->obtenerPorId($resurtidoId);
+
+        if (!$resurtido) {
+            $resurtido = null;
+            $resurtidoAviso = 'No se encontró la solicitud de resurtido indicada.';
+            $resurtidoAvisoTipo = 'danger';
+            $resurtidoBloqueado = true;
+        } else {
+            $estadoResurtido = strtoupper((string)($resurtido['estado'] ?? ''));
+
+            if ($estadoResurtido === 'CANCELADO') {
+                $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' está cancelada y no puede surtirse.';
+                $resurtidoAvisoTipo = 'danger';
+                $resurtidoBloqueado = true;
+            } elseif ($estadoResurtido === 'SURTIDO' || !empty($resurtido['salida_id'])) {
+                $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' ya fue surtida y está vinculada a una salida anterior.';
+                $resurtidoAvisoTipo = 'danger';
+                $resurtidoBloqueado = true;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Error al cargar el resurtido en salidas: ' . $e->getMessage());
+
+        $resurtido = null;
+        $resurtidoAviso = 'No fue posible cargar la solicitud de resurtido.';
+        $resurtidoAvisoTipo = 'danger';
+        $resurtidoBloqueado = true;
+    }
+}
+
+$modoResurtido = ($resurtido !== null && !$resurtidoBloqueado);
+
+/* =========================================================
+   PROCESAR FORMULARIO
+========================================================= */
+
+$movimientoGuardadoId = 0;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
 
@@ -62,22 +236,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($result['success']) {
         $movimientoId = (int)($result['movimiento_id'] ?? 0);
+        $movimientoGuardadoId = $movimientoId;
 
-        if ($movimientoId > 0) {
-            header('Location: imprimir_salida.php?id=' . $movimientoId . '&preview=1');
-            exit;
+        $errorVinculo = '';
+
+        // ---- Vincular la salida con la solicitud de resurtido ----
+        if ($modoResurtido && $movimientoId > 0 && $resurtidoController !== null) {
+            try {
+                $cantidadesSurtidas = salidasCantidadesSurtidas(
+                    $_POST,
+                    $resurtido['productos'] ?? []
+                );
+
+                if (empty($cantidadesSurtidas)) {
+                    $errorVinculo = 'La salida se guardó, pero ningún producto capturado pertenece al resurtido '
+                        . ($resurtido['folio'] ?? '') . ', por lo que no se marcó como surtido.';
+                } else {
+                    $resurtidoController->finalizarConSalida(
+                        $resurtidoId,
+                        $movimientoId,
+                        (int)$user['id'],
+                        $cantidadesSurtidas
+                    );
+                }
+            } catch (Throwable $e) {
+                error_log('Error al vincular salida con resurtido: ' . $e->getMessage());
+
+                $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el resurtido como surtido: '
+                    . $e->getMessage();
+            }
         }
 
-        $message = '✅ La salida se guardó correctamente.';
-        $messageType = 'success';
-        echo "<script>localStorage.removeItem('borradorSalida');</script>";
+        if ($errorVinculo !== '') {
+            $message = '⚠️ ' . $errorVinculo;
+            $messageType = 'warning';
+        } elseif ($movimientoId > 0) {
+            header('Location: imprimir_salida.php?id=' . $movimientoId . '&preview=1');
+            exit;
+        } else {
+            $message = '✅ La salida se guardó correctamente.';
+            $messageType = 'success';
+        }
     } else {
         $message = '❌ ' . ($result['message'] ?? 'Error al guardar la salida');
         $messageType = 'danger';
     }
 }
 
-// Datos necesarios para la vista
+/* =========================================================
+   DATOS NECESARIOS PARA LA VISTA
+========================================================= */
+
 $almacenes = $controller->almacenes();
 $productos = $controller->productos();
 $productosPorId = [];
@@ -91,739 +300,192 @@ $almacenSesion = (int)($user['almacen_id'] ?? 0);
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
 $folio = $controller->generarFolio($almacenSesion);
+
 if ($modoEdicion && $salidaEditar) {
     $folio = $salidaEditar['folio'];
 }
-$folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
-date_default_timezone_set('America/Mexico_City');
+$folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
 
 // FECHA AUTOMÁTICA
 $fechaActual = date('Y-m-d\TH:i');
+
+/* =========================================================
+   PRECARGA DEL RESURTIDO
+========================================================= */
+
+$tipoOperacionSeleccionado = $modoEdicion
+    ? (string)($salidaEditar['tipo_operacion'] ?? '')
+    : ($modoResurtido ? 'RESURTIDO' : '');
+
+$folioOperacionValor = $modoEdicion
+    ? $folioOperacionEditar
+    : ($modoResurtido ? (string)($resurtido['folio'] ?? '') : '');
+
+$tipoSalidaSeleccionado = $modoEdicion
+    ? (string)($salidaEditar['referencia'] ?? '')
+    : ($modoResurtido ? salidasSugerirTipoSalida((string)($resurtido['almacen_nombre'] ?? ''), $tiposSalida) : '');
+
+$observacionesValor = $modoEdicion ? $observacionesLimpiasEditar : '';
+
+if ($modoResurtido) {
+    $observacionesValor = 'Surtido de la solicitud ' . (string)($resurtido['folio'] ?? '')
+        . ' para ' . (string)($resurtido['almacen_nombre'] ?? 'sucursal')
+        . '. Solicitó: ' . (string)($resurtido['solicitante_nombre'] ?? '-') . '.';
+
+    if (!empty($resurtido['observaciones'])) {
+        $observacionesValor .= ' Nota: ' . (string)$resurtido['observaciones'];
+    }
+}
+
+/* ---------------------------------------------------------
+   Si el guardado falló, se reconstruye lo que ya estaba
+   capturado para que el usuario no lo pierda.
+--------------------------------------------------------- */
+
+$filasPrevias = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $message !== '' && $messageType !== 'success') {
+    $idsPrevios = $_POST['producto_id'] ?? [];
+    $cantidadesPrevias = $_POST['cantidad'] ?? [];
+    $preciosPrevios = $_POST['precio_unitario'] ?? [];
+    $ubicacionesPrevias = $_POST['ubicacion'] ?? [];
+
+    foreach ($idsPrevios as $indice => $idPrevio) {
+        $idPrevio = (int)$idPrevio;
+
+        if ($idPrevio <= 0 || !isset($productosPorId[$idPrevio])) {
+            continue;
+        }
+
+        $filasPrevias[] = [
+            'producto_id' => $idPrevio,
+            'cantidad' => max(1, (int)($cantidadesPrevias[$indice] ?? 1)),
+            'precio' => (float)($preciosPrevios[$indice] ?? 0),
+            'ubicacion' => strtoupper(trim((string)($ubicacionesPrevias[$indice] ?? '')))
+        ];
+    }
+}
+
+// Datos que se envían a JavaScript para llenar la tabla
+$resurtidoJs = null;
+$resurtidoSinRegistro = [];
+
+if ($modoResurtido) {
+    $productosResurtido = [];
+
+    foreach (($resurtido['productos'] ?? []) as $detalle) {
+        $productoId = (int)($detalle['producto_id'] ?? 0);
+
+        $solicitada = (float)($detalle['cantidad_solicitada'] ?? 0);
+        $surtida = (float)($detalle['cantidad_surtida'] ?? 0);
+        $pendiente = max(0, (int)round($solicitada - $surtida));
+
+        $existeEnCatalogo = isset($productosPorId[$productoId]);
+
+        if (!$existeEnCatalogo) {
+            $resurtidoSinRegistro[] = [
+                'codigo' => (string)($detalle['codigo'] ?? ''),
+                'descripcion' => (string)($detalle['descripcion'] ?? ''),
+                'motivo' => 'No está disponible en el catálogo de esta bodega.'
+            ];
+        }
+
+        $productosResurtido[] = [
+            'producto_id' => $productoId,
+            'codigo' => (string)($detalle['codigo'] ?? ''),
+            'descripcion' => (string)($detalle['descripcion'] ?? ''),
+            'unidad' => (string)($detalle['unidad'] ?? ''),
+            'solicitada' => (int)round($solicitada),
+            'surtida' => (int)round($surtida),
+            'pendiente' => $pendiente,
+            'en_catalogo' => $existeEnCatalogo
+        ];
+    }
+
+    $resurtidoJs = [
+        'id' => (int)$resurtido['id'],
+        'folio' => (string)($resurtido['folio'] ?? ''),
+        'almacen' => (string)($resurtido['almacen_nombre'] ?? ''),
+        'solicitante' => (string)($resurtido['solicitante_nombre'] ?? ''),
+        'fecha' => (string)($resurtido['fecha_solicitud'] ?? ''),
+        'estado' => (string)($resurtido['estado'] ?? ''),
+        'observaciones' => (string)($resurtido['observaciones'] ?? ''),
+        'productos' => $productosResurtido
+    ];
+}
 
 $moduleCss = 'salidas';
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
-<style>
-/* =========================================================
-   DISEÑO CLARO Y ESPACIOSO CON MODAL GRANDE ESTILO EXCEL
-   ========================================================= */
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    background: #eef2f7;
-    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
-    padding: 24px;
-    min-height: 100vh;
-}
-
-/* ===== HEADER SIMPLE ===== */
-.page-header {
-    margin-bottom: 28px;
-}
-
-.page-header h1 {
-    font-size: 26px;
-    font-weight: 600;
-    color: #1a2c3e;
-}
-
-/* ===== CONTENEDOR PRINCIPAL ===== */
-.main-container {
-    max-width: 1600px;
-    margin: 0 auto;
-}
-
-/* ===== SECCIÓN DE DATOS DEL DOCUMENTO ===== */
-.doc-section {
-    background: white;
-    border-radius: 20px;
-    padding: 24px 28px;
-    margin-bottom: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    border: 1px solid #e4e7eb;
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px 24px;
-}
-
-.form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.form-field label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #4a5b6e;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.form-field input,
-.form-field select,
-.form-field textarea {
-    padding: 12px 14px;
-    border: 1px solid #d0d5dd;
-    border-radius: 12px;
-    font-size: 14px;
-    color: #1a2c3e;
-    background: white;
-    transition: all 0.2s;
-}
-
-.form-field input:focus,
-.form-field select:focus,
-.form-field textarea:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
-}
-
-.form-field input:read-only {
-    background: #f8f9fa;
-    color: #6c7a8a;
-}
-
-.form-field textarea {
-    resize: vertical;
-    min-height: 70px;
-}
-
-.folio-previous {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin-top: 16px;
-    border: 1px solid #e4e7eb;
-}
-
-.folio-previous span {
-    font-size: 13px;
-    color: #2c7a4d;
-    font-weight: 500;
-}
-
-/* ===== SECCIÓN DE CAPTURA RÁPIDA ===== */
-.capture-section {
-    background: white;
-    border-radius: 20px;
-    padding: 24px 28px;
-    margin-bottom: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    border: 1px solid #e4e7eb;
-}
-
-.capture-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #1a2c3e;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid #e4e7eb;
-}
-
-.capture-grid {
-    display: grid;
-    grid-template-columns: 1fr 180px 200px 180px 140px;
-    gap: 16px;
-    align-items: end;
-}
-
-@media (max-width: 1100px) {
-    .capture-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-    .btn-add {
-        grid-column: span 2;
-    }
-}
-
-@media (max-width: 768px) {
-    .capture-grid {
-        grid-template-columns: 1fr;
-    }
-    .btn-add {
-        grid-column: span 1;
-    }
-}
-
-.capture-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.capture-field label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #4a5b6e;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.capture-field input {
-    padding: 12px 14px;
-    border: 1px solid #d0d5dd;
-    border-radius: 12px;
-    font-size: 14px;
-    background: white;
-}
-
-.capture-field input:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
-}
-
-/* Botones rápidos cantidad */
-.qty-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.qty-btn {
-    flex: 1;
-    background: #f3f4f6;
-    border: 1px solid #e5e7eb;
-    padding: 6px 0;
-    border-radius: 10px;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.1s;
-    color: #4a5b6e;
-}
-
-.qty-btn:hover {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
-}
-
-.btn-add {
-    background: #3b82f6;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 40px;
-    color: white;
-    font-weight: 700;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    white-space: nowrap;
-}
-
-.btn-add:hover {
-    background: #2563eb;
-    transform: scale(1.01);
-}
-
-/* Producto seleccionado */
-.selected-info {
-    background: #eff6ff;
-    border-radius: 14px;
-    padding: 16px;
-    margin: 16px 0 0 0;
-    border: 1px solid #bfdbfe;
-}
-
-.selected-info .row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    font-size: 13px;
-}
-
-.selected-info .label {
-    color: #4a5b6e;
-}
-
-.selected-info .value {
-    color: #1a2c3e;
-    font-weight: 600;
-}
-
-/* ===== MODAL GRANDE ESTILO EXCEL ===== */
-.modal-excel {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.6);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    backdrop-filter: blur(4px);
-}
-
-.modal-excel.active {
-    display: flex;
-}
-
-.modal-excel-content {
-    background: white;
-    border-radius: 24px;
-    width: 90%;
-    max-width: 1100px;
-    height: 80vh;
-    max-height: 700px;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
-    animation: modalZoom 0.2s ease;
-}
-
-@keyframes modalZoom {
-    from {
-        opacity: 0;
-        transform: scale(0.95);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-.modal-excel-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid #e4e7eb;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #f8f9fa;
-    border-radius: 24px 24px 0 0;
-}
-
-.modal-excel-header h3 {
-    font-size: 20px;
-    font-weight: 600;
-    color: #1a2c3e;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.modal-excel-header .shortcut {
-    font-size: 12px;
-    color: #6c7a8a;
-    background: #eef2f7;
-    padding: 4px 10px;
-    border-radius: 40px;
-}
-
-.modal-excel-close {
-    background: none;
-    border: none;
-    font-size: 28px;
-    cursor: pointer;
-    color: #6c7a8a;
-    transition: all 0.1s;
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-}
-
-.modal-excel-close:hover {
-    background: #eef2f7;
-    color: #1a2c3e;
-}
-
-.modal-excel-search {
-    padding: 20px 24px;
-    border-bottom: 1px solid #e4e7eb;
-    background: white;
-}
-
-.modal-excel-search input {
-    width: 100%;
-    padding: 14px 18px;
-    border: 2px solid #e4e7eb;
-    border-radius: 14px;
-    font-size: 16px;
-    transition: all 0.2s;
-}
-
-.modal-excel-search input:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
-}
-
-.modal-excel-table-container {
-    flex: 1;
-    overflow: auto;
-    padding: 0 20px 20px 20px;
-}
-
-.modal-excel-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.modal-excel-table th {
-    position: sticky;
-    top: 0;
-    background: #f8f9fa;
-    padding: 14px 12px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: #4a5b6e;
-    border-bottom: 2px solid #e4e7eb;
-    z-index: 10;
-}
-
-.modal-excel-table td {
-    padding: 14px 12px;
-    border-bottom: 1px solid #eef2f6;
-    font-size: 14px;
-    color: #1a2c3e;
-}
-
-.modal-excel-table tr {
-    cursor: pointer;
-    transition: background 0.1s;
-}
-
-.modal-excel-table tr:hover td {
-    background: #f0f7ff;
-}
-
-.modal-excel-table tr.selected td {
-    background: #dbeafe;
-}
-
-.modal-excel-table .product-code {
-    font-weight: 700;
-    color: #2563eb;
-}
-
-.modal-excel-table .product-stock {
-    font-weight: 600;
-    color: #059669;
-}
-
-.modal-excel-footer {
-    padding: 16px 24px;
-    border-top: 1px solid #e4e7eb;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #f8f9fa;
-    border-radius: 0 0 24px 24px;
-    font-size: 13px;
-    color: #6c7a8a;
-}
-
-.modal-excel-footer kbd {
-    background: white;
-    border: 1px solid #d0d5dd;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-family: monospace;
-    margin: 0 4px;
-}
-
-/* ===== TABLA DE PRODUCTOS - CORREGIDA ===== */
-.products-section {
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    border: 1px solid #e4e7eb;
-    overflow: hidden;
-}
-
-.products-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid #eef2f6;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.products-header h3 {
-    font-size: 17px;
-    font-weight: 600;
-    color: #1a2c3e;
-}
-
-.product-badge {
-    background: #eef2ff;
-    padding: 5px 14px;
-    border-radius: 40px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #3b82f6;
-}
-
-.table-responsive {
-    overflow-x: auto;
-    padding: 0 20px;
-}
-
-/* IMPORTANTE: FORZAR VISUALIZACIÓN CORRECTA DE TABLA */
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-    display: table !important;
-}
-
-.data-table thead,
-.data-table tbody,
-.data-table tr {
-    display: table-row-group !important;
-}
-
-.data-table tr {
-    display: table-row !important;
-}
-
-.data-table th,
-.data-table td {
-    display: table-cell !important;
-    padding: 14px 12px !important;
-    color: #1a2c3e !important;
-    font-size: 14px !important;
-    border-bottom: 1px solid #f0f2f5 !important;
-    vertical-align: middle !important;
-}
-
-.data-table th {
-    text-align: left !important;
-    color: #6c7a8a !important;
-    font-size: 12px !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    border-bottom: 1px solid #eef2f6 !important;
-}
-
-.data-table tbody tr:hover td {
-    background: #fafbfc !important;
-}
-
-.qty-input {
-    width: 80px !important;
-    padding: 8px !important;
-    border: 1px solid #e5e7eb !important;
-    border-radius: 10px !important;
-    text-align: center !important;
-    font-size: 14px !important;
-}
-
-.delete-btn {
-    background: none;
-    border: none;
-    color: #ef4444;
-    cursor: pointer;
-    font-size: 18px;
-    padding: 6px 10px;
-    border-radius: 10px;
-    transition: all 0.1s;
-}
-
-.delete-btn:hover {
-    background: #fef2f2;
-}
-
-.table-footer {
-    padding: 20px 24px;
-    border-top: 1px solid #eef2f6;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-}
-
-.total-amount {
-    font-size: 28px;
-    font-weight: 700;
-    color: #059669;
-}
-
-.btn-save {
-    background: #059669;
-    border: none;
-    padding: 12px 32px;
-    border-radius: 40px;
-    color: white;
-    font-weight: 700;
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.btn-save:hover {
-    background: #047857;
-}
-
-.btn-clear {
-    background: none;
-    border: 1px solid #ef4444;
-    padding: 12px 24px;
-    border-radius: 40px;
-    color: #ef4444;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-/* Shortcuts bar */
-.shortcuts-bar {
-    margin-top: 20px;
-    padding: 12px 20px;
-    background: #f8f9fa;
-    border-radius: 60px;
-    text-align: center;
-    font-size: 12px;
-    color: #6c7a8a;
-}
-
-.shortcuts-bar kbd {
-    background: white;
-    border: 1px solid #d0d5dd;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-family: monospace;
-    margin: 0 4px;
-    font-size: 11px;
-}
-
-/* Toast */
-.toast-message {
-    position: fixed;
-    bottom: 30px;
-    right: 30px;
-    background: white;
-    border-left: 4px solid #059669;
-    padding: 14px 24px;
-    border-radius: 12px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-    z-index: 1100;
-    animation: slideIn 0.3s ease;
-    font-size: 14px;
-    color: #1a2c3e;
-}
-
-@keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
-
-/* Estilos para evitar interferencia con la tabla de ubicaciones */
-.ubicaciones-wrapper {
-    pointer-events: auto;
-}
-
-.ubicaciones-interna-table tr {
-    cursor: default !important;
-}
-
-.ubicaciones-interna-table tr:hover td {
-    background: transparent !important;
-}
-
-.modal-excel-table tr.producto-principal.selected td {
-    background: #dbeafe;
-}
-
-.ubicaciones-wrapper::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-.ubicaciones-wrapper::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-}
-
-.ubicaciones-wrapper::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-}
-
-.ubicaciones-wrapper::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-}
-
-.ubicaciones-cell {
-    cursor: default;
-}
-
-/* Responsive para tabla */
-@media (max-width: 768px) {
-    body {
-        padding: 16px;
-    }
-    
-    .doc-section, .capture-section {
-        padding: 18px;
-    }
-    
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .table-footer {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .btn-save, .btn-clear {
-        width: 100%;
-        justify-content: center;
-    }
-    
-    .modal-excel-content {
-        width: 95%;
-        height: 85vh;
-    }
-    
-    .data-table th,
-    .data-table td {
-        white-space: nowrap;
-    }
-}
-</style>
-
 <!-- HEADER -->
 <div class="page-header">
-    <h1><?= $modoEdicion ? '✏️ Editar Salida' : '➕ Nueva Salida de Almacén' ?></h1>
+    <h1>
+        <?php if ($modoEdicion): ?>
+            ✏️ Editar Salida
+        <?php elseif ($modoResurtido): ?>
+            🔄 Surtir resurtido <?= e($resurtido['folio'] ?? '') ?>
+        <?php else: ?>
+            ➕ Nueva Salida de Almacén
+        <?php endif; ?>
+    </h1>
 </div>
 
 <div class="main-container">
 
 <?php if ($message): ?>
-    <div class="alert alert-<?= e($messageType) ?>" style="margin-bottom: 20px; padding: 14px 20px; border-radius: 12px; background: <?= $messageType === 'success' ? '#ecfdf5' : '#fef2f2' ?>; color: <?= $messageType === 'success' ? '#065f46' : '#991b1b' ?>; border-left: 4px solid <?= $messageType === 'success' ? '#059669' : '#ef4444' ?>;">
+    <div class="alert alert-<?= e($messageType) ?>">
         <?= e($message) ?>
+        <?php if ($movimientoGuardadoId > 0): ?>
+            <a class="alert-link" href="imprimir_salida.php?id=<?= (int)$movimientoGuardadoId ?>&preview=1">
+                🖨️ Ver / imprimir la salida
+            </a>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
+<?php if ($resurtidoAviso !== ''): ?>
+    <div class="alert alert-<?= e($resurtidoAvisoTipo) ?>">
+        <?= e($resurtidoAviso) ?>
+        <a class="alert-link" href="resurtidos.php">↩️ Volver a resurtidos</a>
+    </div>
+<?php endif; ?>
+
+<?php if ($modoResurtido): ?>
+    <!-- BANNER DEL RESURTIDO -->
+    <div class="resurtido-banner">
+        <div class="resurtido-banner-top">
+            <span class="resurtido-chip">🔄 Resurtido</span>
+            <strong class="resurtido-folio"><?= e($resurtido['folio'] ?? '') ?></strong>
+            <span class="resurtido-estado">
+                <?= e(str_replace('_', ' ', strtoupper((string)($resurtido['estado'] ?? '')))) ?>
+            </span>
+        </div>
+
+        <div class="resurtido-banner-datos">
+            <div><span>🏪 Destino</span><strong><?= e($resurtido['almacen_nombre'] ?? '-') ?></strong></div>
+            <div><span>👤 Solicitó</span><strong><?= e($resurtido['solicitante_nombre'] ?? '-') ?></strong></div>
+            <div><span>📅 Fecha</span><strong><?= e($resurtido['fecha_solicitud'] ?? '-') ?></strong></div>
+            <div><span>📦 Productos</span><strong><?= (int)($resurtido['total_productos'] ?? 0) ?></strong></div>
+            <div><span>📄 Folio de salida</span><strong><?= e($folio) ?></strong></div>
+        </div>
+
+        <?php if (!empty($resurtido['observaciones'])): ?>
+            <div class="resurtido-banner-nota">
+                📝 <?= e($resurtido['observaciones']) ?>
+            </div>
+        <?php endif; ?>
     </div>
 <?php endif; ?>
 
 <form method="POST" id="formSalida">
     <?php if ($modoEdicion && $salidaEditar): ?>
         <input type="hidden" name="editar_id" value="<?= (int)$salidaEditar['id'] ?>">
+    <?php endif; ?>
+
+    <?php if ($modoResurtido): ?>
+        <input type="hidden" name="resurtido_id" value="<?= (int)$resurtido['id'] ?>">
     <?php endif; ?>
 
     <!-- SECCIÓN 1: DATOS DEL DOCUMENTO -->
@@ -836,22 +498,23 @@ body {
 
             <div class="form-field">
                 <label>📅 Fecha y hora</label>
-                <input type="datetime-local" 
-                       name="fecha" 
-                       id="fechaInput" 
+                <input type="datetime-local"
+                       name="fecha"
+                       id="fechaInput"
                        required
-                       value="<?= $modoEdicion && !empty($salidaEditar['fecha']) 
-                                  ? e(date('Y-m-d\TH:i', strtotime($salidaEditar['fecha']))) 
+                       value="<?= $modoEdicion && !empty($salidaEditar['fecha'])
+                                  ? e(date('Y-m-d\TH:i', strtotime($salidaEditar['fecha'])))
                                   : $fechaActual ?>">
             </div>
 
             <div class="form-field">
                 <label>📋 Tipo de salida</label>
-                <select name="tipo_salida" required>
+                <select name="tipo_salida" id="tipoSalidaSelect" required>
                     <option value="">Seleccione...</option>
                     <?php foreach ($tiposSalida as $tipo): ?>
-                        <option value="<?= e($tipo['clave'] . ' - ' . $tipo['descripcion']) ?>"
-                            <?= $modoEdicion && (($salidaEditar['referencia'] ?? '') === ($tipo['clave'] . ' - ' . $tipo['descripcion'])) ? 'selected' : '' ?>>
+                        <?php $valorTipo = $tipo['clave'] . ' - ' . $tipo['descripcion']; ?>
+                        <option value="<?= e($valorTipo) ?>"
+                            <?= $tipoSalidaSeleccionado === $valorTipo ? 'selected' : '' ?>>
                             <?= e($tipo['clave']) ?> - <?= e($tipo['descripcion']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -862,22 +525,24 @@ body {
                 <label>📑 Tipo de documento</label>
                 <select name="tipo_operacion" id="tipoOperacionSelect" required>
                     <option value="">Seleccione...</option>
-                    <option value="TICKET" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
-                    <option value="RESURTIDO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'RESURTIDO' ? 'selected' : '' ?>>🔄 Resurtido</option>
-                    <option value="AJUSTE" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
-                    <option value="TRASPASO" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
-                    <option value="NOTA_REMISION" <?= $modoEdicion && ($salidaEditar['tipo_operacion'] ?? '') === 'NOTA_REMISION' ? 'selected' : '' ?>>📝 Nota de Remisión</option>
+                    <option value="TICKET" <?= $tipoOperacionSeleccionado === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
+                    <option value="RESURTIDO" <?= $tipoOperacionSeleccionado === 'RESURTIDO' ? 'selected' : '' ?>>🔄 Resurtido</option>
+                    <option value="AJUSTE" <?= $tipoOperacionSeleccionado === 'AJUSTE' ? 'selected' : '' ?>>⚙️ Ajuste</option>
+                    <option value="TRASPASO" <?= $tipoOperacionSeleccionado === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
+                    <option value="NOTA_REMISION" <?= $tipoOperacionSeleccionado === 'NOTA_REMISION' ? 'selected' : '' ?>>📝 Nota de Remisión</option>
                 </select>
             </div>
 
             <div class="form-field" id="folioOperacionBox" style="display:none;">
                 <label id="folioOperacionLabel">🔢 Folio de operación</label>
-                <input type="text" name="folio_operacion" id="folioOperacionInput" 
-                    placeholder="Ingrese el folio" value="<?= e($folioOperacionEditar) ?>">
+                <input type="text" name="folio_operacion" id="folioOperacionInput"
+                    placeholder="Ingrese el folio"
+                    value="<?= e($folioOperacionValor) ?>"
+                    <?= $modoResurtido ? 'readonly' : '' ?>>
             </div>
 
             <div class="form-field">
-                <label>🏪 Almacén</label>
+                <label>🏪 Almacén que surte</label>
                 <select name="almacen_id" required <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
                     <option value="">Seleccione...</option>
                     <?php foreach ($almacenes as $almacen): ?>
@@ -891,33 +556,59 @@ body {
                 <?php endif; ?>
             </div>
 
-            <div class="form-field">
+            <div class="form-field form-field-wide">
                 <label>📝 Observaciones</label>
-                <textarea name="observaciones" placeholder="Información adicional..."><?= $modoEdicion ? e($observacionesLimpiasEditar) : '' ?></textarea>
+                <textarea name="observaciones" placeholder="Información adicional..."><?= e($observacionesValor) ?></textarea>
             </div>
         </div>
-        
+
         <div class="folio-previous">
             <span>📋 Último folio registrado: <?= e($folioAnterior ?: 'Sin salidas anteriores') ?></span>
         </div>
     </div>
 
+    <?php if ($modoResurtido): ?>
+        <!-- SECCIÓN: PEDIDO DEL RESURTIDO -->
+        <div class="pedido-section">
+            <div class="pedido-header">
+                <h3>📋 Pedido del resurtido</h3>
+                <div class="pedido-header-acciones">
+                    <span class="pedido-resumen" id="pedidoResumen">0 de 0 surtidos</span>
+                    <button type="button" class="btn-mini" id="btnAgregarTodo">➕ Agregar todo lo pendiente</button>
+                </div>
+            </div>
+
+            <div class="pedido-lista" id="pedidoLista"></div>
+
+            <?php if (!empty($resurtidoSinRegistro)): ?>
+                <div class="pedido-aviso">
+                    ⚠️ Estos productos no están disponibles en el catálogo de esta bodega:
+                    <ul>
+                        <?php foreach ($resurtidoSinRegistro as $faltante): ?>
+                            <li><strong><?= e($faltante['codigo']) ?></strong> — <?= e($faltante['descripcion']) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
     <!-- SECCIÓN 2: CAPTURA RÁPIDA -->
     <div class="capture-section">
         <div class="capture-title">Agregar productos</div>
-        
+
         <div class="capture-grid">
-            <div class="capture-field">
+            <div class="capture-field capture-field-producto">
                 <label>🔍 Producto</label>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="productoDisplayInput" placeholder="Presiona Ctrl+B para buscar" readonly style="background: #f8f9fa; cursor: pointer;">
-                    <button type="button" id="openModalBtn" style="background: #3b82f6; border: none; padding: 0 20px; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">🔍 Buscar</button>
+                <div class="capture-producto-row">
+                    <input type="text" id="productoDisplayInput" placeholder="Toca Buscar o presiona Ctrl+B" readonly>
+                    <button type="button" id="openModalBtn" class="btn-buscar">🔍 Buscar</button>
                 </div>
             </div>
 
             <div class="capture-field">
                 <label>🔢 Cantidad</label>
-                <input type="number" id="cantidadInput" value="1" min="1" step="1">
+                <input type="number" id="cantidadInput" value="1" min="1" step="1" inputmode="numeric">
                 <div class="qty-actions">
                     <button type="button" class="qty-btn" onclick="cambiarCantidad(1)">+1</button>
                     <button type="button" class="qty-btn" onclick="cambiarCantidad(5)">+5</button>
@@ -934,11 +625,11 @@ body {
 
             <div class="capture-field">
                 <label>💰 Precio unitario</label>
-                <input type="number" id="precioInput" step="0.01" value="0.00">
+                <input type="number" id="precioInput" step="0.01" value="0.00" inputmode="decimal">
             </div>
 
             <button type="button" class="btn-add" id="agregarBtn">
-                ➕ Agregar producto (Enter)
+                ➕ Agregar producto
             </button>
         </div>
 
@@ -948,41 +639,41 @@ body {
                 <div class="row"><span class="label">📝 Descripción:</span><span class="value" id="infoDescripcion">-</span></div>
                 <div class="row"><span class="label">📏 Unidad:</span><span class="value" id="infoUnidad">-</span></div>
                 <div class="row"><span class="label">📊 Stock disponible:</span><span class="value" id="infoStock">-</span></div>
+                <div class="row" id="infoPedidoRow" style="display:none;"><span class="label">🔄 Pedido en resurtido:</span><span class="value" id="infoPedido">-</span></div>
             </div>
         </div>
 
         <div class="shortcuts-bar">
-            🎯 <kbd>Ctrl</kbd> + <kbd>B</kbd> Abrir buscador &nbsp;&nbsp;|&nbsp;&nbsp;
-            <kbd>↑</kbd> <kbd>↓</kbd> Navegar resultados en modal &nbsp;&nbsp;|&nbsp;&nbsp;
-            <kbd>Enter</kbd> Seleccionar producto &nbsp;&nbsp;|&nbsp;&nbsp;
-            <kbd>Enter</kbd> (en cantidad/ubicación/precio) Agregar &nbsp;&nbsp;|&nbsp;&nbsp;
+            🎯 <kbd>Ctrl</kbd> + <kbd>B</kbd> Abrir buscador &nbsp;|&nbsp;
+            <kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;|&nbsp;
+            <kbd>Enter</kbd> Seleccionar / Agregar &nbsp;|&nbsp;
             <kbd>Ctrl</kbd> + <kbd>Enter</kbd> Guardar salida
         </div>
     </div>
 
-    <!-- SECCIÓN 3: TABLA DE PRODUCTOS CORREGIDA -->
+    <!-- SECCIÓN 3: TABLA DE PRODUCTOS -->
     <div class="products-section">
         <div class="products-header">
-            <h3>Productos agregados</h3>
+            <h3>Productos en la salida</h3>
             <span class="product-badge" id="productosCount">0 productos</span>
         </div>
         <div class="table-responsive">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 100px;">Cantidad</th>
+                        <th style="width: 160px;">Cantidad</th>
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
                         <th>Ubicación</th>
                         <th>Precio</th>
                         <th>Importe</th>
-                        <th style="width: 60px;"></th>
+                        <th style="width: 70px;"></th>
                     </tr>
                 </thead>
                 <tbody id="detalleBody">
                     <?php if ($modoEdicion && !empty($salidaEditar['detalles'])): ?>
-                        <?php foreach ($salidaEditar['detalles'] as $item): 
+                        <?php foreach ($salidaEditar['detalles'] as $item):
                             $cantidad = (int)($item['cantidad'] ?? 0);
                             $precio = (float)($item['precio_unitario'] ?? 0);
                             $importe = $cantidad * $precio;
@@ -993,28 +684,32 @@ body {
                             $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
                             $unidad = e($item['unidad_medida'] ?? '');
                         ?>
-                            <tr data-producto-id="<?= $productoId ?>">
-                                <td>
-                                    <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" step="1" onchange="actualizarCantidadFila(this)">
+                            <tr data-producto-id="<?= $productoId ?>" data-precio="<?= $precio ?>">
+                                <td data-label="Cantidad">
+                                    <div class="qty-cell">
+                                        <button type="button" class="qty-step" onclick="pasoCantidadFila(this, -1)">−</button>
+                                        <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
+                                        <button type="button" class="qty-step" onclick="pasoCantidadFila(this, 1)">+</button>
+                                    </div>
                                     <input type="hidden" name="producto_id[]" value="<?= $productoId ?>">
                                     <input type="hidden" name="cantidad[]" value="<?= $cantidad ?>">
                                     <input type="hidden" name="costo_unitario[]" value="<?= $costoUnitario ?>">
                                     <input type="hidden" name="precio_unitario[]" value="<?= $precio ?>">
                                     <input type="hidden" name="ubicacion[]" value="<?= e($ubicacion) ?>">
                                 </td>
-                                <td><strong><?= $codigo ?></strong></td>
-                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;"><?= $descripcion ?></td>
-                                <td><?= $unidad ?></td>
-                                <td><?= e($ubicacion) ?></td>
-                                <td>$<?= number_format($precio, 2) ?></td>
-                                <td class="importe-fila" data-importe="<?= $importe ?>"><strong>$<?= number_format($importe, 2) ?></strong></td>
-                                <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
+                                <td data-label="Código"><strong><?= $codigo ?></strong></td>
+                                <td data-label="Descripción" class="celda-descripcion"><?= $descripcion ?></td>
+                                <td data-label="Unidad"><?= $unidad ?></td>
+                                <td data-label="Ubicación"><?= e($ubicacion) ?></td>
+                                <td data-label="Precio">$<?= number_format($precio, 2) ?></td>
+                                <td data-label="Importe" class="importe-fila" data-importe="<?= $importe ?>"><strong>$<?= number_format($importe, 2) ?></strong></td>
+                                <td data-label=""><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr id="filaVacia">
-                            <td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">
-                                📭 No hay productos. Presiona Ctrl+B para buscar
+                            <td colspan="8" class="fila-vacia-td">
+                                📭 No hay productos. Toca 🔍 Buscar o presiona Ctrl+B
                             </td>
                         </tr>
                     <?php endif; ?>
@@ -1023,12 +718,12 @@ body {
         </div>
         <div class="table-footer">
             <button type="button" class="btn-clear" onclick="limpiarTodo()">🗑️ Limpiar todo</button>
-            <div>
-                <span style="color: #6c7a8a; font-size: 14px;">Total general:</span>
+            <div class="total-box">
+                <span class="total-label">Total general:</span>
                 <span class="total-amount" id="totalSalida">$0.00</span>
             </div>
             <button type="button" class="btn-save" id="guardarBtn">
-                💾 Guardar salida (Ctrl+Enter)
+                💾 <?= $modoResurtido ? 'Guardar salida y surtir' : 'Guardar salida' ?>
             </button>
         </div>
     </div>
@@ -1055,9 +750,9 @@ body {
                         <th>Código</th>
                         <th>Descripción</th>
                         <th>Unidad</th>
-                        <th>Stock disponible</th>
+                        <th>Stock</th>
                         <th>Precio</th>
-                        <th style="min-width: 250px;">Ubicaciones (Ubicación / Existencia)</th>
+                        <th style="min-width: 220px;">Ubicaciones</th>
                     </tr>
                 </thead>
                 <tbody id="modalTableBody">
@@ -1066,7 +761,7 @@ body {
             </table>
         </div>
         <div class="modal-excel-footer">
-            <span><kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Enter</kbd> Seleccionar &nbsp;&nbsp;|&nbsp;&nbsp; <kbd>Esc</kbd> Cerrar</span>
+            <span><kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;|&nbsp; <kbd>Enter</kbd> Seleccionar &nbsp;|&nbsp; <kbd>Esc</kbd> Cerrar</span>
             <span>Mostrando <span id="modalResultCount">0</span> productos</span>
         </div>
     </div>
@@ -1074,12 +769,12 @@ body {
 
 <script>
 // ===== VARIABLES =====
-const productos = <?php 
+const productos = <?php
     $productosArray = [];
     foreach ($productos as $p) {
         $existenciaTotal = 0;
         $ubicacionesLista = [];
-        
+
         if (!empty($p['ubicaciones']) && is_array($p['ubicaciones'])) {
             foreach ($p['ubicaciones'] as $ubi) {
                 $existenciaTotal += (int)($ubi['existencia_actual'] ?? 0);
@@ -1101,13 +796,15 @@ const productos = <?php
                 ];
             }
         }
-        
+
         usort($ubicacionesLista, function($a, $b) {
+            if ($a['existencia'] > 0 && $b['existencia'] <= 0) return -1;
+            if ($b['existencia'] > 0 && $a['existencia'] <= 0) return 1;
             return $a['existencia'] - $b['existencia'];
         });
-        
+
         $ubicacionSugerida = !empty($ubicacionesLista) ? $ubicacionesLista[0]['ubicacion'] : '';
-        
+
         $productosArray[] = [
             'id' => (int)$p['id'],
             'codigo' => $p['codigo'],
@@ -1121,6 +818,10 @@ const productos = <?php
     }
     echo json_encode($productosArray, JSON_UNESCAPED_UNICODE);
 ?>;
+
+const resurtidoData = <?= $resurtidoJs !== null ? json_encode($resurtidoJs, JSON_UNESCAPED_UNICODE) : 'null' ?>;
+const modoResurtido = resurtidoData !== null;
+const filasPrevias = <?= json_encode($filasPrevias, JSON_UNESCAPED_UNICODE) ?>;
 
 let productoSeleccionado = null;
 let modalProductosFiltrados = [];
@@ -1137,41 +838,29 @@ const precioInput = document.getElementById('precioInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
 
-// Generar ubicaciones
+// ===== UBICACIONES =====
 function generarTodasLasUbicaciones() {
     const lista = document.getElementById('ubicacionesList');
     if (!lista) return;
-    
+
     const ubicaciones = [];
-    
+
     function add(rack, nivel, zona) {
         const z = String(zona).padStart(2, '0');
         ubicaciones.push(`R${rack}N${nivel}Z${z}`);
     }
-    
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) add(1, n, z);
-    }
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) add(2, n, z);
-    }
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 20; z++) add(3, n, z);
-    }
-    for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 16; z++) add(4, n, z);
-    }
+
+    for (let n = 1; n <= 3; n++) { for (let z = 1; z <= 22; z++) add(1, n, z); }
+    for (let n = 1; n <= 3; n++) { for (let z = 1; z <= 20; z++) add(2, n, z); }
+    for (let n = 1; n <= 3; n++) { for (let z = 1; z <= 20; z++) add(3, n, z); }
+    for (let n = 1; n <= 2; n++) { for (let z = 1; z <= 16; z++) add(4, n, z); }
     for (let z = 10; z <= 16; z++) add(4, 3, z);
-    for (let n = 1; n <= 2; n++) {
-        for (let z = 1; z <= 15; z++) add(5, n, z);
-    }
+    for (let n = 1; n <= 2; n++) { for (let z = 1; z <= 15; z++) add(5, n, z); }
     for (let z = 10; z <= 15; z++) add(5, 3, z);
-    for (let n = 1; n <= 3; n++) {
-        for (let z = 1; z <= 22; z++) add(6, n, z);
-    }
-    
+    for (let n = 1; n <= 3; n++) { for (let z = 1; z <= 22; z++) add(6, n, z); }
+
     ubicaciones.push('R7N1Z01 - PASILLO 3', 'R8N1Z01 - PASILLO 2', 'R9N1Z01 - PASILLO 1', 'BODEGA PEDYALITE');
-    
+
     lista.innerHTML = '';
     ubicaciones.forEach(u => {
         const option = document.createElement('option');
@@ -1180,7 +869,7 @@ function generarTodasLasUbicaciones() {
     });
 }
 
-// Funciones del modal
+// ===== MODAL =====
 function abrirModal() {
     modal.classList.add('active');
     modalSearch.value = '';
@@ -1196,57 +885,43 @@ function cerrarModal() {
 function cargarProductosEnModal(productosList) {
     modalProductosFiltrados = productosList;
     modalResultCount.textContent = productosList.length;
-    
+
     if (productosList.length === 0) {
-        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">No se encontraron productos</td></tr>';
         return;
     }
-    
+
     modalTableBody.innerHTML = productosList.map((p, idx) => {
         let ubicacionesHtml = '';
+
         if (p.ubicaciones && p.ubicaciones.length > 0) {
             ubicacionesHtml = `
-                <div class="ubicaciones-wrapper" style="max-height: 120px; overflow-y: auto; font-size: 11px;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background: #f0f2f5;">
-                                <th style="padding: 4px 6px; text-align: left;">Ubicación</th>
-                                <th style="padding: 4px 6px; text-align: right;">Existencia</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${p.ubicaciones.map(u => `
-                                <tr style="border-bottom: 1px solid #eef2f6;">
-                                    <td style="padding: 4px 6px;">${escapeHtml(u.ubicacion)}</td>
-                                    <td style="padding: 4px 6px; text-align: right;">${u.existencia}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div class="ubicaciones-wrapper">
+                    ${p.ubicaciones.map(u => `
+                        <span class="ubi-chip ${u.existencia > 0 ? '' : 'ubi-chip-vacia'}">
+                            ${escapeHtml(u.ubicacion)} <b>${u.existencia}</b>
+                        </span>
+                    `).join('')}
                 </div>
             `;
         } else {
-            ubicacionesHtml = `<div style="color: #9ca3af; text-align: center;">Sin ubicaciones</div>`;
+            ubicacionesHtml = `<div class="sin-ubicaciones">Sin ubicaciones</div>`;
         }
-        
+
         return `
-            <tr data-idx="${idx}" data-producto-id="${p.id}" class="producto-principal" style="cursor: pointer;">
-                <td class="product-code" style="vertical-align: top;">${escapeHtml(p.codigo)}</td>
-                <td style="vertical-align: top;">${escapeHtml(p.descripcion)}</td>
-                <td style="vertical-align: top;">${escapeHtml(p.unidad_medida)}</td>
-                <td class="product-stock" style="vertical-align: top;">${p.existencia_total}</td>
-                <td style="vertical-align: top;">$${p.precio_compra.toFixed(2)}</td>
-                <td style="vertical-align: top;" class="ubicaciones-cell">${ubicacionesHtml}</td>
+            <tr data-idx="${idx}" data-producto-id="${p.id}" class="producto-principal">
+                <td class="product-code" data-label="Código">${escapeHtml(p.codigo)}</td>
+                <td data-label="Descripción">${escapeHtml(p.descripcion)}</td>
+                <td data-label="Unidad">${escapeHtml(p.unidad_medida)}</td>
+                <td class="product-stock" data-label="Stock">${p.existencia_total}</td>
+                <td data-label="Precio">$${p.precio_compra.toFixed(2)}</td>
+                <td class="ubicaciones-cell" data-label="Ubicaciones">${ubicacionesHtml}</td>
             </tr>
         `;
     }).join('');
-    
+
     document.querySelectorAll('#modalTableBody > tr.producto-principal').forEach(row => {
-        row.addEventListener('click', (e) => {
-            if (e.target.closest('.ubicaciones-wrapper')) {
-                e.stopPropagation();
-                return;
-            }
+        row.addEventListener('click', () => {
             const idx = parseInt(row.dataset.idx);
             if (modalProductosFiltrados[idx]) {
                 seleccionarProductoDelModal(modalProductosFiltrados[idx]);
@@ -1257,15 +932,17 @@ function cargarProductosEnModal(productosList) {
 
 function filtrarProductosModal() {
     const termino = modalSearch.value.toLowerCase().trim();
+
     if (!termino) {
         cargarProductosEnModal(productos);
         return;
     }
-    
-    const filtrados = productos.filter(p => 
-        p.codigo.toLowerCase().includes(termino) || 
+
+    const filtrados = productos.filter(p =>
+        p.codigo.toLowerCase().includes(termino) ||
         p.descripcion.toLowerCase().includes(termino)
     );
+
     cargarProductosEnModal(filtrados);
     modalSelectedIndex = -1;
 }
@@ -1284,36 +961,50 @@ function actualizarSeleccionModal() {
 
 function seleccionarProductoDelModal(producto) {
     productoSeleccionado = producto;
-    
+
     document.getElementById('selectedInfo').style.display = 'block';
     document.getElementById('infoCodigo').innerHTML = `<strong>${escapeHtml(producto.codigo)}</strong>`;
     document.getElementById('infoDescripcion').textContent = producto.descripcion;
     document.getElementById('infoUnidad').textContent = producto.unidad_medida;
     document.getElementById('infoStock').textContent = producto.existencia_total;
-    
+
+    const pedidoRow = document.getElementById('infoPedidoRow');
+    const pedido = obtenerPedidoResurtido(producto.id);
+
+    if (pedido) {
+        pedidoRow.style.display = 'flex';
+        document.getElementById('infoPedido').textContent = `${pedido.pendiente} ${producto.unidad_medida || ''}`;
+        cantidadInput.value = Math.max(1, Math.min(pedido.pendiente, producto.existencia_total || pedido.pendiente));
+    } else {
+        pedidoRow.style.display = 'none';
+        cantidadInput.value = 1;
+    }
+
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
     precioInput.value = producto.precio_compra;
-    
+
     if (producto.ubicaciones && producto.ubicaciones.length > 0) {
         ubicacionInput.value = producto.ubicaciones[0].ubicacion;
     } else {
         ubicacionInput.value = producto.ubicacion_sugerida || '';
     }
-    
+
     cerrarModal();
     cantidadInput.focus();
     cantidadInput.select();
     mostrarToast(`✅ Producto seleccionado: ${producto.codigo}`);
 }
 
-// Funciones de cantidad
+// ===== CANTIDADES =====
 function cambiarCantidad(valor) {
-    let nuevo = parseInt(cantidadInput.value) + valor;
+    let nuevo = (parseInt(cantidadInput.value) || 0) + valor;
     if (nuevo < 1) nuevo = 1;
+
     if (productoSeleccionado && nuevo > productoSeleccionado.existencia_total) {
         nuevo = productoSeleccionado.existencia_total;
         mostrarToast(`⚠️ Máximo disponible: ${productoSeleccionado.existencia_total}`, 'warning');
     }
+
     cantidadInput.value = nuevo;
 }
 
@@ -1323,113 +1014,172 @@ function setMaxCantidad() {
     }
 }
 
-// Agregar producto
+// ===== RESURTIDO: UTILIDADES =====
+function obtenerPedidoResurtido(productoId) {
+    if (!modoResurtido) return null;
+    return resurtidoData.productos.find(p => Number(p.producto_id) === Number(productoId)) || null;
+}
+
+function cantidadEnSalida(productoId) {
+    let total = 0;
+    document.querySelectorAll('#detalleBody tr[data-producto-id]').forEach(tr => {
+        if (Number(tr.dataset.productoId) === Number(productoId)) {
+            const input = tr.querySelector('input[name="cantidad[]"]');
+            total += parseInt(input ? input.value : '0') || 0;
+        }
+    });
+    return total;
+}
+
+// ===== AGREGAR FILAS =====
+function agregarFila(producto, cantidad, ubicacion, precio) {
+    const filaVacia = document.getElementById('filaVacia');
+    if (filaVacia) filaVacia.remove();
+
+    const pedido = obtenerPedidoResurtido(producto.id);
+    const importe = cantidad * precio;
+
+    const tr = document.createElement('tr');
+    tr.dataset.productoId = producto.id;
+    tr.dataset.precio = precio;
+
+    if (pedido) {
+        tr.dataset.solicitado = pedido.pendiente;
+        tr.classList.add('fila-resurtido');
+        if (cantidad < pedido.pendiente) tr.classList.add('fila-incompleta');
+    }
+
+    tr.innerHTML = `
+        <td data-label="Cantidad">
+            <div class="qty-cell">
+                <button type="button" class="qty-step" onclick="pasoCantidadFila(this, -1)">−</button>
+                <input type="number" class="qty-input" value="${cantidad}" min="1" step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
+                <button type="button" class="qty-step" onclick="pasoCantidadFila(this, 1)">+</button>
+            </div>
+            ${pedido ? `<span class="pedido-chip">Pedido: ${pedido.pendiente}</span>` : ''}
+            <input type="hidden" name="producto_id[]" value="${producto.id}">
+            <input type="hidden" name="cantidad[]" value="${cantidad}">
+            <input type="hidden" name="costo_unitario[]" value="${producto.precio_compra}">
+            <input type="hidden" name="precio_unitario[]" value="${precio}">
+            <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
+        </td>
+        <td data-label="Código"><strong>${escapeHtml(producto.codigo)}</strong></td>
+        <td data-label="Descripción" class="celda-descripcion">${escapeHtml(producto.descripcion.substring(0, 70))}</td>
+        <td data-label="Unidad">${escapeHtml(producto.unidad_medida)}</td>
+        <td data-label="Ubicación">${escapeHtml(ubicacion)}</td>
+        <td data-label="Precio">$${precio.toFixed(2)}</td>
+        <td data-label="Importe" class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
+        <td data-label=""><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
+    `;
+
+    detalleBody.appendChild(tr);
+    actualizarTotales();
+
+    return tr;
+}
+
 function agregarProducto() {
     if (!productoSeleccionado) {
         mostrarToast('❌ Selecciona un producto (Ctrl+B para buscar)', 'error');
         return;
     }
-    
+
+    const producto = productoSeleccionado;
+
     let cantidad = parseInt(cantidadInput.value);
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
-    
+
     const precio = parseFloat(precioInput.value);
     if (isNaN(precio) || precio < 0) {
         mostrarToast('❌ Precio inválido', 'error');
         return;
     }
-    
+
     let ubicacion = ubicacionInput.value.trim().toUpperCase();
-    if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
-    
-    if (cantidad > productoSeleccionado.existencia_total) {
-        mostrarToast(`❌ Stock insuficiente. Disponible: ${productoSeleccionado.existencia_total}`, 'error');
+    if (!ubicacion) ubicacion = producto.ubicacion_sugerida || '';
+
+    if (!ubicacion || ubicacion === 'SIN UBICACION') {
+        mostrarToast('❌ Selecciona una ubicación válida', 'error');
+        ubicacionInput.focus();
         return;
     }
-    
-    const filasExistentes = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
+
+    if (cantidad > producto.existencia_total) {
+        mostrarToast(`❌ Stock insuficiente. Disponible: ${producto.existencia_total}`, 'error');
+        return;
+    }
+
+    const filasExistentes = document.querySelectorAll('#detalleBody tr[data-producto-id]');
     for (let fila of filasExistentes) {
-        if (fila.dataset.productoId == productoSeleccionado.id) {
-            mostrarToast(`⚠️ El producto ya está en la lista`, 'warning');
+        if (Number(fila.dataset.productoId) === Number(producto.id)) {
+            mostrarToast('⚠️ El producto ya está en la lista', 'warning');
             return;
         }
     }
-    
-    const filaVacia = document.getElementById('filaVacia');
-    if (filaVacia) filaVacia.remove();
-    
-    const importe = cantidad * precio;
-    const tr = document.createElement('tr');
-    tr.dataset.productoId = productoSeleccionado.id;
-    tr.innerHTML = `
-        <td>
-            <input type="number" class="qty-input" value="${cantidad}" min="1" step="1" onchange="actualizarCantidadFila(this)">
-            <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
-            <input type="hidden" name="cantidad[]" value="${cantidad}">
-            <input type="hidden" name="costo_unitario[]" value="${productoSeleccionado.precio_compra}">
-            <input type="hidden" name="precio_unitario[]" value="${precio}">
-            <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
-        </td>
-        <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
-        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 60))}</td>
-        <td>${escapeHtml(productoSeleccionado.unidad_medida)}</td>
-        <td>${escapeHtml(ubicacion)}</td>
-        <td>$${precio.toFixed(2)}</td>
-        <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
-        <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
-    `;
-    
-    detalleBody.appendChild(tr);
-    actualizarTotales();
-    
+
+    agregarFila(producto, cantidad, ubicacion, precio);
+
     productoSeleccionado = null;
     document.getElementById('selectedInfo').style.display = 'none';
     productoDisplayInput.value = '';
     cantidadInput.value = '1';
     ubicacionInput.value = '';
     precioInput.value = '0.00';
-    
-    mostrarToast(`✅ ${cantidad} x ${productoSeleccionado?.codigo || 'producto'} agregado`);
+
+    mostrarToast(`✅ ${cantidad} x ${producto.codigo} agregado`);
+}
+
+function pasoCantidadFila(boton, paso) {
+    const input = boton.parentElement.querySelector('.qty-input');
+    if (!input) return;
+
+    let cantidad = (parseInt(input.value) || 0) + paso;
+    if (cantidad < 1) cantidad = 1;
+
+    input.value = cantidad;
+    actualizarCantidadFila(input);
 }
 
 function actualizarCantidadFila(input) {
     const tr = input.closest('tr');
     let cantidad = parseInt(input.value);
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
-    
-    const precioTd = tr.children[5];
-    let precio = 0;
-    if (precioTd) {
-        const precioTexto = precioTd.textContent.replace('$', '');
-        precio = parseFloat(precioTexto);
-    }
-    
+
+    const precio = parseFloat(tr.dataset.precio || '0') || 0;
     const nuevoImporte = cantidad * precio;
+
     const importeTd = tr.querySelector('.importe-fila');
     if (importeTd) {
         importeTd.dataset.importe = nuevoImporte;
         importeTd.innerHTML = `<strong>$${nuevoImporte.toFixed(2)}</strong>`;
     }
-    
+
     const hiddenInput = tr.querySelector('input[name="cantidad[]"]');
     if (hiddenInput) hiddenInput.value = cantidad;
-    
+
+    const solicitado = parseInt(tr.dataset.solicitado || '0');
+    if (solicitado > 0) {
+        tr.classList.toggle('fila-incompleta', cantidad < solicitado);
+    }
+
     actualizarTotales();
 }
 
 function eliminarFila(btn) {
     const tr = btn.closest('tr');
     tr.remove();
-    if (detalleBody.children.length === 0) {
-        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>`;
+
+    if (detalleBody.querySelectorAll('tr[data-producto-id]').length === 0) {
+        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" class="fila-vacia-td">📭 No hay productos. Toca 🔍 Buscar o presiona Ctrl+B</td></tr>`;
     }
+
     actualizarTotales();
     mostrarToast('🗑️ Producto eliminado', 'info');
 }
 
 function limpiarTodo() {
     if (confirm('¿Eliminar todos los productos?')) {
-        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>`;
+        detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" class="fila-vacia-td">📭 No hay productos. Toca 🔍 Buscar o presiona Ctrl+B</td></tr>`;
         actualizarTotales();
         mostrarToast('🧹 Lista limpiada', 'info');
     }
@@ -1438,20 +1188,186 @@ function limpiarTodo() {
 function actualizarTotales() {
     let total = 0;
     let count = 0;
+
     document.querySelectorAll('.importe-fila').forEach(td => {
         total += parseFloat(td.dataset.importe || '0');
         count++;
     });
+
     document.getElementById('totalSalida').textContent = `$${total.toFixed(2)}`;
     document.getElementById('productosCount').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
+
+    renderizarPedidoResurtido();
 }
 
+// ===== PANEL DEL PEDIDO =====
+function renderizarPedidoResurtido() {
+    if (!modoResurtido) return;
+
+    const contenedor = document.getElementById('pedidoLista');
+    if (!contenedor) return;
+
+    let completos = 0;
+
+    contenedor.innerHTML = resurtidoData.productos.map(item => {
+        const enSalida = cantidadEnSalida(item.producto_id);
+        const catalogo = productos.find(p => Number(p.id) === Number(item.producto_id));
+        const stock = catalogo ? catalogo.existencia_total : 0;
+
+        let clase = 'pedido-item';
+        let etiqueta = 'Pendiente';
+
+        if (enSalida >= item.pendiente && item.pendiente > 0) {
+            clase += ' pedido-item-ok';
+            etiqueta = 'Completo';
+            completos++;
+        } else if (enSalida > 0) {
+            clase += ' pedido-item-parcial';
+            etiqueta = 'Parcial';
+        } else if (!catalogo || stock <= 0) {
+            clase += ' pedido-item-sin-stock';
+            etiqueta = 'Sin existencia';
+        }
+
+        return `
+            <div class="${clase}">
+                <div class="pedido-item-info">
+                    <strong>${escapeHtml(item.codigo)}</strong>
+                    <span>${escapeHtml(item.descripcion)}</span>
+                </div>
+                <div class="pedido-item-datos">
+                    <span class="pedido-dato"><b>${item.pendiente}</b> pedido</span>
+                    <span class="pedido-dato"><b>${enSalida}</b> en salida</span>
+                    <span class="pedido-dato"><b>${stock}</b> stock</span>
+                    <span class="pedido-etiqueta">${etiqueta}</span>
+                </div>
+                <button type="button" class="btn-mini btn-mini-add"
+                        onclick="agregarDesdePedido(${item.producto_id})"
+                        ${(!catalogo || stock <= 0 || enSalida > 0) ? 'disabled' : ''}>
+                    ➕ Agregar
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    const resumen = document.getElementById('pedidoResumen');
+    if (resumen) {
+        resumen.textContent = `${completos} de ${resurtidoData.productos.length} completos`;
+    }
+}
+
+function agregarDesdePedido(productoId, silencioso) {
+    const item = obtenerPedidoResurtido(productoId);
+    const producto = productos.find(p => Number(p.id) === Number(productoId));
+
+    if (!item || !producto) {
+        if (!silencioso) mostrarToast('❌ El producto no está disponible en esta bodega', 'error');
+        return false;
+    }
+
+    if (cantidadEnSalida(productoId) > 0) {
+        if (!silencioso) mostrarToast('⚠️ El producto ya está en la salida', 'warning');
+        return false;
+    }
+
+    const stock = producto.existencia_total || 0;
+
+    if (stock <= 0) {
+        if (!silencioso) mostrarToast(`❌ Sin existencia: ${producto.codigo}`, 'error');
+        return false;
+    }
+
+    const cantidad = Math.min(item.pendiente, stock);
+
+    let ubicacion = '';
+    if (producto.ubicaciones && producto.ubicaciones.length > 0) {
+        ubicacion = producto.ubicaciones[0].ubicacion;
+    } else {
+        ubicacion = producto.ubicacion_sugerida || '';
+    }
+
+    if (!ubicacion || ubicacion === 'SIN UBICACION') {
+        if (!silencioso) mostrarToast(`⚠️ ${producto.codigo} no tiene ubicación asignada`, 'warning');
+        return false;
+    }
+
+    agregarFila(producto, cantidad, ubicacion, producto.precio_compra);
+
+    if (!silencioso) {
+        mostrarToast(`✅ ${cantidad} x ${producto.codigo} agregado`);
+    }
+
+    return true;
+}
+
+function restaurarFilasPrevias() {
+    if (!Array.isArray(filasPrevias) || filasPrevias.length === 0) {
+        return false;
+    }
+
+    let restauradas = 0;
+
+    filasPrevias.forEach(fila => {
+        const producto = productos.find(p => Number(p.id) === Number(fila.producto_id));
+        if (!producto) return;
+
+        let ubicacion = fila.ubicacion;
+
+        if (!ubicacion || ubicacion === 'SIN UBICACION') {
+            ubicacion = (producto.ubicaciones && producto.ubicaciones.length > 0)
+                ? producto.ubicaciones[0].ubicacion
+                : (producto.ubicacion_sugerida || '');
+        }
+
+        agregarFila(producto, fila.cantidad, ubicacion, Number(fila.precio) || 0);
+        restauradas++;
+    });
+
+    if (restauradas > 0) {
+        mostrarToast('↩️ Se recuperó la captura anterior', 'warning');
+    }
+
+    return restauradas > 0;
+}
+
+function precargarResurtido() {
+    if (!modoResurtido) return;
+
+    let agregados = 0;
+    let faltantes = 0;
+
+    resurtidoData.productos.forEach(item => {
+        if (item.pendiente <= 0) return;
+
+        if (agregarDesdePedido(item.producto_id, true)) {
+            agregados++;
+        } else {
+            faltantes++;
+        }
+    });
+
+    actualizarTotales();
+
+    if (agregados > 0) {
+        mostrarToast(`🔄 ${agregados} producto(s) del resurtido ${resurtidoData.folio} cargados`);
+    }
+
+    if (faltantes > 0) {
+        setTimeout(() => {
+            mostrarToast(`⚠️ ${faltantes} producto(s) sin existencia o sin ubicación`, 'warning');
+        }, 800);
+    }
+}
+
+// ===== TOAST =====
 function mostrarToast(mensaje, tipo = 'success') {
     const toast = document.createElement('div');
     toast.className = 'toast-message';
+
     if (tipo === 'error') toast.style.borderLeftColor = '#ef4444';
     else if (tipo === 'warning') toast.style.borderLeftColor = '#f59e0b';
     else toast.style.borderLeftColor = '#059669';
+
     toast.innerHTML = mensaje;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
@@ -1459,15 +1375,16 @@ function mostrarToast(mensaje, tipo = 'success') {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return String(str).replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>"]/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
         return m;
     });
 }
 
-// Control de folio de operación
+// ===== FOLIO DE OPERACION =====
 const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
 const folioOperacionBox = document.getElementById('folioOperacionBox');
 const folioOperacionInput = document.getElementById('folioOperacionInput');
@@ -1476,26 +1393,29 @@ const folioOperacionLabel = document.getElementById('folioOperacionLabel');
 function controlarFolioOperacion() {
     const valor = tipoOperacionSelect.value;
     const tiposRequeridos = ['TICKET', 'RESURTIDO', 'NOTA_REMISION'];
-    
+
     if (tiposRequeridos.includes(valor)) {
-        folioOperacionBox.style.display = 'block';
+        folioOperacionBox.style.display = 'flex';
+
         const etiquetas = {
             'TICKET': '🎫 Folio de Ticket',
             'RESURTIDO': '🔄 Folio de Resurtido',
             'NOTA_REMISION': '📝 N# de Nota de Remisión'
         };
+
         folioOperacionLabel.innerHTML = etiquetas[valor] || '🔢 Folio de operación';
         folioOperacionInput.required = true;
     } else {
         folioOperacionBox.style.display = 'none';
         folioOperacionInput.required = false;
-        <?php if (!$modoEdicion): ?>folioOperacionInput.value = '';<?php endif; ?>
+        <?php if (!$modoEdicion && !$modoResurtido): ?>folioOperacionInput.value = '';<?php endif; ?>
     }
 }
 
 function ponerFechaActual() {
     const fechaInput = document.getElementById('fechaInput');
     if (fechaInput.value && <?= $modoEdicion ? 'true' : 'false' ?>) return;
+
     if (!fechaInput.value) {
         const ahora = new Date();
         const year = ahora.getFullYear();
@@ -1507,29 +1427,71 @@ function ponerFechaActual() {
     }
 }
 
+// ===== GUARDAR =====
+let guardando = false;
+
 function guardarSalida() {
-    const productosEnLista = document.querySelectorAll('#detalleBody tr:not(#filaVacia)');
+    if (guardando) return;
+
+    const productosEnLista = document.querySelectorAll('#detalleBody tr[data-producto-id]');
+
     if (productosEnLista.length === 0) {
         mostrarToast('❌ Agrega al menos un producto', 'error');
         return;
     }
+
+    const tipoSalida = document.getElementById('tipoSalidaSelect');
+    if (tipoSalida && tipoSalida.value === '') {
+        mostrarToast('❌ Selecciona el tipo de salida', 'error');
+        tipoSalida.focus();
+        return;
+    }
+
+    if (modoResurtido) {
+        const incompletos = resurtidoData.productos.filter(item => {
+            return cantidadEnSalida(item.producto_id) < item.pendiente;
+        }).length;
+
+        if (incompletos > 0) {
+            const seguir = confirm(
+                `Hay ${incompletos} producto(s) del resurtido ${resurtidoData.folio} que no se surten completos.\n\n` +
+                'El resurtido quedará marcado como PARCIAL. ¿Deseas continuar?'
+            );
+
+            if (!seguir) return;
+        }
+    }
+
+    guardando = true;
+
+    const boton = document.getElementById('guardarBtn');
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = '⏳ Guardando...';
+    }
+
     document.getElementById('formSalida').submit();
 }
 
-// Eventos
+// ===== EVENTOS =====
 document.addEventListener('DOMContentLoaded', () => {
     generarTodasLasUbicaciones();
-    actualizarTotales();
     controlarFolioOperacion();
     ponerFechaActual();
-    
+
+    if (!restaurarFilasPrevias()) {
+        precargarResurtido();
+    }
+
+    actualizarTotales();
+
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
             e.preventDefault();
             abrirModal();
         }
     });
-    
+
     ['cantidadInput', 'precioInput', 'ubicacionInput'].forEach(id => {
         document.getElementById(id)?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1538,25 +1500,39 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-    
+
     document.getElementById('agregarBtn')?.addEventListener('click', agregarProducto);
     document.getElementById('guardarBtn')?.addEventListener('click', guardarSalida);
     document.getElementById('openModalBtn')?.addEventListener('click', abrirModal);
+    document.getElementById('productoDisplayInput')?.addEventListener('click', abrirModal);
     document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
-    
+
+    document.getElementById('btnAgregarTodo')?.addEventListener('click', () => {
+        let agregados = 0;
+
+        resurtidoData.productos.forEach(item => {
+            if (cantidadEnSalida(item.producto_id) === 0 && item.pendiente > 0) {
+                if (agregarDesdePedido(item.producto_id, true)) agregados++;
+            }
+        });
+
+        actualizarTotales();
+        mostrarToast(agregados > 0 ? `✅ ${agregados} producto(s) agregados` : '⚠️ No hay productos por agregar', agregados > 0 ? 'success' : 'warning');
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
             guardarSalida();
         }
     });
-    
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             cerrarModal();
         }
     });
-    
+
     modal.addEventListener('click', (e) => {
         if (e.target === modal) cerrarModal();
     });
@@ -1566,7 +1542,7 @@ if (modalSearch) {
     modalSearch.addEventListener('keydown', (e) => {
         const filasProductos = document.querySelectorAll('#modalTableBody > tr.producto-principal');
         const totalFilas = filasProductos.length;
-        
+
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (totalFilas > 0) {
@@ -1587,7 +1563,7 @@ if (modalSearch) {
             cerrarModal();
         }
     });
-    
+
     modalSearch.addEventListener('input', filtrarProductosModal);
 }
 
@@ -1598,4 +1574,3 @@ tipoOperacionSelect?.addEventListener('change', controlarFolioOperacion);
 if (file_exists(__DIR__ . '/../app/views/layouts/footer.php')) {
     include __DIR__ . '/../app/views/layouts/footer.php';
 }
-?>

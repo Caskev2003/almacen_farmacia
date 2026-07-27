@@ -1362,12 +1362,3 @@ body {
         display: none !important;
     }
 }
-/* Documento heredado desde la solicitud del verificador */
-.documento-solicitud-ayuda {
-    display: block;
-    margin-top: 6px;
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.35;
-}

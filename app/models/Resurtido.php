@@ -34,7 +34,8 @@ class Resurtido
     // ==================================================
 
     public function buscarPorUltimosDigitos(
-        string $ultimosDigitos
+        string $ultimosDigitos,
+        int $almacenId
     ): array {
         $ultimosDigitos = trim($ultimosDigitos);
 
@@ -42,6 +43,39 @@ class Resurtido
             throw new InvalidArgumentException(
                 'Debe ingresar exactamente los últimos 4 dígitos.'
             );
+        }
+
+        if ($almacenId <= 0) {
+            throw new InvalidArgumentException(
+                'El almacén que surtirá la solicitud no es válido.'
+            );
+        }
+
+        $sucursales = $this->obtenerSucursalesAlmacen(
+            $almacenId
+        );
+
+        if (empty($sucursales)) {
+            throw new RuntimeException(
+                'No fue posible identificar las existencias del almacén.'
+            );
+        }
+
+        $params = [
+            ':codigo' => $ultimosDigitos,
+            ':codigo_barras' => $ultimosDigitos,
+            ':almacen_reservado_busqueda' =>
+                $almacenId
+        ];
+
+        $placeholdersSucursales = [];
+
+        foreach ($sucursales as $indice => $sucursal) {
+            $placeholder = ':sucursal_busqueda_'
+                . $indice;
+
+            $placeholdersSucursales[] = $placeholder;
+            $params[$placeholder] = $sucursal;
         }
 
         $sql = "
@@ -56,9 +90,91 @@ class Resurtido
                     'PIEZA'
                 ) AS unidad,
 
-                p.existencia_bodega
+                GREATEST(
+                    COALESCE(
+                        stock.existencia_bodega,
+                        0
+                    )
+                    - COALESCE(
+                        reservas.cantidad_reservada,
+                        0
+                    ),
+                    0
+                ) AS existencia_disponible,
+
+                COALESCE(
+                    stock.existencia_bodega,
+                    0
+                ) AS existencia_bodega,
+
+                COALESCE(
+                    reservas.cantidad_reservada,
+                    0
+                ) AS cantidad_reservada
 
             FROM productos AS p
+
+            LEFT JOIN (
+                SELECT
+                    pe.producto_id,
+                    SUM(pe.existencia) AS existencia_bodega
+                FROM producto_existencias AS pe
+                WHERE
+                    UPPER(
+                        TRIM(
+                            COALESCE(pe.sucursal, '')
+                        )
+                    ) COLLATE utf8mb4_general_ci
+                    IN (
+                        " . implode(
+                            ', ',
+                            $placeholdersSucursales
+                        ) . "
+                    )
+                    AND COALESCE(pe.existencia, 0) > 0
+                    AND pe.ubicacion IS NOT NULL
+                    AND TRIM(pe.ubicacion) <> ''
+                    AND UPPER(
+                        TRIM(pe.ubicacion)
+                    ) COLLATE utf8mb4_general_ci
+                    NOT IN (
+                        'SIN UBICACION',
+                        'SIN UBICACIÓN'
+                    )
+                GROUP BY pe.producto_id
+            ) AS stock
+                ON stock.producto_id = p.id
+
+            LEFT JOIN (
+                SELECT
+                    rd.producto_id,
+                    SUM(
+                        GREATEST(
+                            COALESCE(
+                                rd.cantidad_solicitada,
+                                0
+                            )
+                            - COALESCE(
+                                rd.cantidad_surtida,
+                                0
+                            ),
+                            0
+                        )
+                    ) AS cantidad_reservada
+                FROM resurtido_detalles AS rd
+                INNER JOIN resurtidos AS r
+                    ON r.id = rd.resurtido_id
+                WHERE
+                    r.almacen_id =
+                        :almacen_reservado_busqueda
+                    AND r.estado IN (
+                        'PENDIENTE',
+                        'EN_PROCESO',
+                        'PARCIAL'
+                    )
+                GROUP BY rd.producto_id
+            ) AS reservas
+                ON reservas.producto_id = p.id
 
             WHERE p.estado = 1
 
@@ -80,18 +196,23 @@ class Resurtido
 
         $stmt = $this->db->prepare($sql);
 
-        $stmt->execute([
-            ':codigo' => $ultimosDigitos,
-            ':codigo_barras' => $ultimosDigitos
-        ]);
+        $stmt->execute($params);
 
         $productos = $stmt->fetchAll();
 
         foreach ($productos as &$producto) {
             $producto['id'] = (int) $producto['id'];
 
+            $producto['existencia_disponible'] = (int) (
+                $producto['existencia_disponible'] ?? 0
+            );
+
             $producto['existencia_bodega'] = (int) (
                 $producto['existencia_bodega'] ?? 0
+            );
+
+            $producto['cantidad_reservada'] = (int) (
+                $producto['cantidad_reservada'] ?? 0
             );
         }
 
@@ -149,6 +270,88 @@ class Resurtido
         $this->db->beginTransaction();
 
         try {
+            /*
+             * Serializa las solicitudes del mismo almacén.
+             * Así dos tabletas no pueden reservar al mismo
+             * tiempo las mismas unidades disponibles.
+             */
+            $this->bloquearAlmacenParaResurtido(
+                $almacenId
+            );
+
+            /*
+             * La existencia se consulta de nuevo al guardar.
+             * El valor enviado por JavaScript nunca se considera
+             * una fuente confiable.
+             */
+            $existenciasDisponibles =
+                $this->obtenerExistenciasDisponibles(
+                    $productos,
+                    $almacenId
+                );
+
+            foreach ($productos as $producto) {
+                $productoId = (int) (
+                    $producto['producto_id']
+                );
+
+                $informacion =
+                    $existenciasDisponibles[$productoId]
+                    ?? null;
+
+                if (!$informacion) {
+                    throw new InvalidArgumentException(
+                        'Uno de los productos seleccionados no existe o está inactivo.'
+                    );
+                }
+
+                $cantidadSolicitada = (float) (
+                    $producto['cantidad']
+                );
+
+                $existenciaDisponible = (float) (
+                    $informacion['existencia_disponible']
+                    ?? 0
+                );
+
+                if (
+                    $cantidadSolicitada
+                    > $existenciaDisponible
+                ) {
+                    $codigo = trim(
+                        (string) (
+                            $informacion['codigo']
+                            ?? ''
+                        )
+                    );
+
+                    $descripcion = trim(
+                        (string) (
+                            $informacion['descripcion']
+                            ?? 'Producto'
+                        )
+                    );
+
+                    throw new InvalidArgumentException(
+                        'La cantidad solicitada de '
+                        . ($codigo !== ''
+                            ? $codigo . ' - '
+                            : '')
+                        . $descripcion
+                        . ' supera la existencia disponible en bodega. '
+                        . 'Solicitado: '
+                        . $this->formatearCantidad(
+                            $cantidadSolicitada
+                        )
+                        . '. Disponible: '
+                        . $this->formatearCantidad(
+                            $existenciaDisponible
+                        )
+                        . '.'
+                    );
+                }
+            }
+
             $folioTemporal =
                 'TMP-'
                 . $solicitanteId
@@ -1209,6 +1412,301 @@ class Resurtido
 
         return array_values(
             $productosNormalizados
+        );
+    }
+
+    // ==================================================
+    // EXISTENCIA DISPONIBLE DEL ALMACÉN
+    // ==================================================
+
+    private function obtenerExistenciasDisponibles(
+        array $productos,
+        int $almacenId
+    ): array {
+        $sucursales = $this->obtenerSucursalesAlmacen(
+            $almacenId
+        );
+
+        if (empty($sucursales)) {
+            throw new RuntimeException(
+                'No fue posible identificar las existencias del almacén.'
+            );
+        }
+
+        $params = [
+            ':almacen_reservado_stock' =>
+                $almacenId
+        ];
+
+        $placeholdersProductos = [];
+        $placeholdersSucursales = [];
+
+        foreach ($productos as $indice => $producto) {
+            $placeholder = ':producto_stock_'
+                . $indice;
+
+            $placeholdersProductos[] = $placeholder;
+            $params[$placeholder] = (int) (
+                $producto['producto_id']
+            );
+        }
+
+        foreach ($sucursales as $indice => $sucursal) {
+            $placeholder = ':sucursal_stock_'
+                . $indice;
+
+            $placeholdersSucursales[] = $placeholder;
+            $params[$placeholder] = $sucursal;
+        }
+
+        $sql = "
+            SELECT
+                p.id,
+                p.codigo,
+                p.descripcion,
+
+                GREATEST(
+                    COALESCE(
+                        SUM(pe.existencia),
+                        0
+                    )
+                    - COALESCE(
+                        reservas.cantidad_reservada,
+                        0
+                    ),
+                    0
+                ) AS existencia_disponible,
+
+                COALESCE(
+                    SUM(pe.existencia),
+                    0
+                ) AS existencia_bodega,
+
+                COALESCE(
+                    reservas.cantidad_reservada,
+                    0
+                ) AS cantidad_reservada
+
+            FROM productos AS p
+
+            LEFT JOIN producto_existencias AS pe
+                ON pe.producto_id = p.id
+                AND UPPER(
+                    TRIM(
+                        COALESCE(pe.sucursal, '')
+                    )
+                ) COLLATE utf8mb4_general_ci
+                IN (
+                    " . implode(
+                        ', ',
+                        $placeholdersSucursales
+                    ) . "
+                )
+                AND COALESCE(pe.existencia, 0) > 0
+                AND pe.ubicacion IS NOT NULL
+                AND TRIM(pe.ubicacion) <> ''
+                AND UPPER(
+                    TRIM(pe.ubicacion)
+                ) COLLATE utf8mb4_general_ci
+                NOT IN (
+                    'SIN UBICACION',
+                    'SIN UBICACIÓN'
+                )
+
+            LEFT JOIN (
+                SELECT
+                    rd.producto_id,
+                    SUM(
+                        GREATEST(
+                            COALESCE(
+                                rd.cantidad_solicitada,
+                                0
+                            )
+                            - COALESCE(
+                                rd.cantidad_surtida,
+                                0
+                            ),
+                            0
+                        )
+                    ) AS cantidad_reservada
+                FROM resurtido_detalles AS rd
+                INNER JOIN resurtidos AS r
+                    ON r.id = rd.resurtido_id
+                WHERE
+                    r.almacen_id =
+                        :almacen_reservado_stock
+                    AND r.estado IN (
+                        'PENDIENTE',
+                        'EN_PROCESO',
+                        'PARCIAL'
+                    )
+                GROUP BY rd.producto_id
+            ) AS reservas
+                ON reservas.producto_id = p.id
+
+            WHERE
+                p.estado = 1
+                AND p.id IN (
+                    " . implode(
+                        ', ',
+                        $placeholdersProductos
+                    ) . "
+                )
+            GROUP BY
+                p.id,
+                p.codigo,
+                p.descripcion,
+                reservas.cantidad_reservada
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        $existencias = [];
+
+        foreach ($stmt->fetchAll() as $producto) {
+            $productoId = (int) (
+                $producto['id'] ?? 0
+            );
+
+            if ($productoId <= 0) {
+                continue;
+            }
+
+            $producto['id'] = $productoId;
+
+            $producto['existencia_disponible'] =
+                (float) (
+                    $producto['existencia_disponible']
+                    ?? 0
+                );
+
+            $producto['existencia_bodega'] =
+                (float) (
+                    $producto['existencia_bodega']
+                    ?? 0
+                );
+
+            $producto['cantidad_reservada'] =
+                (float) (
+                    $producto['cantidad_reservada']
+                    ?? 0
+                );
+
+            $existencias[$productoId] = $producto;
+        }
+
+        return $existencias;
+    }
+
+    // ==================================================
+    // BLOQUEAR ALMACÉN DURANTE LA RESERVA
+    // ==================================================
+
+    private function bloquearAlmacenParaResurtido(
+        int $almacenId
+    ): void {
+        $sql = "
+            SELECT id
+            FROM almacenes
+            WHERE
+                id = :almacen_id
+                AND estado = 1
+            LIMIT 1
+            FOR UPDATE
+        ";
+
+        $stmt = $this->db->prepare($sql);
+
+        $stmt->execute([
+            ':almacen_id' => $almacenId
+        ]);
+
+        if (!$stmt->fetchColumn()) {
+            throw new InvalidArgumentException(
+                'El almacén que surtirá la solicitud no existe o está inactivo.'
+            );
+        }
+    }
+
+    // ==================================================
+    // SUCURSALES EQUIVALENTES DE UN ALMACÉN
+    // ==================================================
+
+    private function obtenerSucursalesAlmacen(
+        int $almacenId
+    ): array {
+        if ($almacenId <= 0) {
+            return [];
+        }
+
+        $sql = "
+            SELECT nombre
+            FROM almacenes
+            WHERE
+                id = :almacen_id
+                AND estado = 1
+            LIMIT 1
+        ";
+
+        $stmt = $this->db->prepare($sql);
+
+        $stmt->execute([
+            ':almacen_id' => $almacenId
+        ]);
+
+        $nombre = strtoupper(
+            trim(
+                (string) (
+                    $stmt->fetchColumn() ?: ''
+                )
+            )
+        );
+
+        if ($nombre === '') {
+            return [];
+        }
+
+        if (str_contains($nombre, 'HIDALGO')) {
+            return [
+                'CIUDAD HIDALGO',
+                'CD HIDALGO'
+            ];
+        }
+
+        if (str_contains($nombre, 'TUXTLA')) {
+            return [
+                'TUXTLA',
+                'TUXTLA GUTIERREZ',
+                'TUXTLA GUTIÉRREZ'
+            ];
+        }
+
+        return [$nombre];
+    }
+
+    // ==================================================
+    // FORMATEAR CANTIDAD PARA MENSAJES
+    // ==================================================
+
+    private function formatearCantidad(
+        float $cantidad
+    ): string {
+        if (floor($cantidad) === $cantidad) {
+            return (string) (int) $cantidad;
+        }
+
+        return rtrim(
+            rtrim(
+                number_format(
+                    $cantidad,
+                    3,
+                    '.',
+                    ''
+                ),
+                '0'
+            ),
+            '.'
         );
     }
 

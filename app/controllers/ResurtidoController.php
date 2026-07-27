@@ -24,7 +24,8 @@ class ResurtidoController
     // ==================================================
 
     public function buscarPorUltimosDigitos(
-        string $codigo
+        string $codigo,
+        int $almacenId
     ): array {
         $codigo = preg_replace(
             '/\D/',
@@ -41,9 +42,74 @@ class ResurtidoController
             );
         }
 
+        if ($almacenId <= 0) {
+            throw new InvalidArgumentException(
+                'No se pudo identificar el almacén que surtirá la solicitud.'
+            );
+        }
+
         return $this
             ->resurtidoModel
-            ->buscarPorUltimosDigitos($codigo);
+            ->buscarPorUltimosDigitos(
+                $codigo,
+                $almacenId
+            );
+    }
+
+    // ==================================================
+    // CONFIRMAR CONTRASEÑA DEL GERENTE
+    // ==================================================
+
+    public function validarPasswordGerente(
+        int $usuarioId,
+        string $password
+    ): bool {
+        if ($usuarioId <= 0 || $password === '') {
+            return false;
+        }
+
+        $sql = "
+            SELECT
+                password,
+                rol,
+                estado
+            FROM usuarios
+            WHERE id = :usuario_id
+            LIMIT 1
+        ";
+
+        $stmt = $this->db->prepare($sql);
+
+        $stmt->execute([
+            ':usuario_id' => $usuarioId
+        ]);
+
+        $usuario = $stmt->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!$usuario) {
+            return false;
+        }
+
+        $rol = strtoupper(
+            trim((string) ($usuario['rol'] ?? ''))
+        );
+
+        $activo = (int) (
+            $usuario['estado'] ?? 0
+        ) === 1;
+
+        $hash = (string) (
+            $usuario['password'] ?? ''
+        );
+
+        return (
+            $rol === 'GERENTE'
+            && $activo
+            && $hash !== ''
+            && password_verify($password, $hash)
+        );
     }
 
     // ==================================================

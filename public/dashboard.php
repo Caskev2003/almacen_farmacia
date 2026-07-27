@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 require_once __DIR__ . '/../app/helpers/auth.php';
 require_once __DIR__ . '/../app/helpers/utils.php';
 require_once __DIR__ . '/../app/controllers/DashboardController.php';
@@ -8,27 +10,115 @@ requireLogin();
 
 date_default_timezone_set('America/Mexico_City');
 
-$controller = new DashboardController();
+$periodosPermitidos = [
+    'hoy',
+    'semana',
+    'mes',
+    'anio'
+];
 
-$periodo = $_GET['periodo'] ?? 'hoy';
+$periodoSolicitado = strtolower(
+    trim((string) ($_GET['periodo'] ?? 'hoy'))
+);
 
-$indicadores = $controller->getIndicadores($periodo);
+$periodo = in_array(
+    $periodoSolicitado,
+    $periodosPermitidos,
+    true
+) ? $periodoSolicitado : 'hoy';
 
-$comparativos = $controller->getComparativoIndicadores();
+$errorDashboard = '';
 
-$alertas = $controller->getAlertasInteligentes();
+$indicadores = [];
+$comparativos = [];
+$alertas = [];
+$metricasInteligentes = [];
+$topProductosVendidos = [];
+$productosCriticos = [];
+$movimientos = [];
+$ubicaciones = [];
+$documentosMasUsados = [];
 
-$metricasInteligentes = $controller->getMetricasInteligentes();
+$controller = null;
 
-$topProductosVendidos = $controller->getTopProductosVendidos(10);
+try {
+    $controller = new DashboardController();
 
-$productosCriticos = $controller->getProductosCriticos(12);
+    $indicadores =
+        $controller->getIndicadores($periodo);
 
-$movimientos = $controller->getMovimientosRecientes(10);
+    $comparativos =
+        $controller->getComparativoIndicadores();
 
-$ubicaciones = $controller->getTopUbicaciones(10);
+    $alertas =
+        $controller->getAlertasInteligentes();
 
-$documentosMasUsados = $controller->getDocumentosMasUsados(5);
+    $metricasInteligentes =
+        $controller->getMetricasInteligentes();
+
+    $topProductosVendidos =
+        $controller->getTopProductosVendidos(10);
+
+    $productosCriticos =
+        $controller->getProductosCriticos(12);
+
+    $movimientos =
+        $controller->getMovimientosRecientes(10);
+
+    $ubicaciones =
+        $controller->getTopUbicaciones(10);
+
+    $documentosMasUsados =
+        $controller->getDocumentosMasUsados(5);
+} catch (Throwable $e) {
+    error_log(
+        'Error al cargar el dashboard: '
+        . $e->getMessage()
+    );
+
+    $errorDashboard =
+        'No fue posible cargar todos los datos del dashboard.';
+}
+
+$indicadores = is_array($indicadores)
+    ? $indicadores
+    : [];
+
+$comparativos = is_array($comparativos)
+    ? $comparativos
+    : [];
+
+$alertas = is_array($alertas)
+    ? $alertas
+    : [];
+
+$metricasInteligentes =
+    is_array($metricasInteligentes)
+        ? $metricasInteligentes
+        : [];
+
+$topProductosVendidos =
+    is_array($topProductosVendidos)
+        ? $topProductosVendidos
+        : [];
+
+$productosCriticos =
+    is_array($productosCriticos)
+        ? $productosCriticos
+        : [];
+
+$movimientos = is_array($movimientos)
+    ? $movimientos
+    : [];
+
+$ubicaciones = is_array($ubicaciones)
+    ? $ubicaciones
+    : [];
+
+$documentosMasUsados =
+    is_array($documentosMasUsados)
+        ? $documentosMasUsados
+        : [];
 
 $moduleCss = 'dashboard';
 
@@ -37,8 +127,6 @@ include __DIR__ . '/../app/views/layouts/header.php';
 $totalProductos = (int)($indicadores['total_productos'] ?? 0);
 
 $stockCorrecto = (int)($indicadores['stock_correcto'] ?? 0);
-
-$enStock = (int)($indicadores['en_stock'] ?? 0);
 
 $bajoStock = (int)($indicadores['bajo_stock'] ?? 0);
 
@@ -80,6 +168,14 @@ $documentoData = array_map(
     'intval',
     array_column($documentosMasUsados, 'total')
 );
+
+$jsonSeguro =
+    JSON_UNESCAPED_UNICODE
+    | JSON_HEX_TAG
+    | JSON_HEX_AMP
+    | JSON_HEX_APOS
+    | JSON_HEX_QUOT
+    | JSON_INVALID_UTF8_SUBSTITUTE;
 
 ?>
 
@@ -141,6 +237,7 @@ $documentoData = array_map(
                     <select
                         name="periodo"
                         class="dashboard-filter"
+                        aria-label="Seleccionar periodo del dashboard"
                         onchange="this.form.submit()"
                     >
                         <option value="hoy" <?= $periodo === 'hoy' ? 'selected' : '' ?>>
@@ -172,6 +269,22 @@ $documentoData = array_map(
 
         </div>
 
+        <?php if ($errorDashboard !== ''): ?>
+
+            <div
+                class="alert-card danger"
+                role="alert"
+            >
+                <div class="alert-icon">!</div>
+
+                <div class="alert-content">
+                    <strong>Error al cargar información</strong>
+                    <span><?= e($errorDashboard) ?></span>
+                </div>
+            </div>
+
+        <?php endif; ?>
+
         <?php if (!empty($alertas)): ?>
 
             <div class="alert-grid">
@@ -179,17 +292,21 @@ $documentoData = array_map(
                 <?php foreach ($alertas as $alerta): ?>
 
                     <a
-                        href="<?= e($alerta['link']) ?>"
-                        class="alert-card <?= e($alerta['tipo']) ?>"
+                        href="<?= e($alerta['link'] ?? '#') ?>"
+                        class="alert-card <?= e($alerta['tipo'] ?? 'neutral') ?>"
                     >
                         <div class="alert-icon">
-                            <?= e($alerta['icono']) ?>
+                            <?= e($alerta['icono'] ?? '!') ?>
                         </div>
 
                         <div class="alert-content">
-                            <strong><?= e($alerta['titulo']) ?></strong>
+                            <strong>
+                                <?= e($alerta['titulo'] ?? 'Aviso') ?>
+                            </strong>
 
-                            <span><?= e($alerta['texto']) ?></span>
+                            <span>
+                                <?= e($alerta['texto'] ?? '') ?>
+                            </span>
                         </div>
                     </a>
 
@@ -245,21 +362,25 @@ $documentoData = array_map(
 
             </div>
 
-           <?php foreach ($metricasInteligentes as $metrica): ?>
+            <?php foreach ($metricasInteligentes as $metrica): ?>
 
-    <div class="metric-card intelligent hover-card">
+                <div class="metric-card intelligent hover-card">
 
-        <span><?= e($metrica['titulo']) ?></span>
+                    <span>
+                        <?= e($metrica['titulo'] ?? '') ?>
+                    </span>
 
-        <strong class="metric-smart-text">
-            <?= e($metrica['principal']) ?>
-        </strong>
+                    <strong class="metric-smart-text">
+                        <?= e($metrica['principal'] ?? '') ?>
+                    </strong>
 
-        <small><?= e($metrica['detalle']) ?></small>
+                    <small>
+                        <?= e($metrica['detalle'] ?? '') ?>
+                    </small>
 
-    </div>
+                </div>
 
-<?php endforeach; ?>
+            <?php endforeach; ?>
 
         </div>
 
@@ -273,7 +394,11 @@ $documentoData = array_map(
                 </div>
 
                 <div class="chart-box">
-                    <canvas id="stockChart"></canvas>
+                    <canvas
+                        id="stockChart"
+                        role="img"
+                        aria-label="Gráfica del estado del inventario"
+                    ></canvas>
                 </div>
 
             </div>
@@ -286,7 +411,11 @@ $documentoData = array_map(
                 </div>
 
                 <div class="chart-box">
-                    <canvas id="movimientosChart"></canvas>
+                    <canvas
+                        id="movimientosChart"
+                        role="img"
+                        aria-label="Gráfica de entradas y salidas"
+                    ></canvas>
                 </div>
 
             </div>
@@ -299,7 +428,11 @@ $documentoData = array_map(
                 </div>
 
                 <div class="chart-box">
-                    <canvas id="ubicacionesChart"></canvas>
+                    <canvas
+                        id="ubicacionesChart"
+                        role="img"
+                        aria-label="Gráfica de ubicaciones con más piezas"
+                    ></canvas>
                 </div>
 
             </div>
@@ -312,73 +445,84 @@ $documentoData = array_map(
                 </div>
 
                 <div class="chart-box">
-                    <canvas id="documentosChart"></canvas>
+                    <canvas
+                        id="documentosChart"
+                        role="img"
+                        aria-label="Gráfica de documentos más utilizados"
+                    ></canvas>
                 </div>
 
             </div>
 
         </div>
-<div class="panel-card top-products-panel">
 
-    <div class="panel-header">
+        <div class="panel-card top-products-panel">
 
-        <div>
-            <h3>Top 10 productos más vendidos</h3>
+            <div class="panel-header">
 
-            <p>
-                Productos con más salidas registradas.
-            </p>
-        </div>
+                <div>
+                    <h3>Top 10 productos más vendidos</h3>
 
-    </div>
-
-    <div class="top-products-list">
-
-        <?php if (!empty($topProductosVendidos)): ?>
-
-            <?php foreach ($topProductosVendidos as $index => $producto): ?>
-
-                <div class="top-product-item">
-
-                    <div class="top-product-number">
-                        <?= $index + 1 ?>
-                    </div>
-
-                    <div class="top-product-info">
-
-                        <strong>
-                            <?= e($producto['descripcion'] ?? '') ?>
-                        </strong>
-
-                        <span>
-                            <?= e($producto['codigo'] ?? '') ?>
-                        </span>
-
-                    </div>
-
-                    <div class="top-product-total">
-
-                        <?= number_format((int)($producto['total'] ?? 0)) ?>
-
-                        <small>piezas</small>
-
-                    </div>
-
+                    <p>
+                        Productos con más salidas registradas.
+                    </p>
                 </div>
 
-            <?php endforeach; ?>
+            </div>
 
-        <?php else: ?>
+            <div class="top-products-list">
 
-            <p class="empty-panel">
-                No hay productos vendidos.
-            </p>
+                <?php if (!empty($topProductosVendidos)): ?>
 
-        <?php endif; ?>
+                    <?php foreach ($topProductosVendidos as $index => $producto): ?>
 
-    </div>
+                        <div class="top-product-item">
 
-</div>
+                            <div class="top-product-number">
+                                <?= $index + 1 ?>
+                            </div>
+
+                            <div class="top-product-info">
+
+                                <strong>
+                                    <?= e($producto['descripcion'] ?? '') ?>
+                                </strong>
+
+                                <span>
+                                    <?= e($producto['codigo'] ?? '') ?>
+                                </span>
+
+                            </div>
+
+                            <div class="top-product-total">
+
+                                <?= number_format(
+                                    (int) (
+                                        $producto['total']
+                                        ?? 0
+                                    )
+                                ) ?>
+
+                                <small>piezas</small>
+
+                            </div>
+
+                        </div>
+
+                    <?php endforeach; ?>
+
+                <?php else: ?>
+
+                    <p class="empty-panel">
+                        No hay productos vendidos.
+                    </p>
+
+                <?php endif; ?>
+
+            </div>
+
+        </div>
+
         <div class="dashboard-panels">
 
             <div class="panel-card">
@@ -430,8 +574,26 @@ $documentoData = array_map(
                                     <?php
                                     $estado = $controller->getEstadoProducto($item);
 
-                                    $porcentaje =
-                                        $controller->getPorcentajeStockProducto($item);
+                                    $porcentaje = max(
+                                        0,
+                                        min(
+                                            100,
+                                            (float) $controller
+                                                ->getPorcentajeStockProducto(
+                                                    $item
+                                                )
+                                        )
+                                    );
+
+                                    $claseEstado = (string) (
+                                        $estado['clase']
+                                        ?? 'badge-danger'
+                                    );
+
+                                    $textoEstado = (string) (
+                                        $estado['texto']
+                                        ?? 'SIN INFORMACIÓN'
+                                    );
                                     ?>
 
                                     <tr class="hover-row">
@@ -458,8 +620,10 @@ $documentoData = array_map(
 
                                                 <div
                                                     class="stock-progress-bar
-                                                    <?= e($estado['clase']) ?>"
-                                                    style="width: <?= $porcentaje ?>%"
+                                                    <?= e($claseEstado) ?>"
+                                                    style="width: <?=
+                                                        e((string) $porcentaje)
+                                                    ?>%"
                                                 ></div>
 
                                             </div>
@@ -468,8 +632,8 @@ $documentoData = array_map(
 
                                         <td>
 
-                                            <span class="badge-status <?= e($estado['clase']) ?>">
-                                                <?= e($estado['texto']) ?>
+                                            <span class="badge-status <?= e($claseEstado) ?>">
+                                                <?= e($textoEstado) ?>
                                             </span>
 
                                         </td>
@@ -522,16 +686,51 @@ $documentoData = array_map(
 
                         <?php foreach ($movimientos as $mov): ?>
 
+                            <?php
+                            $tipoMovimiento = strtoupper(
+                                trim(
+                                    (string) (
+                                        $mov['tipo_movimiento']
+                                        ?? ''
+                                    )
+                                )
+                            );
+
+                            $claseMovimiento =
+                                $tipoMovimiento === 'ENTRADA'
+                                    ? 'entrada'
+                                    : (
+                                        $tipoMovimiento === 'SALIDA'
+                                            ? 'salida'
+                                            : ''
+                                    );
+
+                            $fechaMovimiento = '';
+
+                            if (!empty($mov['fecha'])) {
+                                $timestamp = strtotime(
+                                    (string) $mov['fecha']
+                                );
+
+                                if ($timestamp !== false) {
+                                    $fechaMovimiento = date(
+                                        'd/m/Y H:i',
+                                        $timestamp
+                                    );
+                                }
+                            }
+                            ?>
+
                             <div class="mov-item hover-card">
 
-                                <div class="mov-icon
-                                    <?= strtolower(e($mov['tipo_movimiento'] ?? '')) ?>
-                                ">
+                                <div class="mov-icon <?= e($claseMovimiento) ?>">
 
-                                    <?php if (($mov['tipo_movimiento'] ?? '') === 'ENTRADA'): ?>
+                                    <?php if ($tipoMovimiento === 'ENTRADA'): ?>
                                         ⬆
-                                    <?php else: ?>
+                                    <?php elseif ($tipoMovimiento === 'SALIDA'): ?>
                                         ⬇
+                                    <?php else: ?>
+                                        •
                                     <?php endif; ?>
 
                                 </div>
@@ -544,10 +743,12 @@ $documentoData = array_map(
                                             <?= e($mov['folio'] ?? '') ?>
                                         </span>
 
-                                        <span class="mov-type
-                                            <?= strtolower(e($mov['tipo_movimiento'] ?? '')) ?>
-                                        ">
-                                            <?= e($mov['tipo_movimiento'] ?? '') ?>
+                                        <span class="mov-type <?= e($claseMovimiento) ?>">
+                                            <?= e(
+                                                $tipoMovimiento !== ''
+                                                    ? $tipoMovimiento
+                                                    : 'MOVIMIENTO'
+                                            ) ?>
                                         </span>
 
                                     </div>
@@ -565,15 +766,7 @@ $documentoData = array_map(
                                     </div>
 
                                     <span class="mov-date">
-
-                                        <?= !empty($mov['fecha'])
-                                            ? date(
-                                                'd/m/Y H:i',
-                                                strtotime($mov['fecha'])
-                                            )
-                                            : ''
-                                        ?>
-
+                                        <?= e($fechaMovimiento) ?>
                                     </span>
 
                                 </div>
@@ -602,142 +795,265 @@ $documentoData = array_map(
 
 <script>
 
-const chartTextColor = '#374151';
+(function () {
+    'use strict';
 
-const chartGridColor = '#e5e7eb';
+    if (typeof Chart === 'undefined') {
+        console.error(
+            'No fue posible cargar Chart.js.'
+        );
 
-function crearGraficaBarras(id, labels, data, colores) {
+        return;
+    }
 
-    const canvas = document.getElementById(id);
+    const chartTextColor = '#374151';
+    const chartGridColor = '#e5e7eb';
 
-    if (!canvas) return;
+    const pantallaTablet =
+        window.matchMedia('(max-width: 900px)');
 
-    new Chart(canvas, {
+    const movimientoReducido =
+        window.matchMedia(
+            '(prefers-reduced-motion: reduce)'
+        );
 
-        type: 'bar',
+    function recortarEtiqueta(
+        valor,
+        limite
+    ) {
+        const texto = String(valor ?? '');
 
-        data: {
+        return texto.length > limite
+            ? texto.slice(0, limite - 1) + '…'
+            : texto;
+    }
 
-            labels,
+    function crearGraficaBarras(
+        id,
+        labels,
+        data,
+        colores
+    ) {
+        const canvas =
+            document.getElementById(id);
 
-            datasets: [{
-
-                data,
-
-                backgroundColor: colores,
-
-                borderRadius: 10,
-
-                maxBarThickness: 40
-
-            }]
-        },
-
-        options: {
-
-            responsive: true,
-
-            maintainAspectRatio: false,
-
-            plugins: {
-
-                legend: {
-                    display: false
-                }
-
-            },
-
-            scales: {
-
-                y: {
-
-                    beginAtZero: true,
-
-                    ticks: {
-
-                        precision: 0,
-
-                        color: chartTextColor
-
-                    },
-
-                    grid: {
-                        color: chartGridColor
-                    }
-
-                },
-
-                x: {
-
-                    ticks: {
-                        color: chartTextColor
-                    },
-
-                    grid: {
-                        display: false
-                    }
-
-                }
-
-            }
-
+        if (!canvas) {
+            return;
         }
 
-    });
+        const etiquetas = Array.isArray(labels)
+            ? labels.map(function (label) {
+                return String(label ?? '');
+            })
+            : [];
 
-}
+        const valores = Array.isArray(data)
+            ? data.map(function (valor) {
+                const numero = Number(valor);
 
-crearGraficaBarras(
-    'stockChart',
-    ['Correcto', 'Sin existencia', 'Sin almacén'],
-    [
-        <?= $stockCorrecto ?>,
-        <?= $sinExistencia ?>,
-        <?= $sinAlmacen ?>
-    ],
-    ['#16a34a', '#dc2626', '#64748b']
-);
+                return Number.isFinite(numero)
+                    ? numero
+                    : 0;
+            })
+            : [];
 
-crearGraficaBarras(
-    'movimientosChart',
-    ['Entradas', 'Salidas'],
-    [
-        <?= $entradasHoy ?>,
-        <?= $salidasHoy ?>
-    ],
-    ['#2563eb', '#ef4444']
-);
+        const esTablet = pantallaTablet.matches;
 
-crearGraficaBarras(
-    'ubicacionesChart',
-    <?= json_encode($ubicacionLabels, JSON_UNESCAPED_UNICODE) ?>,
-    <?= json_encode($ubicacionData, JSON_UNESCAPED_UNICODE) ?>,
-    [
-        '#2563eb',
-        '#0ea5e9',
-        '#14b8a6',
-        '#22c55e',
-        '#84cc16',
-        '#f59e0b',
-        '#ef4444',
-        '#ec4899',
-        '#8b5cf6',
-        '#64748b'
-    ]
-);
+        new Chart(canvas, {
+            type: 'bar',
 
-crearGraficaBarras(
-    'documentosChart',
-    <?= json_encode($documentoLabels, JSON_UNESCAPED_UNICODE) ?>,
-    <?= json_encode($documentoData, JSON_UNESCAPED_UNICODE) ?>,
-    [
-        '#ec4899',
-        '#2563eb',
-        '#14b8a6',
-        '#f59e0b',
-        '#8b5cf6'
-    ]
-);
+            data: {
+                labels: etiquetas,
+
+                datasets: [{
+                    data: valores,
+                    backgroundColor: colores,
+                    borderRadius: 10,
+                    borderSkipped: false,
+                    maxBarThickness:
+                        esTablet ? 34 : 40
+                }]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                resizeDelay: 150,
+
+                devicePixelRatio: Math.min(
+                    window.devicePixelRatio || 1,
+                    2
+                ),
+
+                animation: movimientoReducido.matches
+                    ? false
+                    : {
+                        duration: 450
+                    },
+
+                interaction: {
+                    mode: 'nearest',
+                    intersect: false
+                },
+
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+
+                    tooltip: {
+                        displayColors: true,
+
+                        callbacks: {
+                            title: function (elementos) {
+                                if (!elementos.length) {
+                                    return '';
+                                }
+
+                                return etiquetas[
+                                    elementos[0].dataIndex
+                                ] ?? '';
+                            }
+                        }
+                    }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true,
+
+                        ticks: {
+                            precision: 0,
+                            color: chartTextColor,
+                            font: {
+                                size: esTablet ? 12 : 11
+                            }
+                        },
+
+                        grid: {
+                            color: chartGridColor
+                        }
+                    },
+
+                    x: {
+                        ticks: {
+                            color: chartTextColor,
+                            autoSkip: true,
+                            maxTicksLimit:
+                                esTablet ? 6 : 10,
+                            maxRotation: 0,
+                            minRotation: 0,
+
+                            font: {
+                                size: esTablet ? 12 : 11
+                            },
+
+                            callback: function (
+                                valor,
+                                indice
+                            ) {
+                                const etiqueta =
+                                    typeof this.getLabelForValue
+                                        === 'function'
+                                        ? this.getLabelForValue(
+                                            valor
+                                        )
+                                        : etiquetas[indice];
+
+                                return recortarEtiqueta(
+                                    etiqueta,
+                                    esTablet ? 18 : 28
+                                );
+                            }
+                        },
+
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    crearGraficaBarras(
+        'stockChart',
+        [
+            'Correcto',
+            'Sin existencia',
+            'Sin almacén'
+        ],
+        [
+            <?= $stockCorrecto ?>,
+            <?= $sinExistencia ?>,
+            <?= $sinAlmacen ?>
+        ],
+        [
+            '#16a34a',
+            '#dc2626',
+            '#64748b'
+        ]
+    );
+
+    crearGraficaBarras(
+        'movimientosChart',
+        [
+            'Entradas',
+            'Salidas'
+        ],
+        [
+            <?= $entradasHoy ?>,
+            <?= $salidasHoy ?>
+        ],
+        [
+            '#2563eb',
+            '#ef4444'
+        ]
+    );
+
+    crearGraficaBarras(
+        'ubicacionesChart',
+        <?= json_encode(
+            array_values($ubicacionLabels),
+            $jsonSeguro
+        ) ?>,
+        <?= json_encode(
+            array_values($ubicacionData),
+            $jsonSeguro
+        ) ?>,
+        [
+            '#2563eb',
+            '#0ea5e9',
+            '#14b8a6',
+            '#22c55e',
+            '#84cc16',
+            '#f59e0b',
+            '#ef4444',
+            '#ec4899',
+            '#8b5cf6',
+            '#64748b'
+        ]
+    );
+
+    crearGraficaBarras(
+        'documentosChart',
+        <?= json_encode(
+            array_values($documentoLabels),
+            $jsonSeguro
+        ) ?>,
+        <?= json_encode(
+            array_values($documentoData),
+            $jsonSeguro
+        ) ?>,
+        [
+            '#ec4899',
+            '#2563eb',
+            '#14b8a6',
+            '#f59e0b',
+            '#8b5cf6'
+        ]
+    );
+}());
 
 </script>
 

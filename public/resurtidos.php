@@ -218,7 +218,8 @@ if ($action !== '') {
         try {
             $productos =
                 $controller->buscarPorUltimosDigitos(
-                    $codigo
+                    $codigo,
+                    $almacenId
                 );
 
             responderJson(
@@ -277,6 +278,10 @@ if ($action !== '') {
 
         $productos = $datos['productos'] ?? [];
 
+        $passwordGerente = (string) (
+            $datos['password_gerente'] ?? ''
+        );
+
         $observaciones = trim(
             (string) (
                 $datos['observaciones'] ?? ''
@@ -293,6 +298,21 @@ if ($action !== '') {
         }
 
         try {
+            if (
+                $rol === 'GERENTE'
+                && !$controller->validarPasswordGerente(
+                    $usuarioId,
+                    $passwordGerente
+                )
+            ) {
+                responderJson(
+                    false,
+                    'La contraseña del gerente es incorrecta.',
+                    [],
+                    403
+                );
+            }
+
             $resultado = $controller->crear([
                 'usuario_id' => $usuarioId,
                 'almacen_id' => $almacenId,
@@ -304,6 +324,13 @@ if ($action !== '') {
                 true,
                 'La solicitud de resurtido se registró correctamente.',
                 $resultado
+            );
+        } catch (InvalidArgumentException $e) {
+            responderJson(
+                false,
+                $e->getMessage(),
+                [],
+                422
             );
         } catch (Throwable $e) {
             error_log(
@@ -994,6 +1021,99 @@ require __DIR__
 
 </div>
 
+<?php if ($rol === 'GERENTE'): ?>
+
+<!-- ===================================================
+     MODAL DE AUTORIZACIÓN DEL GERENTE
+==================================================== -->
+
+<div
+    id="passwordGerenteModal"
+    class="resurtido-modal"
+    aria-hidden="true"
+>
+
+    <div
+        class="resurtido-modal-contenido modal-password-contenido"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tituloPasswordGerente"
+    >
+
+        <div class="resurtido-modal-encabezado">
+
+            <h2 id="tituloPasswordGerente">
+                Autorizar solicitud
+            </h2>
+
+            <button
+                type="button"
+                id="cerrarPasswordGerente"
+                class="resurtido-modal-cerrar"
+                aria-label="Cerrar"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <div class="resurtido-modal-cuerpo">
+
+            <p class="password-gerente-ayuda">
+                El gerente debe escribir su contraseña de
+                inicio de sesión para autorizar el envío.
+            </p>
+
+            <div class="campo-password">
+
+                <label for="passwordGerente">
+                    Contraseña del gerente
+                </label>
+
+                <input
+                    type="password"
+                    id="passwordGerente"
+                    maxlength="255"
+                    autocomplete="off"
+                    placeholder="Escriba la contraseña"
+                >
+
+            </div>
+
+            <div
+                id="errorPasswordGerente"
+                class="password-gerente-error"
+                role="alert"
+            ></div>
+
+        </div>
+
+        <div class="resurtido-modal-acciones">
+
+            <button
+                type="button"
+                id="cancelarPasswordGerente"
+                class="btn-cancelar"
+            >
+                Cancelar
+            </button>
+
+            <button
+                type="button"
+                id="confirmarPasswordGerente"
+                class="btn-guardar"
+            >
+                Autorizar y enviar
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+<?php endif; ?>
+
 <script>
     'use strict';
 
@@ -1029,6 +1149,26 @@ require __DIR__
     const contenidoModal =
         document.getElementById(
             'contenidoModalResurtido'
+        );
+
+    const modalPasswordGerente =
+        document.getElementById(
+            'passwordGerenteModal'
+        );
+
+    const inputPasswordGerente =
+        document.getElementById(
+            'passwordGerente'
+        );
+
+    const errorPasswordGerente =
+        document.getElementById(
+            'errorPasswordGerente'
+        );
+
+    const botonConfirmarPassword =
+        document.getElementById(
+            'confirmarPasswordGerente'
         );
 
     // ==================================================
@@ -1141,11 +1281,28 @@ require __DIR__
         }
 
         productos.forEach(function (producto) {
+            const existenciaDisponible =
+                obtenerExistenciaDisponible(
+                    producto
+                );
+
+            const existenciaBodega =
+                normalizarCantidadVisual(
+                    producto.existencia_bodega
+                );
+
+            const cantidadReservada =
+                normalizarCantidadVisual(
+                    producto.cantidad_reservada
+                );
+
             const elemento =
                 document.createElement('button');
 
             elemento.type = 'button';
             elemento.className = 'resultado-producto';
+            elemento.disabled =
+                existenciaDisponible <= 0;
 
             elemento.innerHTML = `
                 <strong>
@@ -1163,6 +1320,37 @@ require __DIR__
                         producto.unidad ?? 'PIEZA'
                     )}
                 </span>
+
+                <span class="existencia-disponible">
+                    Existencia física en bodega:
+                    <strong>
+                        ${formatearCantidad(
+                            existenciaBodega
+                        )}
+                    </strong>
+                </span>
+
+                <span class="existencia-disponible">
+                    Disponible para solicitar:
+                    <strong>
+                        ${formatearCantidad(
+                            existenciaDisponible
+                        )}
+                    </strong>
+                </span>
+
+                ${cantidadReservada > 0
+                    ? `
+                        <span class="cantidad-reservada">
+                            Apartado en otras solicitudes:
+                            <strong>
+                                ${formatearCantidad(
+                                    cantidadReservada
+                                )}
+                            </strong>
+                        </span>
+                    `
+                    : ''}
             `;
 
             elemento.addEventListener(
@@ -1181,6 +1369,19 @@ require __DIR__
     // ==================================================
 
     function agregarProducto(producto) {
+        const existenciaDisponible =
+            obtenerExistenciaDisponible(
+                producto
+            );
+
+        if (existenciaDisponible <= 0) {
+            alert(
+                'Este producto no tiene existencia disponible en bodega.'
+            );
+
+            return;
+        }
+
         const existente = productosSolicitud.find(
             function (item) {
                 return Number(item.producto_id)
@@ -1189,6 +1390,17 @@ require __DIR__
         );
 
         if (existente) {
+            if (
+                existente.cantidad
+                >= existente.existencia_disponible
+            ) {
+                alert(
+                    'Ya alcanzó la existencia disponible de este producto.'
+                );
+
+                return;
+            }
+
             existente.cantidad += 1;
         } else {
             productosSolicitud.push({
@@ -1196,7 +1408,17 @@ require __DIR__
                 codigo: producto.codigo,
                 descripcion: producto.descripcion,
                 unidad: producto.unidad ?? 'PIEZA',
-                cantidad: 1
+                cantidad: 1,
+                existencia_disponible:
+                    existenciaDisponible,
+                existencia_bodega:
+                    normalizarCantidadVisual(
+                        producto.existencia_bodega
+                    ),
+                cantidad_reservada:
+                    normalizarCantidadVisual(
+                        producto.cantidad_reservada
+                    )
             });
         }
 
@@ -1243,6 +1465,26 @@ require __DIR__
                             Unidad:
                             ${escaparHtml(producto.unidad)}
                         </span>
+
+                        <span class="existencia-disponible">
+                            Existencia física en bodega:
+                            <strong>
+                                ${formatearCantidad(
+                                    producto
+                                        .existencia_bodega
+                                )}
+                            </strong>
+                        </span>
+
+                        <span class="existencia-disponible">
+                            Disponible para solicitar:
+                            <strong>
+                                ${formatearCantidad(
+                                    producto
+                                        .existencia_disponible
+                                )}
+                            </strong>
+                        </span>
                     </div>
 
                     <div class="producto-cantidad">
@@ -1254,6 +1496,10 @@ require __DIR__
                             type="number"
                             min="1"
                             step="1"
+                            max="${
+                                producto
+                                    .existencia_disponible
+                            }"
                             value="${producto.cantidad}"
                             data-indice="${indice}"
                             class="cantidad-producto"
@@ -1287,11 +1533,33 @@ require __DIR__
                             this.value
                         );
 
-                        productosSolicitud[indice].cantidad =
+                        const existenciaDisponible =
+                            Number(
+                                productosSolicitud[indice]
+                                    .existencia_disponible
+                            );
+
+                        let cantidadValida =
                             Number.isFinite(cantidad)
                             && cantidad > 0
-                                ? cantidad
+                                ? Math.floor(cantidad)
                                 : 1;
+
+                        if (
+                            cantidadValida
+                            > existenciaDisponible
+                        ) {
+                            alert(
+                                'La cantidad no puede superar '
+                                + 'la existencia disponible en bodega.'
+                            );
+
+                            cantidadValida =
+                                existenciaDisponible;
+                        }
+
+                        productosSolicitud[indice].cantidad =
+                            cantidadValida;
 
                         this.value =
                             productosSolicitud[indice]
@@ -1339,6 +1607,42 @@ require __DIR__
             return;
         }
 
+        const productoSinExistencia =
+            productosSolicitud.find(
+                function (producto) {
+                    const cantidad = Number(
+                        producto.cantidad
+                    );
+
+                    const existencia = Number(
+                        producto.existencia_disponible
+                    );
+
+                    return (
+                        !Number.isFinite(cantidad)
+                        || cantidad <= 0
+                        || !Number.isFinite(existencia)
+                        || cantidad > existencia
+                    );
+                }
+            );
+
+        if (productoSinExistencia) {
+            alert(
+                'Revise la cantidad de '
+                + productoSinExistencia.descripcion
+                + '. No puede superar la existencia '
+                + 'disponible en bodega.'
+            );
+
+            return;
+        }
+
+        if (rolActual === 'GERENTE') {
+            abrirModalPasswordGerente();
+            return;
+        }
+
         if (
             !confirm(
                 '¿Desea enviar esta solicitud de resurtido?'
@@ -1347,8 +1651,24 @@ require __DIR__
             return;
         }
 
+        await enviarResurtido('');
+    }
+
+    async function enviarResurtido(
+        passwordGerente
+    ) {
         botonGuardar.disabled = true;
         botonGuardar.textContent = 'Enviando...';
+
+        if (botonConfirmarPassword) {
+            botonConfirmarPassword.disabled = true;
+            botonConfirmarPassword.textContent =
+                'Autorizando...';
+        }
+
+        if (errorPasswordGerente) {
+            errorPasswordGerente.textContent = '';
+        }
 
         try {
             const respuesta = await fetch(
@@ -1361,6 +1681,9 @@ require __DIR__
                     },
                     body: JSON.stringify({
                         csrf_token: csrfToken,
+
+                        password_gerente:
+                            passwordGerente,
 
                         observaciones:
                             document
@@ -1390,13 +1713,66 @@ require __DIR__
             window.location.href =
                 'resurtidos.php';
         } catch (error) {
-            alert(error.message);
+            if (
+                rolActual === 'GERENTE'
+                && modalPasswordGerente
+                    ?.classList
+                    .contains('activo')
+                && errorPasswordGerente
+            ) {
+                errorPasswordGerente.textContent =
+                    error.message;
+
+                inputPasswordGerente?.focus();
+                inputPasswordGerente?.select();
+            } else {
+                alert(error.message);
+            }
 
             botonGuardar.disabled = false;
             botonGuardar.textContent =
                 'Enviar solicitud';
+
+            if (botonConfirmarPassword) {
+                botonConfirmarPassword.disabled =
+                    false;
+
+                botonConfirmarPassword.textContent =
+                    'Autorizar y enviar';
+            }
         }
     }
+
+    botonConfirmarPassword?.addEventListener(
+        'click',
+        async function () {
+            const password =
+                inputPasswordGerente?.value
+                ?? '';
+
+            if (password === '') {
+                if (errorPasswordGerente) {
+                    errorPasswordGerente.textContent =
+                        'Escriba la contraseña del gerente.';
+                }
+
+                inputPasswordGerente?.focus();
+                return;
+            }
+
+            await enviarResurtido(password);
+        }
+    );
+
+    inputPasswordGerente?.addEventListener(
+        'keydown',
+        function (evento) {
+            if (evento.key === 'Enter') {
+                evento.preventDefault();
+                botonConfirmarPassword?.click();
+            }
+        }
+    );
 
     // ==================================================
     // VER RESURTIDO
@@ -1667,6 +2043,61 @@ require __DIR__
         document.body.style.overflow = '';
     }
 
+    function abrirModalPasswordGerente() {
+        if (!modalPasswordGerente) {
+            return;
+        }
+
+        if (inputPasswordGerente) {
+            inputPasswordGerente.value = '';
+        }
+
+        if (errorPasswordGerente) {
+            errorPasswordGerente.textContent = '';
+        }
+
+        modalPasswordGerente.classList.add('activo');
+
+        modalPasswordGerente.setAttribute(
+            'aria-hidden',
+            'false'
+        );
+
+        document.body.style.overflow = 'hidden';
+
+        window.setTimeout(function () {
+            inputPasswordGerente?.focus();
+        }, 100);
+    }
+
+    function cerrarModalPasswordGerente() {
+        if (
+            botonConfirmarPassword
+            && botonConfirmarPassword.disabled
+        ) {
+            return;
+        }
+
+        modalPasswordGerente?.classList.remove(
+            'activo'
+        );
+
+        modalPasswordGerente?.setAttribute(
+            'aria-hidden',
+            'true'
+        );
+
+        if (inputPasswordGerente) {
+            inputPasswordGerente.value = '';
+        }
+
+        if (errorPasswordGerente) {
+            errorPasswordGerente.textContent = '';
+        }
+
+        document.body.style.overflow = '';
+    }
+
     document
         .getElementById('cerrarModalResurtido')
         ?.addEventListener(
@@ -1692,9 +2123,42 @@ require __DIR__
         }
     );
 
+    document
+        .getElementById('cerrarPasswordGerente')
+        ?.addEventListener(
+            'click',
+            cerrarModalPasswordGerente
+        );
+
+    document
+        .getElementById('cancelarPasswordGerente')
+        ?.addEventListener(
+            'click',
+            cerrarModalPasswordGerente
+        );
+
+    modalPasswordGerente?.addEventListener(
+        'click',
+        function (evento) {
+            if (evento.target === modalPasswordGerente) {
+                cerrarModalPasswordGerente();
+            }
+        }
+    );
+
     document.addEventListener(
         'keydown',
         function (evento) {
+            if (
+                evento.key === 'Escape'
+                && modalPasswordGerente
+                    ?.classList
+                    .contains('activo')
+            ) {
+                cerrarModalPasswordGerente();
+                return;
+            }
+
             if (
                 evento.key === 'Escape'
                 && modal?.classList.contains('activo')
@@ -1707,6 +2171,24 @@ require __DIR__
     // ==================================================
     // UTILIDADES
     // ==================================================
+
+    function obtenerExistenciaDisponible(
+        producto
+    ) {
+        return normalizarCantidadVisual(
+            producto?.existencia_disponible
+            ?? producto?.existencia_bodega
+            ?? 0
+        );
+    }
+
+    function normalizarCantidadVisual(valor) {
+        const existencia = Number(valor);
+
+        return Number.isFinite(existencia)
+            ? Math.max(0, existencia)
+            : 0;
+    }
 
     function formatearCantidad(valor) {
         const numero = Number(valor);

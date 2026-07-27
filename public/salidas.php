@@ -328,14 +328,20 @@ $tipoSalidaSeleccionado = $modoEdicion
 
 $observacionesValor = $modoEdicion ? $observacionesLimpiasEditar : '';
 
-if ($modoResurtido) {
-    $observacionesValor = 'Surtido de la solicitud ' . (string)($resurtido['folio'] ?? '')
-        . ' para ' . (string)($resurtido['almacen_nombre'] ?? 'sucursal')
-        . '. Solicitó: ' . (string)($resurtido['solicitante_nombre'] ?? '-') . '.';
-
-    if (!empty($resurtido['observaciones'])) {
-        $observacionesValor .= ' Nota: ' . (string)$resurtido['observaciones'];
-    }
+/*
+ * En una salida nueva, incluso cuando proviene de un
+ * resurtido, el campo Observaciones debe aparecer vacío.
+ *
+ * Si el formulario fue enviado y ocurrió un error,
+ * se conserva únicamente lo escrito por el usuario.
+ */
+if (
+    !$modoEdicion
+    && $_SERVER['REQUEST_METHOD'] === 'POST'
+) {
+    $observacionesValor = trim(
+        (string) ($_POST['observaciones'] ?? '')
+    );
 }
 
 /* ---------------------------------------------------------

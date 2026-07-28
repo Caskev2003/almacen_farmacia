@@ -8,22 +8,11 @@ requireLogin();
 
 $user = currentUser();
 
+$controller = new InventarioFisicoVirtualController();
+$controller->verificarAcceso();
+
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 $almacenSesion = (int)($user['almacen_id'] ?? 0);
-
-$puedeEntrar =
-    $rolUsuario === 'ADMINISTRADOR'
-    || $rolUsuario === 'ENCARGADO'
-    || $rolUsuario === 'ALMACEN'
-    || $rolUsuario === 'GERENTE'
-    || in_array($almacenSesion, [1, 2, 3], true);
-
-if (!$puedeEntrar) {
-    header('Location: dashboard.php');
-    exit;
-}
-
-$controller = new InventarioFisicoVirtualController();
 
 $mensaje = '';
 $error = '';

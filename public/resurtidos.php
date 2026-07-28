@@ -27,6 +27,31 @@ $almacenId = (int) (
     $user['almacen_id'] ?? 0
 );
 
+$tipoSolicitudModulo = strtoupper(
+    trim((string) ($tipoSolicitudModulo ?? 'RESURTIDO'))
+);
+
+if (!in_array($tipoSolicitudModulo, ['RESURTIDO', 'TICKET'], true)) {
+    $tipoSolicitudModulo = 'RESURTIDO';
+}
+
+$esModuloTicket = $tipoSolicitudModulo === 'TICKET';
+$endpointModulo = $esModuloTicket
+    ? 'tickets.php'
+    : 'resurtidos.php';
+$moduloAuditoria = $esModuloTicket
+    ? 'Tickets'
+    : 'Resurtidos';
+$nombreSolicitud = $esModuloTicket
+    ? 'ticket'
+    : 'resurtido';
+$nombreSolicitudes = $esModuloTicket
+    ? 'tickets'
+    : 'resurtidos';
+$puedeCrearSolicitud = $esModuloTicket
+    ? $rol === 'GERENTE'
+    : in_array($rol, ['GERENTE', 'ADMINISTRADOR'], true);
+
 $rolesPermitidos = [
     'ADMINISTRADOR',
     'GERENTE',
@@ -38,13 +63,29 @@ if (!in_array($rol, $rolesPermitidos, true)) {
     exit('Acceso denegado.');
 }
 
-if (empty($_SESSION['csrf_resurtidos'])) {
-    $_SESSION['csrf_resurtidos'] = bin2hex(
+if (
+    $esModuloTicket
+    && $rol !== 'ADMINISTRADOR'
+    && !(
+        $almacenId === 1
+        && in_array($rol, ['GERENTE', 'ENCARGADO'], true)
+    )
+) {
+    http_response_code(403);
+    exit('El módulo Tickets es exclusivo de Ciudad Hidalgo.');
+}
+
+$csrfSessionKey = $esModuloTicket
+    ? 'csrf_tickets'
+    : 'csrf_resurtidos';
+
+if (empty($_SESSION[$csrfSessionKey])) {
+    $_SESSION[$csrfSessionKey] = bin2hex(
         random_bytes(32)
     );
 }
 
-$csrfToken = $_SESSION['csrf_resurtidos'];
+$csrfToken = $_SESSION[$csrfSessionKey];
 
 $controller = new ResurtidoController();
 
@@ -112,12 +153,14 @@ function leerJson(): array
 
 function validarTokenResurtidos(array $datos): void
 {
+    global $csrfSessionKey;
+
     $tokenRecibido = (string) (
         $datos['csrf_token'] ?? ''
     );
 
     $tokenSesion = (string) (
-        $_SESSION['csrf_resurtidos'] ?? ''
+        $_SESSION[$csrfSessionKey] ?? ''
     );
 
     if (
@@ -130,6 +173,24 @@ function validarTokenResurtidos(array $datos): void
             'La sesión de seguridad venció. Recargue la página.',
             [],
             419
+        );
+    }
+}
+
+function verificarTipoSolicitudModulo(
+    array $resurtido,
+    string $tipoSolicitudModulo
+): void {
+    $tipoRegistro = strtoupper(
+        trim((string) ($resurtido['tipo_solicitud'] ?? 'RESURTIDO'))
+    );
+
+    if ($tipoRegistro !== $tipoSolicitudModulo) {
+        responderJson(
+            false,
+            'La solicitud no pertenece a este módulo.',
+            [],
+            404
         );
     }
 }
@@ -223,7 +284,7 @@ if ($action !== '') {
                 );
 
             auditLog([
-                'modulo' => 'Resurtidos',
+                'modulo' => $moduloAuditoria,
                 'accion' => 'BUSQUEDA_PRODUCTO',
                 'entidad' => 'producto',
                 'descripcion' => 'Buscó productos cuyos códigos terminan en '
@@ -245,7 +306,8 @@ if ($action !== '') {
             );
         } catch (Throwable $e) {
             error_log(
-                'Error al buscar producto para resurtido: '
+                'Error al buscar producto para '
+                . $nombreSolicitud . ': '
                 . $e->getMessage()
             );
 
@@ -272,16 +334,11 @@ if ($action !== '') {
             );
         }
 
-        if (
-            !in_array(
-                $rol,
-                ['GERENTE', 'ADMINISTRADOR'],
-                true
-            )
-        ) {
+        if (!$puedeCrearSolicitud) {
             responderJson(
                 false,
-                'No tiene permisos para crear resurtidos.',
+                'No tiene permisos para crear '
+                . $nombreSolicitudes . '.',
                 [],
                 403
             );
@@ -301,6 +358,19 @@ if ($action !== '') {
                 $datos['observaciones'] ?? ''
             )
         );
+
+        $folioDocumento = strtoupper(
+            trim((string) ($datos['folio_documento'] ?? ''))
+        );
+
+        if ($esModuloTicket && $folioDocumento === '') {
+            responderJson(
+                false,
+                'El folio del ticket es obligatorio.',
+                [],
+                422
+            );
+        }
 
         if (!is_array($productos) || empty($productos)) {
             responderJson(
@@ -330,13 +400,16 @@ if ($action !== '') {
             $resultado = $controller->crear([
                 'usuario_id' => $usuarioId,
                 'almacen_id' => $almacenId,
+                'tipo_solicitud' => $tipoSolicitudModulo,
+                'folio_documento' => $folioDocumento,
                 'observaciones' => $observaciones,
                 'productos' => $productos
             ]);
 
             responderJson(
                 true,
-                'La solicitud de resurtido se registró correctamente.',
+                'La solicitud de ' . $nombreSolicitud
+                . ' se registró correctamente.',
                 $resultado
             );
         } catch (InvalidArgumentException $e) {
@@ -348,13 +421,14 @@ if ($action !== '') {
             );
         } catch (Throwable $e) {
             error_log(
-                'Error al guardar resurtido: '
+                'Error al guardar ' . $nombreSolicitud . ': '
                 . $e->getMessage()
             );
 
             responderJson(
                 false,
-                'No se pudo registrar la solicitud de resurtido.',
+                'No se pudo registrar la solicitud de '
+                . $nombreSolicitud . '.',
                 [],
                 500
             );
@@ -394,6 +468,11 @@ if ($action !== '') {
                     404
                 );
             }
+
+            verificarTipoSolicitudModulo(
+                $resurtido,
+                $tipoSolicitudModulo
+            );
 
             verificarAccesoResurtido(
                 $resurtido,
@@ -483,6 +562,11 @@ if ($action !== '') {
                 );
             }
 
+            verificarTipoSolicitudModulo(
+                $resurtido,
+                $tipoSolicitudModulo
+            );
+
             verificarAccesoResurtido(
                 $resurtido,
                 $rol,
@@ -548,7 +632,8 @@ if ($action !== '') {
 
             $notificaciones =
                 $controller->obtenerPendientes(
-                    $filtroAlmacen
+                    $filtroAlmacen,
+                    $tipoSolicitudModulo
                 );
 
             responderJson(
@@ -656,6 +741,11 @@ if ($action !== '') {
                 );
             }
 
+            verificarTipoSolicitudModulo(
+                $resurtido,
+                $tipoSolicitudModulo
+            );
+
             verificarAccesoResurtido(
                 $resurtido,
                 $rol,
@@ -705,25 +795,34 @@ $errorPagina = '';
 try {
     if ($rol === 'GERENTE') {
         $resurtidos = $controller->obtenerPorGerente(
-            $usuarioId
+            $usuarioId,
+            100,
+            $tipoSolicitudModulo
         );
     } elseif ($rol === 'ENCARGADO') {
         $resurtidos = $controller->obtenerTodos(
-            $almacenId > 0 ? $almacenId : null
+            $almacenId > 0 ? $almacenId : null,
+            150,
+            $tipoSolicitudModulo
         );
     } else {
-        $resurtidos = $controller->obtenerTodos();
+        $resurtidos = $controller->obtenerTodos(
+            null,
+            150,
+            $tipoSolicitudModulo
+        );
     }
 } catch (Throwable $e) {
     error_log(
-        'Error al cargar resurtidos: '
+        'Error al cargar ' . $nombreSolicitudes . ': '
         . $e->getMessage()
     );
 
     $resurtidos = [];
 
     $errorPagina =
-        'No fue posible cargar las solicitudes de resurtido.';
+        'No fue posible cargar las solicitudes de '
+        . $nombreSolicitud . '.';
 }
 
 // El encabezado ya genera DOCTYPE, head y body.
@@ -739,27 +838,25 @@ require __DIR__
     <section class="resurtidos-encabezado">
 
         <div>
-            <h1>Solicitudes de resurtido</h1>
+            <h1>
+                Solicitudes de <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
+            </h1>
 
             <p>
-                Registra y consulta solicitudes de productos.
+                <?= $esModuloTicket
+                    ? 'Registra tickets y consulta su surtido como salida.'
+                    : 'Registra y consulta solicitudes de productos.' ?>
             </p>
         </div>
 
-        <?php if (
-            in_array(
-                $rol,
-                ['GERENTE', 'ADMINISTRADOR'],
-                true
-            )
-        ): ?>
+        <?php if ($puedeCrearSolicitud): ?>
 
             <button
                 type="button"
                 id="btnNuevoResurtido"
                 class="btn-principal"
             >
-                + Nuevo resurtido
+                + Nuevo <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
             </button>
 
         <?php endif; ?>
@@ -778,20 +875,36 @@ require __DIR__
 
     <?php endif; ?>
 
-    <?php if (
-        in_array(
-            $rol,
-            ['GERENTE', 'ADMINISTRADOR'],
-            true
-        )
-    ): ?>
+    <?php if ($puedeCrearSolicitud): ?>
 
         <section
             id="formularioResurtido"
             class="tarjeta formulario-resurtido"
         >
 
-            <h2>Nueva solicitud</h2>
+            <h2>
+                Nueva solicitud de
+                <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
+            </h2>
+
+            <?php if ($esModuloTicket): ?>
+
+                <div class="campo">
+                    <label for="folioDocumento">
+                        Folio del ticket
+                    </label>
+
+                    <input
+                        type="text"
+                        id="folioDocumento"
+                        maxlength="100"
+                        autocomplete="off"
+                        placeholder="Escriba el folio impreso en el ticket"
+                        required
+                    >
+                </div>
+
+            <?php endif; ?>
 
             <div class="campo-busqueda">
 
@@ -869,7 +982,8 @@ require __DIR__
             <?php if (empty($resurtidos)): ?>
 
                 <div class="lista-vacia">
-                    No existen solicitudes de resurtido.
+                    No existen solicitudes de
+                    <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>.
                 </div>
 
             <?php else: ?>
@@ -904,11 +1018,27 @@ require __DIR__
 
                             <strong>
                                 <?= htmlspecialchars(
-                                    $resurtido['folio'],
+                                    $esModuloTicket
+                                        ? (
+                                            $resurtido['folio_documento']
+                                            ?? $resurtido['folio']
+                                        )
+                                        : $resurtido['folio'],
                                     ENT_QUOTES,
                                     'UTF-8'
                                 ) ?>
                             </strong>
+
+                            <?php if ($esModuloTicket): ?>
+                                <span>
+                                    Control interno:
+                                    <?= htmlspecialchars(
+                                        $resurtido['folio'],
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+                                </span>
+                            <?php endif; ?>
 
                             <span>
                                 <?= htmlspecialchars(
@@ -998,7 +1128,8 @@ require __DIR__
         <div class="resurtido-modal-encabezado">
 
             <h2 id="tituloModalResurtido">
-                Detalle del resurtido
+                Detalle del
+                <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
             </h2>
 
             <button
@@ -1133,6 +1264,11 @@ require __DIR__
 
     const rolActual = <?= json_encode($rol) ?>;
     const csrfToken = <?= json_encode($csrfToken) ?>;
+    const endpointModulo = <?= json_encode($endpointModulo) ?>;
+    const tipoSolicitudModulo =
+        <?= json_encode($tipoSolicitudModulo) ?>;
+    const esModuloTicket =
+        tipoSolicitudModulo === 'TICKET';
 
     const productosSolicitud = [];
 
@@ -1153,6 +1289,9 @@ require __DIR__
 
     const botonNuevo =
         document.getElementById('btnNuevoResurtido');
+
+    const folioDocumentoInput =
+        document.getElementById('folioDocumento');
 
     const formularioResurtido =
         document.getElementById('formularioResurtido');
@@ -1251,7 +1390,8 @@ require __DIR__
 
         try {
             const respuesta = await fetch(
-                'resurtidos.php?action=buscar_producto&codigo='
+                endpointModulo
+                + '?action=buscar_producto&codigo='
                 + encodeURIComponent(codigo),
                 {
                     cache: 'no-store'
@@ -1613,6 +1753,15 @@ require __DIR__
     );
 
     async function guardarResurtido() {
+        const folioDocumento =
+            folioDocumentoInput?.value.trim() ?? '';
+
+        if (esModuloTicket && folioDocumento === '') {
+            alert('Escriba el folio del ticket.');
+            folioDocumentoInput?.focus();
+            return;
+        }
+
         if (!productosSolicitud.length) {
             alert(
                 'Agregue por lo menos un producto.'
@@ -1659,7 +1808,9 @@ require __DIR__
 
         if (
             !confirm(
-                '¿Desea enviar esta solicitud de resurtido?'
+                '¿Desea enviar esta solicitud de '
+                + (esModuloTicket ? 'ticket' : 'resurtido')
+                + '?'
             )
         ) {
             return;
@@ -1686,7 +1837,7 @@ require __DIR__
 
         try {
             const respuesta = await fetch(
-                'resurtidos.php?action=guardar',
+                endpointModulo + '?action=guardar',
                 {
                     method: 'POST',
                     headers: {
@@ -1698,6 +1849,15 @@ require __DIR__
 
                         password_gerente:
                             passwordGerente,
+
+                        tipo_solicitud:
+                            tipoSolicitudModulo,
+
+                        folio_documento:
+                            folioDocumentoInput
+                                ?.value
+                                .trim()
+                            ?? '',
 
                         observaciones:
                             document
@@ -1725,7 +1885,7 @@ require __DIR__
             alert(resultado.mensaje);
 
             window.location.href =
-                'resurtidos.php';
+                endpointModulo;
         } catch (error) {
             if (
                 rolActual === 'GERENTE'
@@ -1821,7 +1981,7 @@ require __DIR__
 
         try {
             const respuesta = await fetch(
-                'resurtidos.php?action=obtener&id='
+                endpointModulo + '?action=obtener&id='
                 + encodeURIComponent(id),
                 {
                     cache: 'no-store'
@@ -1911,9 +2071,27 @@ require __DIR__
             <div class="detalle-resurtido">
 
                 <p>
-                    <strong>Folio:</strong>
-                    ${escaparHtml(resurtido.folio)}
+                    <strong>
+                        ${esModuloTicket
+                            ? 'Folio del ticket'
+                            : 'Folio'}:
+                    </strong>
+                    ${escaparHtml(
+                        esModuloTicket
+                            ? (
+                                resurtido.folio_documento
+                                || resurtido.folio
+                            )
+                            : resurtido.folio
+                    )}
                 </p>
+
+                ${esModuloTicket ? `
+                    <p>
+                        <strong>Control interno:</strong>
+                        ${escaparHtml(resurtido.folio)}
+                    </p>
+                ` : ''}
 
                 <p>
                     <strong>Fecha:</strong>
@@ -2006,7 +2184,7 @@ require __DIR__
 
         try {
             const respuesta = await fetch(
-                'resurtidos.php?action=iniciar_surtido',
+                endpointModulo + '?action=iniciar_surtido',
                 {
                     method: 'POST',
                     headers: {

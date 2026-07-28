@@ -30,15 +30,32 @@ class InventarioFisicoVirtualController
 
         $rol = strtoupper(trim($user['rol'] ?? ''));
         $almacenId = (int)($user['almacen_id'] ?? 0);
+        $esGerenteCiudadHidalgo =
+            $rol === 'GERENTE'
+            && $almacenId === 1;
 
         $puedeEntrar =
-            $rol === 'ADMINISTRADOR'
-            || $rol === 'ENCARGADO'
-            || $rol === 'ALMACEN'
-            || $rol === 'GERENTE'
-            || in_array($almacenId, [1, 2, 3], true);
+            !$esGerenteCiudadHidalgo
+            && (
+                $rol === 'ADMINISTRADOR'
+                || $rol === 'ENCARGADO'
+                || $rol === 'ALMACEN'
+                || $rol === 'GERENTE'
+                || in_array($almacenId, [1, 2, 3], true)
+            );
 
         if (!$puedeEntrar) {
+            auditLog([
+                'modulo' => 'Inventario virtual',
+                'accion' => 'ACCESO_DENEGADO',
+                'entidad' => 'modulo',
+                'descripcion' => 'Intentó ingresar al Inventario Virtual sin permiso.',
+                'metadata' => [
+                    'rol' => $rol,
+                    'almacen_id' => $almacenId,
+                ],
+            ]);
+
             header('Location: dashboard.php');
             exit;
         }

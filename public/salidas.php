@@ -218,6 +218,26 @@ if ($resurtidoId > 0 && !$modoEdicion) {
 }
 
 $modoResurtido = ($resurtido !== null && !$resurtidoBloqueado);
+$tipoSolicitudOrigen = $resurtido !== null
+    ? strtoupper(
+        trim((string) ($resurtido['tipo_solicitud'] ?? 'RESURTIDO'))
+    )
+    : 'RESURTIDO';
+$esSolicitudTicket =
+    $tipoSolicitudOrigen === 'TICKET';
+$nombreSolicitudOrigen = $esSolicitudTicket
+    ? 'ticket'
+    : 'resurtido';
+$paginaSolicitudOrigen = $esSolicitudTicket
+    ? 'tickets.php'
+    : 'resurtidos.php';
+$folioSolicitudOrigen = $esSolicitudTicket
+    ? (string) (
+        $resurtido['folio_documento']
+        ?? $resurtido['folio']
+        ?? ''
+    )
+    : (string) ($resurtido['folio'] ?? '');
 
 /* =========================================================
    PROCESAR FORMULARIO
@@ -240,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $errorVinculo = '';
 
-        // ---- Vincular la salida con la solicitud de resurtido ----
+        // ---- Vincular la salida con la solicitud de origen ----
         if ($modoResurtido && $movimientoId > 0 && $resurtidoController !== null) {
             try {
                 $cantidadesSurtidas = salidasCantidadesSurtidas(
@@ -249,8 +269,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
 
                 if (empty($cantidadesSurtidas)) {
-                    $errorVinculo = 'La salida se guardó, pero ningún producto capturado pertenece al resurtido '
-                        . ($resurtido['folio'] ?? '') . ', por lo que no se marcó como surtido.';
+                    $errorVinculo = 'La salida se guardó, pero ningún producto capturado pertenece al '
+                        . $nombreSolicitudOrigen . ' '
+                        . $folioSolicitudOrigen
+                        . ', por lo que no se marcó como surtido.';
                 } else {
                     $resurtidoController->finalizarConSalida(
                         $resurtidoId,
@@ -260,9 +282,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                 }
             } catch (Throwable $e) {
-                error_log('Error al vincular salida con resurtido: ' . $e->getMessage());
+                error_log(
+                    'Error al vincular salida con '
+                    . $nombreSolicitudOrigen . ': '
+                    . $e->getMessage()
+                );
 
-                $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el resurtido como surtido: '
+                $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el '
+                    . $nombreSolicitudOrigen . ' como surtido: '
                     . $e->getMessage();
             }
         }
@@ -316,11 +343,11 @@ $fechaActual = date('Y-m-d\TH:i');
 
 $tipoOperacionSeleccionado = $modoEdicion
     ? (string)($salidaEditar['tipo_operacion'] ?? '')
-    : ($modoResurtido ? 'RESURTIDO' : '');
+    : ($modoResurtido ? $tipoSolicitudOrigen : '');
 
 $folioOperacionValor = $modoEdicion
     ? $folioOperacionEditar
-    : ($modoResurtido ? (string)($resurtido['folio'] ?? '') : '');
+    : ($modoResurtido ? $folioSolicitudOrigen : '');
 
 $tipoSalidaSeleccionado = $modoEdicion
     ? (string)($salidaEditar['referencia'] ?? '')
@@ -412,6 +439,10 @@ if ($modoResurtido) {
     $resurtidoJs = [
         'id' => (int)$resurtido['id'],
         'folio' => (string)($resurtido['folio'] ?? ''),
+        'tipo_solicitud' => $tipoSolicitudOrigen,
+        'folio_documento' => (
+            $resurtido['folio_documento'] ?? null
+        ),
         'almacen' => (string)($resurtido['almacen_nombre'] ?? ''),
         'solicitante' => (string)($resurtido['solicitante_nombre'] ?? ''),
         'fecha' => (string)($resurtido['fecha_solicitud'] ?? ''),
@@ -431,7 +462,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <?php if ($modoEdicion): ?>
             ✏️ Editar Salida
         <?php elseif ($modoResurtido): ?>
-            🔄 Surtir resurtido <?= e($resurtido['folio'] ?? '') ?>
+            <?= $esSolicitudTicket ? '🎫' : '🔄' ?>
+            Surtir <?= e($nombreSolicitudOrigen) ?>
+            <?= e($folioSolicitudOrigen) ?>
         <?php else: ?>
             ➕ Nueva Salida de Almacén
         <?php endif; ?>
@@ -454,16 +487,22 @@ include __DIR__ . '/../app/views/layouts/header.php';
 <?php if ($resurtidoAviso !== ''): ?>
     <div class="alert alert-<?= e($resurtidoAvisoTipo) ?>">
         <?= e($resurtidoAviso) ?>
-        <a class="alert-link" href="resurtidos.php">↩️ Volver a resurtidos</a>
+        <a class="alert-link" href="<?= e($paginaSolicitudOrigen) ?>">
+            ↩️ Volver a <?= e($esSolicitudTicket ? 'tickets' : 'resurtidos') ?>
+        </a>
     </div>
 <?php endif; ?>
 
 <?php if ($modoResurtido): ?>
-    <!-- BANNER DEL RESURTIDO -->
+    <!-- BANNER DE LA SOLICITUD -->
     <div class="resurtido-banner">
         <div class="resurtido-banner-top">
-            <span class="resurtido-chip">🔄 Resurtido</span>
-            <strong class="resurtido-folio"><?= e($resurtido['folio'] ?? '') ?></strong>
+            <span class="resurtido-chip">
+                <?= $esSolicitudTicket ? '🎫 Ticket' : '🔄 Resurtido' ?>
+            </span>
+            <strong class="resurtido-folio">
+                <?= e($folioSolicitudOrigen) ?>
+            </strong>
             <span class="resurtido-estado">
                 <?= e(str_replace('_', ' ', strtoupper((string)($resurtido['estado'] ?? '')))) ?>
             </span>
@@ -529,7 +568,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="form-field">
                 <label>📑 Tipo de documento</label>
-                <select name="tipo_operacion" id="tipoOperacionSelect" required>
+                <select
+                    name="tipo_operacion"
+                    id="tipoOperacionSelect"
+                    required
+                    <?= $modoResurtido ? 'disabled' : '' ?>
+                >
                     <option value="">Seleccione...</option>
                     <option value="TICKET" <?= $tipoOperacionSeleccionado === 'TICKET' ? 'selected' : '' ?>>🎫 Ticket</option>
                     <option value="RESURTIDO" <?= $tipoOperacionSeleccionado === 'RESURTIDO' ? 'selected' : '' ?>>🔄 Resurtido</option>
@@ -537,6 +581,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <option value="TRASPASO" <?= $tipoOperacionSeleccionado === 'TRASPASO' ? 'selected' : '' ?>>🚚 Traspaso</option>
                     <option value="NOTA_REMISION" <?= $tipoOperacionSeleccionado === 'NOTA_REMISION' ? 'selected' : '' ?>>📝 Nota de Remisión</option>
                 </select>
+                <?php if ($modoResurtido): ?>
+                    <input
+                        type="hidden"
+                        name="tipo_operacion"
+                        value="<?= e($tipoOperacionSeleccionado) ?>"
+                    >
+                <?php endif; ?>
             </div>
 
             <div class="form-field" id="folioOperacionBox" style="display:none;">
@@ -574,10 +625,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
     </div>
 
     <?php if ($modoResurtido): ?>
-        <!-- SECCIÓN: PEDIDO DEL RESURTIDO -->
+        <!-- SECCIÓN: PEDIDO DE LA SOLICITUD -->
         <div class="pedido-section">
             <div class="pedido-header">
-                <h3>📋 Pedido del resurtido</h3>
+                <h3>
+                    📋 Pedido del
+                    <?= e($nombreSolicitudOrigen) ?>
+                </h3>
                 <div class="pedido-header-acciones">
                     <span class="pedido-resumen" id="pedidoResumen">0 de 0 surtidos</span>
                     <button type="button" class="btn-mini" id="btnAgregarTodo">➕ Agregar todo lo pendiente</button>
@@ -645,7 +699,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <div class="row"><span class="label">📝 Descripción:</span><span class="value" id="infoDescripcion">-</span></div>
                 <div class="row"><span class="label">📏 Unidad:</span><span class="value" id="infoUnidad">-</span></div>
                 <div class="row"><span class="label">📊 Stock disponible:</span><span class="value" id="infoStock">-</span></div>
-                <div class="row" id="infoPedidoRow" style="display:none;"><span class="label">🔄 Pedido en resurtido:</span><span class="value" id="infoPedido">-</span></div>
+                <div class="row" id="infoPedidoRow" style="display:none;"><span class="label">📋 Pedido solicitado:</span><span class="value" id="infoPedido">-</span></div>
             </div>
         </div>
 
@@ -827,6 +881,18 @@ const productos = <?php
 
 const resurtidoData = <?= $resurtidoJs !== null ? json_encode($resurtidoJs, JSON_UNESCAPED_UNICODE) : 'null' ?>;
 const modoResurtido = resurtidoData !== null;
+const esSolicitudTicketJs =
+    modoResurtido
+    && resurtidoData.tipo_solicitud === 'TICKET';
+const nombreSolicitudJs =
+    esSolicitudTicketJs ? 'ticket' : 'resurtido';
+const folioSolicitudJs =
+    esSolicitudTicketJs
+        ? (
+            resurtidoData.folio_documento
+            || resurtidoData.folio
+        )
+        : (resurtidoData?.folio || '');
 const filasPrevias = <?= json_encode($filasPrevias, JSON_UNESCAPED_UNICODE) ?>;
 
 let productoSeleccionado = null;
@@ -1355,7 +1421,11 @@ function precargarResurtido() {
     actualizarTotales();
 
     if (agregados > 0) {
-        mostrarToast(`🔄 ${agregados} producto(s) del resurtido ${resurtidoData.folio} cargados`);
+        mostrarToast(
+            `${esSolicitudTicketJs ? '🎫' : '🔄'} `
+            + `${agregados} producto(s) del `
+            + `${nombreSolicitudJs} ${folioSolicitudJs} cargados`
+        );
     }
 
     if (faltantes > 0) {
@@ -1460,8 +1530,8 @@ function guardarSalida() {
 
         if (incompletos > 0) {
             const seguir = confirm(
-                `Hay ${incompletos} producto(s) del resurtido ${resurtidoData.folio} que no se surten completos.\n\n` +
-                'El resurtido quedará marcado como PARCIAL. ¿Deseas continuar?'
+                `Hay ${incompletos} producto(s) del ${nombreSolicitudJs} ${folioSolicitudJs} que no se surten completos.\n\n`
+                + `El ${nombreSolicitudJs} quedará marcado como PARCIAL. ¿Deseas continuar?`
             );
 
             if (!seguir) return;

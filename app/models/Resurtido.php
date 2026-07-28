@@ -14,6 +14,11 @@ class Resurtido
         'CANCELADO'
     ];
 
+    private const TIPOS_SOLICITUD = [
+        'RESURTIDO',
+        'TICKET'
+    ];
+
     public function __construct(PDO $db)
     {
         $this->db = $db;
@@ -243,6 +248,20 @@ class Resurtido
             )
         );
 
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            (string) ($datos['tipo_solicitud'] ?? 'RESURTIDO')
+        );
+
+        $folioDocumento = strtoupper(
+            trim((string) ($datos['folio_documento'] ?? ''))
+        );
+
+        if ($tipoSolicitud === 'TICKET' && $folioDocumento === '') {
+            throw new InvalidArgumentException(
+                'El folio del ticket es obligatorio.'
+            );
+        }
+
         $productos = $datos['productos'] ?? [];
 
         if ($solicitanteId <= 0) {
@@ -364,6 +383,8 @@ class Resurtido
                     fecha_solicitud,
                     solicitante_id,
                     almacen_id,
+                    tipo_solicitud,
+                    folio_documento,
                     observaciones,
                     estado,
                     creado_en,
@@ -373,6 +394,8 @@ class Resurtido
                     NOW(),
                     :solicitante_id,
                     :almacen_id,
+                    :tipo_solicitud,
+                    :folio_documento,
                     :observaciones,
                     'PENDIENTE',
                     NOW(),
@@ -388,6 +411,12 @@ class Resurtido
                 ':folio' => $folioTemporal,
                 ':solicitante_id' => $solicitanteId,
                 ':almacen_id' => $almacenId,
+                ':tipo_solicitud' => $tipoSolicitud,
+                ':folio_documento' => (
+                    $folioDocumento !== ''
+                        ? $folioDocumento
+                        : null
+                ),
                 ':observaciones' => (
                     $observaciones !== ''
                         ? $observaciones
@@ -405,7 +434,8 @@ class Resurtido
 
             $folio = $this->generarFolio(
                 $resurtidoId,
-                $almacenId
+                $almacenId,
+                $tipoSolicitud
             );
 
             $sqlActualizarFolio = "
@@ -522,6 +552,12 @@ class Resurtido
             return [
                 'id' => $resurtidoId,
                 'folio' => $folio,
+                'tipo_solicitud' => $tipoSolicitud,
+                'folio_documento' => (
+                    $folioDocumento !== ''
+                        ? $folioDocumento
+                        : null
+                ),
                 'estado' => 'PENDIENTE'
             ];
         } catch (Throwable $e) {
@@ -551,6 +587,8 @@ class Resurtido
                 r.fecha_solicitud,
                 r.solicitante_id,
                 r.almacen_id,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.observaciones,
                 r.estado,
                 r.encargado_id,
@@ -597,6 +635,8 @@ class Resurtido
                 r.fecha_solicitud,
                 r.solicitante_id,
                 r.almacen_id,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.observaciones,
                 r.estado,
                 r.encargado_id,
@@ -742,7 +782,8 @@ class Resurtido
 
     public function obtenerPorGerente(
         int $solicitanteId,
-        ?int $limite = 100
+        ?int $limite = 100,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         if ($solicitanteId <= 0) {
             return [];
@@ -752,10 +793,16 @@ class Resurtido
             $limite
         );
 
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            $tipoSolicitud
+        );
+
         $sql = "
             SELECT
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud AS fecha,
                 r.observaciones,
                 r.estado,
@@ -785,10 +832,13 @@ class Resurtido
                 ON rd.resurtido_id = r.id
 
             WHERE r.solicitante_id = :solicitante_id
+            AND r.tipo_solicitud = :tipo_solicitud
 
             GROUP BY
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud,
                 r.observaciones,
                 r.estado,
@@ -807,7 +857,8 @@ class Resurtido
         $stmt = $this->db->prepare($sql);
 
         $stmt->execute([
-            ':solicitante_id' => $solicitanteId
+            ':solicitante_id' => $solicitanteId,
+            ':tipo_solicitud' => $tipoSolicitud
         ]);
 
         return $this->convertirLista(
@@ -821,26 +872,42 @@ class Resurtido
 
     public function obtenerTodos(
         ?int $almacenId = null,
-        ?int $limite = 150
+        ?int $limite = 150,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         $limite = $this->normalizarLimite(
             $limite
         );
 
-        $condicion = '';
+        $condiciones = [
+            'r.tipo_solicitud = :tipo_solicitud'
+        ];
         $parametros = [];
 
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            $tipoSolicitud
+        );
+
+        $parametros[':tipo_solicitud'] = $tipoSolicitud;
+
         if ($almacenId !== null && $almacenId > 0) {
-            $condicion =
-                'WHERE r.almacen_id = :almacen_id';
+            $condiciones[] =
+                'r.almacen_id = :almacen_id';
 
             $parametros[':almacen_id'] = $almacenId;
         }
+
+        $condicion = 'WHERE ' . implode(
+            ' AND ',
+            $condiciones
+        );
 
         $sql = "
             SELECT
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud AS fecha,
                 r.solicitante_id,
                 r.almacen_id,
@@ -879,6 +946,8 @@ class Resurtido
             GROUP BY
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud,
                 r.solicitante_id,
                 r.almacen_id,
@@ -917,10 +986,17 @@ class Resurtido
     // ==================================================
 
     public function obtenerPendientes(
-        ?int $almacenId = null
+        ?int $almacenId = null,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         $condicionAlmacen = '';
-        $parametros = [];
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            $tipoSolicitud
+        );
+
+        $parametros = [
+            ':tipo_solicitud' => $tipoSolicitud
+        ];
 
         if ($almacenId !== null && $almacenId > 0) {
             $condicionAlmacen =
@@ -933,6 +1009,8 @@ class Resurtido
             SELECT
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud AS fecha,
                 r.solicitante_id,
                 r.almacen_id,
@@ -965,12 +1043,15 @@ class Resurtido
                 'EN_PROCESO',
                 'PARCIAL'
             )
+            AND r.tipo_solicitud = :tipo_solicitud
 
             {$condicionAlmacen}
 
             GROUP BY
                 r.id,
                 r.folio,
+                r.tipo_solicitud,
+                r.folio_documento,
                 r.fecha_solicitud,
                 r.solicitante_id,
                 r.almacen_id,
@@ -1002,10 +1083,17 @@ class Resurtido
     // ==================================================
 
     public function contarPendientes(
-        ?int $almacenId = null
+        ?int $almacenId = null,
+        string $tipoSolicitud = 'RESURTIDO'
     ): int {
         $condicionAlmacen = '';
-        $parametros = [];
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            $tipoSolicitud
+        );
+
+        $parametros = [
+            ':tipo_solicitud' => $tipoSolicitud
+        ];
 
         if ($almacenId !== null && $almacenId > 0) {
             $condicionAlmacen =
@@ -1018,6 +1106,7 @@ class Resurtido
             SELECT COUNT(*)
             FROM resurtidos
             WHERE estado = 'PENDIENTE'
+            AND tipo_solicitud = :tipo_solicitud
             {$condicionAlmacen}
         ";
 
@@ -1330,19 +1419,75 @@ class Resurtido
         return (int) $stmt->fetchColumn() > 0;
     }
 
+    public function existeFolioDocumentoTicket(
+        string $folioDocumento,
+        int $almacenId
+    ): bool {
+        $folioDocumento = strtoupper(
+            trim($folioDocumento)
+        );
+
+        if ($folioDocumento === '' || $almacenId <= 0) {
+            return false;
+        }
+
+        $sql = "
+            SELECT COUNT(*)
+            FROM resurtidos
+            WHERE tipo_solicitud = 'TICKET'
+            AND UPPER(TRIM(folio_documento)) = :folio_documento
+            AND almacen_id = :almacen_id
+            AND estado <> 'CANCELADO'
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            ':folio_documento' => $folioDocumento,
+            ':almacen_id' => $almacenId
+        ]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
     // ==================================================
     // GENERAR FOLIO
     // ==================================================
 
     private function generarFolio(
         int $resurtidoId,
-        int $almacenId
+        int $almacenId,
+        string $tipoSolicitud = 'RESURTIDO'
     ): string {
         return sprintf(
-            'RES-%d-%06d',
+            '%s-%d-%06d',
+            $tipoSolicitud === 'TICKET'
+                ? 'TKT'
+                : 'RES',
             $almacenId,
             $resurtidoId
         );
+    }
+
+    private function normalizarTipoSolicitud(
+        string $tipoSolicitud
+    ): string {
+        $tipoSolicitud = strtoupper(
+            trim($tipoSolicitud)
+        );
+
+        if (
+            !in_array(
+                $tipoSolicitud,
+                self::TIPOS_SOLICITUD,
+                true
+            )
+        ) {
+            throw new InvalidArgumentException(
+                'El tipo de solicitud no es válido.'
+            );
+        }
+
+        return $tipoSolicitud;
     }
 
     // ==================================================
@@ -1721,6 +1866,8 @@ class Resurtido
             SELECT
                 id,
                 folio,
+                tipo_solicitud,
+                folio_documento,
                 estado,
                 solicitante_id,
                 almacen_id,

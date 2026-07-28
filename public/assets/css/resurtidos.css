@@ -111,6 +111,7 @@ button:focus-visible {
     color: #44546a;
 }
 
+.campo input,
 .campo textarea,
 .campo-busqueda input {
     width: 100%;
@@ -145,6 +146,7 @@ button:focus-visible {
     color: #a3adb9;
 }
 
+.campo input:focus,
 .campo textarea:focus,
 .campo-busqueda input:focus {
     border-color: var(--res-azul);

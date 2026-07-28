@@ -137,6 +137,48 @@ class ResurtidoController
             )
         );
 
+        $tipoSolicitud = strtoupper(
+            trim((string) ($datos['tipo_solicitud'] ?? 'RESURTIDO'))
+        );
+
+        if (!in_array($tipoSolicitud, ['RESURTIDO', 'TICKET'], true)) {
+            throw new InvalidArgumentException(
+                'El tipo de solicitud no es válido.'
+            );
+        }
+
+        $folioDocumento = strtoupper(
+            trim((string) ($datos['folio_documento'] ?? ''))
+        );
+
+        if ($tipoSolicitud === 'TICKET') {
+            if ($folioDocumento === '') {
+                throw new InvalidArgumentException(
+                    'El folio del ticket es obligatorio.'
+                );
+            }
+
+            if (mb_strlen($folioDocumento) > 100) {
+                throw new InvalidArgumentException(
+                    'El folio del ticket no puede superar los 100 caracteres.'
+                );
+            }
+
+            if (
+                $this->resurtidoModel
+                    ->existeFolioDocumentoTicket(
+                        $folioDocumento,
+                        $almacenId
+                    )
+            ) {
+                throw new InvalidArgumentException(
+                    'Ya existe un ticket activo con ese folio en el almacén.'
+                );
+            }
+        } else {
+            $folioDocumento = '';
+        }
+
         $productos = $datos['productos'] ?? [];
 
         if ($solicitanteId <= 0) {
@@ -250,6 +292,12 @@ class ResurtidoController
         $resultado = $this->resurtidoModel->crear([
             'solicitante_id' => $solicitanteId,
             'almacen_id' => $almacenId,
+            'tipo_solicitud' => $tipoSolicitud,
+            'folio_documento' => (
+                $folioDocumento !== ''
+                    ? $folioDocumento
+                    : null
+            ),
             'observaciones' => (
                 $observaciones !== ''
                     ? $observaciones
@@ -265,13 +313,21 @@ class ResurtidoController
             )
             : null;
 
+        $esTicket = $tipoSolicitud === 'TICKET';
+        $nombreSolicitud = $esTicket ? 'ticket' : 'resurtido';
+
         auditLog([
-            'modulo' => 'Resurtidos',
-            'accion' => 'CREAR_RESURTIDO',
+            'modulo' => $esTicket ? 'Tickets' : 'Resurtidos',
+            'accion' => $esTicket
+                ? 'CREAR_TICKET'
+                : 'CREAR_RESURTIDO',
             'entidad' => 'resurtido',
             'registro_id' => $resurtidoId ?: null,
-            'descripcion' => 'Creó la solicitud de resurtido '
+            'descripcion' => 'Creó la solicitud de ' . $nombreSolicitud . ' '
                 . ($resultado['folio'] ?? ('#' . $resurtidoId))
+                . ($esTicket
+                    ? ' con folio de ticket ' . $folioDocumento
+                    : '')
                 . ' con ' . count($productosValidados)
                 . ' producto(s).',
             'nuevos' => $resurtidoCreado ?? $resultado,
@@ -304,7 +360,8 @@ class ResurtidoController
 
     public function obtenerPorGerente(
         int $solicitanteId,
-        int $limite = 100
+        int $limite = 100,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         if ($solicitanteId <= 0) {
             throw new InvalidArgumentException(
@@ -320,7 +377,8 @@ class ResurtidoController
             ->resurtidoModel
             ->obtenerPorGerente(
                 $solicitanteId,
-                $limite
+                $limite,
+                $tipoSolicitud
             );
     }
 
@@ -330,7 +388,8 @@ class ResurtidoController
 
     public function obtenerTodos(
         ?int $almacenId = null,
-        int $limite = 150
+        int $limite = 150,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         if (
             $almacenId !== null
@@ -347,7 +406,8 @@ class ResurtidoController
             ->resurtidoModel
             ->obtenerTodos(
                 $almacenId,
-                $limite
+                $limite,
+                $tipoSolicitud
             );
     }
 
@@ -356,7 +416,8 @@ class ResurtidoController
     // ==================================================
 
     public function obtenerPendientes(
-        ?int $almacenId = null
+        ?int $almacenId = null,
+        string $tipoSolicitud = 'RESURTIDO'
     ): array {
         if (
             $almacenId !== null
@@ -367,7 +428,10 @@ class ResurtidoController
 
         return $this
             ->resurtidoModel
-            ->obtenerPendientes($almacenId);
+            ->obtenerPendientes(
+                $almacenId,
+                $tipoSolicitud
+            );
     }
 
     // ==================================================
@@ -375,7 +439,8 @@ class ResurtidoController
     // ==================================================
 
     public function contarPendientes(
-        ?int $almacenId = null
+        ?int $almacenId = null,
+        string $tipoSolicitud = 'RESURTIDO'
     ): int {
         if (
             $almacenId !== null
@@ -386,7 +451,10 @@ class ResurtidoController
 
         return $this
             ->resurtidoModel
-            ->contarPendientes($almacenId);
+            ->contarPendientes(
+                $almacenId,
+                $tipoSolicitud
+            );
     }
 
     // ==================================================
@@ -449,12 +517,24 @@ class ResurtidoController
                 ->resurtidoModel
                 ->obtenerPorId($resurtidoId);
 
+            $esTicket = strtoupper(
+                (string) (
+                    $resurtidoNuevo['tipo_solicitud']
+                    ?? $resurtidoAnterior['tipo_solicitud']
+                    ?? 'RESURTIDO'
+                )
+            ) === 'TICKET';
+
+            $nombreSolicitud = $esTicket ? 'ticket' : 'resurtido';
+
             auditLog([
-                'modulo' => 'Resurtidos',
-                'accion' => 'CAMBIAR_ESTADO_RESURTIDO',
+                'modulo' => $esTicket ? 'Tickets' : 'Resurtidos',
+                'accion' => $esTicket
+                    ? 'CAMBIAR_ESTADO_TICKET'
+                    : 'CAMBIAR_ESTADO_RESURTIDO',
                 'entidad' => 'resurtido',
                 'registro_id' => $resurtidoId,
-                'descripcion' => 'Cambió el estado del resurtido '
+                'descripcion' => 'Cambió el estado del ' . $nombreSolicitud . ' '
                     . ($resurtidoNuevo['folio']
                         ?? $resurtidoAnterior['folio']
                         ?? ('#' . $resurtidoId))
@@ -557,12 +637,19 @@ class ResurtidoController
             );
         }
 
+        $esTicket = strtoupper(
+            (string) ($resurtidoActualizado['tipo_solicitud'] ?? 'RESURTIDO')
+        ) === 'TICKET';
+
         auditLog([
-            'modulo' => 'Resurtidos',
-            'accion' => 'INICIAR_SURTIDO',
+            'modulo' => $esTicket ? 'Tickets' : 'Resurtidos',
+            'accion' => $esTicket
+                ? 'INICIAR_SURTIDO_TICKET'
+                : 'INICIAR_SURTIDO',
             'entidad' => 'resurtido',
             'registro_id' => $resurtidoId,
-            'descripcion' => 'Inició el surtido de la solicitud '
+            'descripcion' => 'Inició el surtido de la solicitud de '
+                . ($esTicket ? 'ticket ' : 'resurtido ')
                 . ($resurtidoActualizado['folio']
                     ?? ('#' . $resurtidoId))
                 . '.',
@@ -685,12 +772,23 @@ class ResurtidoController
             ->resurtidoModel
             ->obtenerPorId($resurtidoId);
 
+        $esTicket = strtoupper(
+            (string) (
+                $resurtidoNuevo['tipo_solicitud']
+                ?? $resurtidoAnterior['tipo_solicitud']
+                ?? 'RESURTIDO'
+            )
+        ) === 'TICKET';
+
         auditLog([
-            'modulo' => 'Resurtidos',
-            'accion' => 'FINALIZAR_RESURTIDO',
+            'modulo' => $esTicket ? 'Tickets' : 'Resurtidos',
+            'accion' => $esTicket
+                ? 'FINALIZAR_TICKET'
+                : 'FINALIZAR_RESURTIDO',
             'entidad' => 'resurtido',
             'registro_id' => $resurtidoId,
-            'descripcion' => 'Finalizó el resurtido '
+            'descripcion' => 'Finalizó el '
+                . ($esTicket ? 'ticket ' : 'resurtido ')
                 . ($resurtidoNuevo['folio']
                     ?? $resurtidoAnterior['folio']
                     ?? ('#' . $resurtidoId))

@@ -428,6 +428,7 @@ function auditModuleForScript(string $script): string
         'existencias.php' => 'Existencias',
         'agotados.php' => 'Agotados',
         'resurtidos.php' => 'Resurtidos',
+        'tickets.php' => 'Tickets',
         'kardex.php' => 'Kardex',
         'reportes.php' => 'Reportes',
         'inventario_fisico.php' => 'Inventario físico',
@@ -481,7 +482,7 @@ function auditTrackCurrentRequest(): void
 
     // Evita llenar la bitácora con el sondeo automático cada 30 segundos.
     if (
-        $script === 'resurtidos.php'
+        in_array($script, ['resurtidos.php', 'tickets.php'], true)
         && in_array(
             $action,
             ['notificaciones', 'buscar_producto'],

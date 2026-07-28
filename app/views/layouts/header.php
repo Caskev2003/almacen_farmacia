@@ -62,6 +62,25 @@ $puedeRecibirResurtidos =
     $esAdmin
     || $esEncargado;
 
+$esGerenteCiudadHidalgo =
+    $esGerente
+    && $almacenId === 1;
+
+$puedeVerInventarioVirtual =
+    $puedeVerInventarios
+    && !$esGerenteCiudadHidalgo;
+
+$puedeVerTickets =
+    $esAdmin
+    || (
+        $almacenId === 1
+        && ($esGerente || $esEncargado)
+    );
+
+$puedeRecibirTickets =
+    $esAdmin
+    || ($esEncargado && $almacenId === 1);
+
 ?>
 
 <!DOCTYPE html>
@@ -242,6 +261,32 @@ $puedeRecibirResurtidos =
 
         <?php endif; ?>
 
+        <?php if ($puedeVerTickets): ?>
+
+            <a
+                href="tickets.php"
+                class="nav-resurtidos"
+                id="enlaceTickets"
+            >
+                <span>Tickets</span>
+
+                <?php if ($puedeRecibirTickets): ?>
+
+                    <span
+                        id="contadorTickets"
+                        class="contador-resurtidos"
+                        aria-label="Tickets pendientes"
+                        title="Tickets pendientes"
+                        hidden
+                    >
+                        0
+                    </span>
+
+                <?php endif; ?>
+            </a>
+
+        <?php endif; ?>
+
         <?php if (!$esGerente && !$esConsulta): ?>
 
             <a href="kardex.php">
@@ -267,6 +312,10 @@ $puedeRecibirResurtidos =
             <a href="inventario_fisico.php">
                 Inventario Físico
             </a>
+
+        <?php endif; ?>
+
+        <?php if ($puedeVerInventarioVirtual): ?>
 
             <a href="inventario_virtual.php">
                 Inventario Virtual
@@ -404,6 +453,91 @@ $puedeRecibirResurtidos =
              */
             window.setInterval(
                 consultarResurtidosPendientes,
+                30000
+            );
+        })();
+    </script>
+
+<?php endif; ?>
+
+<?php if ($user && $puedeRecibirTickets): ?>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const contador =
+                document.getElementById('contadorTickets');
+
+            let cantidadAnterior = null;
+
+            if (!contador) {
+                return;
+            }
+
+            async function consultarTicketsPendientes() {
+                try {
+                    const respuesta = await fetch(
+                        'tickets.php?action=notificaciones',
+                        {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'X-Requested-With':
+                                    'XMLHttpRequest'
+                            }
+                        }
+                    );
+
+                    if (!respuesta.ok) {
+                        return;
+                    }
+
+                    const resultado = await respuesta.json();
+
+                    if (!resultado.ok) {
+                        return;
+                    }
+
+                    const cantidad = Number(
+                        resultado.datos?.cantidad ?? 0
+                    );
+
+                    if (
+                        !Number.isInteger(cantidad)
+                        || cantidad <= 0
+                    ) {
+                        contador.textContent = '0';
+                        contador.hidden = true;
+                        cantidadAnterior = 0;
+                        return;
+                    }
+
+                    contador.textContent =
+                        cantidad > 99 ? '99+' : String(cantidad);
+                    contador.hidden = false;
+
+                    if (
+                        cantidadAnterior !== null
+                        && cantidad > cantidadAnterior
+                    ) {
+                        contador.classList.remove('nuevas');
+                        void contador.offsetWidth;
+                        contador.classList.add('nuevas');
+                    }
+
+                    cantidadAnterior = cantidad;
+                } catch (error) {
+                    console.warn(
+                        'No fue posible consultar los tickets pendientes.'
+                    );
+                }
+            }
+
+            consultarTicketsPendientes();
+
+            window.setInterval(
+                consultarTicketsPendientes,
                 30000
             );
         })();

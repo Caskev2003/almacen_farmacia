@@ -222,6 +222,20 @@ if ($action !== '') {
                     $almacenId
                 );
 
+            auditLog([
+                'modulo' => 'Resurtidos',
+                'accion' => 'BUSQUEDA_PRODUCTO',
+                'entidad' => 'producto',
+                'descripcion' => 'Buscó productos cuyos códigos terminan en '
+                    . $codigo . '; se encontraron '
+                    . count($productos) . ' resultado(s).',
+                'metadata' => [
+                    'ultimos_cuatro_digitos' => $codigo,
+                    'resultados' => count($productos),
+                    'almacen_id' => $almacenId,
+                ],
+            ]);
+
             responderJson(
                 true,
                 'Búsqueda realizada correctamente.',

@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../models/InventarioFisicoVirtual.php';
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class InventarioFisicoVirtualController
 {
@@ -172,6 +173,30 @@ class InventarioFisicoVirtualController
                 ];
             }
 
+            $conteoGuardado =
+                $this->inventarioModel->obtenerConteoPorId(
+                    $inventarioId
+                );
+            $detalleGuardado =
+                $this->inventarioModel->obtenerDetalle(
+                    $inventarioId
+                );
+
+            auditLog([
+                'modulo' => 'Inventario virtual',
+                'accion' => 'GUARDAR_INVENTARIO',
+                'entidad' => 'inventario_fisico_conteo',
+                'registro_id' => $inventarioId,
+                'descripcion' => 'Guardó y cerró el inventario '
+                    . $folio . ' con '
+                    . count($detalleGuardado)
+                    . ' producto(s).',
+                'nuevos' => [
+                    'conteo' => $conteoGuardado,
+                    'detalle' => $detalleGuardado,
+                ],
+            ]);
+
             return [
                 'success' => true,
                 'message' => 'Inventario guardado correctamente.',
@@ -213,7 +238,32 @@ class InventarioFisicoVirtualController
             ];
         }
 
+        $conteoAnterior =
+            $this->inventarioModel->obtenerConteoPorId($id);
+        $detalleAnterior =
+            $this->inventarioModel->obtenerDetalle($id);
+
         $ok = $this->inventarioModel->eliminarConteo($id);
+
+        if ($ok) {
+            auditLog([
+                'modulo' => 'Inventario virtual',
+                'accion' => 'ELIMINAR_INVENTARIO',
+                'entidad' => 'inventario_fisico_conteo',
+                'registro_id' => $id,
+                'descripcion' => 'Eliminó el inventario '
+                    . ($conteoAnterior['folio'] ?? ('#' . $id))
+                    . ' con ' . count($detalleAnterior)
+                    . ' producto(s).',
+                'anteriores' => [
+                    'conteo' => $conteoAnterior,
+                    'detalle' => $detalleAnterior,
+                ],
+                'nuevos' => [
+                    'estado' => 'ELIMINADO',
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,

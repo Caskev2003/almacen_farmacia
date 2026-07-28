@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/Usuario.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class AuthController
 {
@@ -21,6 +22,15 @@ class AuthController
         $password = trim($password);
 
         if ($login === '' || $password === '') {
+            auditLog([
+                'modulo' => 'Autenticación',
+                'accion' => 'INICIO_SESION_FALLIDO',
+                'descripcion' => 'Intento de inicio de sesión con datos incompletos.',
+                'metadata' => [
+                    'login_ingresado' => $login
+                ],
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Debes capturar el usuario/correo y la contraseña.'
@@ -30,6 +40,15 @@ class AuthController
         $user = $this->usuarioModel->findByUsuarioOrCorreo($login);
 
         if (!$user) {
+            auditLog([
+                'modulo' => 'Autenticación',
+                'accion' => 'INICIO_SESION_FALLIDO',
+                'descripcion' => 'Intento de inicio de sesión con un usuario inexistente o inactivo.',
+                'metadata' => [
+                    'login_ingresado' => $login
+                ],
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Usuario no encontrado o inactivo.'
@@ -37,6 +56,18 @@ class AuthController
         }
 
         if (!password_verify($password, $user['password'])) {
+            auditLog([
+                'modulo' => 'Autenticación',
+                'accion' => 'INICIO_SESION_FALLIDO',
+                'entidad' => 'usuario',
+                'registro_id' => $user['id'],
+                'descripcion' => 'Intento de inicio de sesión con contraseña incorrecta.',
+                'usuario' => $user,
+                'metadata' => [
+                    'login_ingresado' => $login
+                ],
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Contraseña incorrecta.'
@@ -55,6 +86,14 @@ class AuthController
             'almacen_nombre' => $user['almacen_nombre'] ?? null,
             'almacen_codigo' => $user['almacen_codigo'] ?? null
         ];
+
+        auditLog([
+            'modulo' => 'Autenticación',
+            'accion' => 'INICIO_SESION',
+            'entidad' => 'usuario',
+            'registro_id' => $user['id'],
+            'descripcion' => 'Inició sesión correctamente.',
+        ]);
 
         return [
             'success' => true,

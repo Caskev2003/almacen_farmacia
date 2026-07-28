@@ -658,6 +658,21 @@ class Producto
         return $result ?: null;
     }
 
+    public function crearUbicacionExistencia(
+        int $productoId,
+        string $sucursal,
+        string $ubicacion,
+        int $existencia
+    ): bool {
+        return $this->actualizarUbicacionExistencia(
+            $productoId,
+            $sucursal,
+            $ubicacion,
+            $ubicacion,
+            max(0, $existencia)
+        );
+    }
+
     /**
      * ACTUALIZAR existencia de una ubicación (permite poner en 0 sin eliminar)
      */

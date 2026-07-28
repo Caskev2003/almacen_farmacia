@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../models/Resurtido.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class ResurtidoController
 {
@@ -246,7 +247,7 @@ class ResurtidoController
             ];
         }
 
-        return $this->resurtidoModel->crear([
+        $resultado = $this->resurtidoModel->crear([
             'solicitante_id' => $solicitanteId,
             'almacen_id' => $almacenId,
             'observaciones' => (
@@ -256,6 +257,27 @@ class ResurtidoController
             ),
             'productos' => $productosValidados
         ]);
+
+        $resurtidoId = (int) ($resultado['id'] ?? 0);
+        $resurtidoCreado = $resurtidoId > 0
+            ? $this->resurtidoModel->obtenerPorId(
+                $resurtidoId
+            )
+            : null;
+
+        auditLog([
+            'modulo' => 'Resurtidos',
+            'accion' => 'CREAR_RESURTIDO',
+            'entidad' => 'resurtido',
+            'registro_id' => $resurtidoId ?: null,
+            'descripcion' => 'Creó la solicitud de resurtido '
+                . ($resultado['folio'] ?? ('#' . $resurtidoId))
+                . ' con ' . count($productosValidados)
+                . ' producto(s).',
+            'nuevos' => $resurtidoCreado ?? $resultado,
+        ]);
+
+        return $resultado;
     }
 
     // ==================================================
@@ -412,13 +434,51 @@ class ResurtidoController
             );
         }
 
-        return $this
+        $resurtidoAnterior = $this
             ->resurtidoModel
-            ->cambiarEstado(
-                $resurtidoId,
-                $estado,
-                $encargadoId
-            );
+            ->obtenerPorId($resurtidoId);
+
+        $ok = $this->resurtidoModel->cambiarEstado(
+            $resurtidoId,
+            $estado,
+            $encargadoId
+        );
+
+        if ($ok) {
+            $resurtidoNuevo = $this
+                ->resurtidoModel
+                ->obtenerPorId($resurtidoId);
+
+            auditLog([
+                'modulo' => 'Resurtidos',
+                'accion' => 'CAMBIAR_ESTADO_RESURTIDO',
+                'entidad' => 'resurtido',
+                'registro_id' => $resurtidoId,
+                'descripcion' => 'Cambió el estado del resurtido '
+                    . ($resurtidoNuevo['folio']
+                        ?? $resurtidoAnterior['folio']
+                        ?? ('#' . $resurtidoId))
+                    . ' de '
+                    . ($resurtidoAnterior['estado'] ?? 'SIN ESTADO')
+                    . ' a ' . $estado . '.',
+                'anteriores' => [
+                    'estado' => $resurtidoAnterior['estado'] ?? null,
+                    'encargado_id' =>
+                        $resurtidoAnterior['encargado_id'] ?? null,
+                    'fecha_atencion' =>
+                        $resurtidoAnterior['fecha_atencion'] ?? null,
+                ],
+                'nuevos' => [
+                    'estado' => $resurtidoNuevo['estado'] ?? $estado,
+                    'encargado_id' =>
+                        $resurtidoNuevo['encargado_id'] ?? $encargadoId,
+                    'fecha_atencion' =>
+                        $resurtidoNuevo['fecha_atencion'] ?? null,
+                ],
+            ]);
+        }
+
+        return $ok;
     }
 
     // ==================================================
@@ -496,6 +556,26 @@ class ResurtidoController
                 'No fue posible volver a consultar el resurtido.'
             );
         }
+
+        auditLog([
+            'modulo' => 'Resurtidos',
+            'accion' => 'INICIAR_SURTIDO',
+            'entidad' => 'resurtido',
+            'registro_id' => $resurtidoId,
+            'descripcion' => 'Inició el surtido de la solicitud '
+                . ($resurtidoActualizado['folio']
+                    ?? ('#' . $resurtidoId))
+                . '.',
+            'anteriores' => [
+                'estado' => $resurtido['estado'] ?? null,
+                'encargado_id' => $resurtido['encargado_id'] ?? null,
+            ],
+            'nuevos' => [
+                'estado' => $resurtidoActualizado['estado'] ?? null,
+                'encargado_id' =>
+                    $resurtidoActualizado['encargado_id'] ?? null,
+            ],
+        ]);
 
         return $resurtidoActualizado;
     }
@@ -590,14 +670,40 @@ class ResurtidoController
             ];
         }
 
-        return $this
+        $resurtidoAnterior = $this
             ->resurtidoModel
-            ->finalizarConSalida(
-                $resurtidoId,
-                $salidaId,
-                $encargadoId,
-                $cantidadesValidadas
-            );
+            ->obtenerPorId($resurtidoId);
+
+        $resultado = $this->resurtidoModel->finalizarConSalida(
+            $resurtidoId,
+            $salidaId,
+            $encargadoId,
+            $cantidadesValidadas
+        );
+
+        $resurtidoNuevo = $this
+            ->resurtidoModel
+            ->obtenerPorId($resurtidoId);
+
+        auditLog([
+            'modulo' => 'Resurtidos',
+            'accion' => 'FINALIZAR_RESURTIDO',
+            'entidad' => 'resurtido',
+            'registro_id' => $resurtidoId,
+            'descripcion' => 'Finalizó el resurtido '
+                . ($resurtidoNuevo['folio']
+                    ?? $resurtidoAnterior['folio']
+                    ?? ('#' . $resurtidoId))
+                . ' y lo vinculó con la salida #'
+                . $salidaId . '.',
+            'anteriores' => $resurtidoAnterior,
+            'nuevos' => $resurtidoNuevo ?? $resultado,
+            'metadata' => [
+                'cantidades_surtidas' => $cantidadesValidadas,
+            ],
+        ]);
+
+        return $resultado;
     }
 
     // ==================================================

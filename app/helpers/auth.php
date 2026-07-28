@@ -53,6 +53,8 @@ function requireLogin(): void
 
     $_SESSION['ultimo_acceso'] = time();
     renovarCookieSesion();
+
+    auditTrackCurrentRequest();
 }
 
 function currentUser(): ?array
@@ -62,6 +64,18 @@ function currentUser(): ?array
 
 function logoutUser(): void
 {
+    if (isLoggedIn()) {
+        $user = currentUser();
+
+        auditLog([
+            'modulo' => 'Autenticación',
+            'accion' => 'CIERRE_SESION',
+            'entidad' => 'usuario',
+            'registro_id' => $user['id'] ?? null,
+            'descripcion' => 'Cerró sesión en el sistema.',
+        ]);
+    }
+
     $_SESSION = [];
 
     if (ini_get("session.use_cookies")) {
@@ -83,3 +97,5 @@ function logoutUser(): void
 
     session_destroy();
 }
+
+require_once __DIR__ . '/audit.php';

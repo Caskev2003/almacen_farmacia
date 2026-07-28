@@ -267,6 +267,46 @@ function reactivarProducto(PDO $conn, int $productoId): void
     $stmt->execute([$productoId]);
 }
 
+function snapshotProductoImportacion(
+    PDO $conn,
+    int $productoId
+): array {
+    $stmtProducto = $conn->prepare("
+        SELECT
+            id,
+            codigo,
+            codigo_barras,
+            descripcion,
+            sucursal,
+            ubicacion,
+            existencia_bodega,
+            estado
+        FROM productos
+        WHERE id = ?
+        LIMIT 1
+    ");
+    $stmtProducto->execute([$productoId]);
+    $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $stmtExistencias = $conn->prepare("
+        SELECT
+            id,
+            sucursal,
+            ubicacion,
+            existencia
+        FROM producto_existencias
+        WHERE producto_id = ?
+        ORDER BY sucursal ASC, ubicacion ASC, id ASC
+    ");
+    $stmtExistencias->execute([$productoId]);
+
+    $producto['existencias'] = $stmtExistencias->fetchAll(
+        PDO::FETCH_ASSOC
+    );
+
+    return $producto;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $tipoImportacion = limpiarTexto($_POST['tipo_importacion'] ?? '');
@@ -387,6 +427,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
 
                         $productoId = (int)$producto['id'];
+                        $estadoAnterior = snapshotProductoImportacion(
+                            $conn,
+                            $productoId
+                        );
 
                         $conn->beginTransaction();
 
@@ -409,6 +453,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $conn->commit();
 
                         $actualizados++;
+
+                        $estadoNuevo = snapshotProductoImportacion(
+                            $conn,
+                            $productoId
+                        );
+
+                        auditLog([
+                            'modulo' => 'Importación de productos',
+                            'accion' => 'ACTUALIZAR_EXISTENCIA_IMPORTACION',
+                            'entidad' => 'producto',
+                            'registro_id' => $productoId,
+                            'descripcion' => 'La importación actualizó '
+                                . ($producto['descripcion']
+                                    ?? ('producto #' . $productoId))
+                                . ' en ' . $almacenUsar
+                                . ', ubicación ' . $ubicacion
+                                . ', con existencia ' . $existencia
+                                . '.',
+                            'anteriores' => $estadoAnterior,
+                            'nuevos' => $estadoNuevo,
+                            'metadata' => [
+                                'origen' => 'ARCHIVO_EXCEL',
+                                'fila_excel' => $numeroFila,
+                                'codigo' => $codigo,
+                            ],
+                        ]);
 
                     } catch (Exception $e) {
 
@@ -457,10 +527,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mensaje .= "</ul>";
             }
 
+            auditLog([
+                'modulo' => 'Importación de productos',
+                'accion' => 'IMPORTAR_EXISTENCIAS',
+                'entidad' => 'producto_existencia',
+                'descripcion' => 'Importó existencias desde Excel para '
+                    . $almacenUsar . ': '
+                    . $actualizados . ' actualizado(s), '
+                    . $noEncontrados . ' no encontrado(s), '
+                    . $omitidos . ' omitido(s) y '
+                    . $errores . ' error(es).',
+                'metadata' => [
+                    'archivo' => basename(
+                        (string) (
+                            $_FILES['excel']['name']
+                            ?? 'archivo_sin_nombre'
+                        )
+                    ),
+                    'tipo_importacion' => $tipoImportacion,
+                    'sucursal' => $almacenUsar,
+                    'productos_en_excel' => $productosEnExcel,
+                    'con_stock' => $conStock,
+                    'sin_stock' => $sinStock,
+                    'actualizados' => $actualizados,
+                    'no_encontrados' => $noEncontrados,
+                    'omitidos' => $omitidos,
+                    'errores' => $errores,
+                    'primeros_errores' => $detalleErrores,
+                ],
+            ]);
+
         } catch (Exception $e) {
 
             $mensaje = "<strong>❌ Error:</strong> " . $e->getMessage();
             $errores++;
+
+            auditLog([
+                'modulo' => 'Importación de productos',
+                'accion' => 'IMPORTACION_FALLIDA',
+                'descripcion' => 'Falló la importación de existencias desde Excel.',
+                'metadata' => [
+                    'archivo' => basename(
+                        (string) (
+                            $_FILES['excel']['name']
+                            ?? 'archivo_sin_nombre'
+                        )
+                    ),
+                    'tipo_importacion' => $tipoImportacion,
+                    'sucursal' => $sucursal,
+                    'error' => $e->getMessage(),
+                ],
+            ]);
         }
     }
 }

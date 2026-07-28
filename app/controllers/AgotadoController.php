@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class AgotadoController
 {
@@ -87,6 +88,47 @@ class AgotadoController
     private function sucursalSesion(): string
     {
         return $this->sucursalPorAlmacenId($this->almacenIdSesion());
+    }
+
+    private function productoAuditSnapshot(int $productoId): array
+    {
+        $stmtProducto = $this->conn->prepare("
+            SELECT
+                id,
+                codigo,
+                codigo_barras,
+                descripcion,
+                ubicacion,
+                estado
+            FROM productos
+            WHERE id = :id
+            LIMIT 1
+        ");
+        $stmtProducto->execute([
+            ':id' => $productoId
+        ]);
+
+        $producto = $stmtProducto->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $stmtExistencias = $this->conn->prepare("
+            SELECT
+                id,
+                sucursal,
+                ubicacion,
+                existencia
+            FROM producto_existencias
+            WHERE producto_id = :producto_id
+            ORDER BY sucursal ASC, ubicacion ASC, id ASC
+        ");
+        $stmtExistencias->execute([
+            ':producto_id' => $productoId
+        ]);
+
+        $producto['existencias'] = $stmtExistencias->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+
+        return $producto;
     }
 
     private function obtenerSucursalesFiltro(array $filtros): array
@@ -396,6 +438,10 @@ class AgotadoController
             return ['success' => false, 'message' => 'La existencia debe ser mayor a 0 para asignar ubicación.'];
         }
 
+        $estadoAnterior = $this->productoAuditSnapshot(
+            $productoId
+        );
+
         try {
             $this->conn->beginTransaction();
 
@@ -472,6 +518,25 @@ class AgotadoController
 
             $this->conn->commit();
 
+            $estadoNuevo = $this->productoAuditSnapshot(
+                $productoId
+            );
+
+            auditLog([
+                'modulo' => 'Agotados',
+                'accion' => 'ASIGNAR_UBICACION_EXISTENCIA',
+                'entidad' => 'producto',
+                'registro_id' => $productoId,
+                'descripcion' => 'Asignó la ubicación '
+                    . $ubicacionNueva . ' y '
+                    . $existencia . ' unidades al producto '
+                    . ($estadoNuevo['descripcion']
+                        ?? ('#' . $productoId))
+                    . ' en ' . $sucursal . '.',
+                'anteriores' => $estadoAnterior,
+                'nuevos' => $estadoNuevo,
+            ]);
+
             return [
                 'success' => true,
                 'message' => 'Ubicación y existencia asignadas correctamente.'
@@ -501,6 +566,10 @@ class AgotadoController
         if ($productoId <= 0) {
             return ['success' => false, 'message' => 'Producto inválido.'];
         }
+
+        $estadoAnterior = $this->productoAuditSnapshot(
+            $productoId
+        );
 
         try {
             $this->conn->beginTransaction();
@@ -574,6 +643,23 @@ class AgotadoController
             ]);
 
             $this->conn->commit();
+
+            $estadoNuevo = $this->productoAuditSnapshot(
+                $productoId
+            );
+
+            auditLog([
+                'modulo' => 'Agotados',
+                'accion' => 'DAR_BAJA_EXISTENCIAS',
+                'entidad' => 'producto',
+                'registro_id' => $productoId,
+                'descripcion' => 'Dio de baja las existencias y ubicaciones de '
+                    . ($estadoAnterior['descripcion']
+                        ?? ('producto #' . $productoId))
+                    . '; ahora aparece sin almacén.',
+                'anteriores' => $estadoAnterior,
+                'nuevos' => $estadoNuevo,
+            ]);
 
             return [
                 'success' => true,

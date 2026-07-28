@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class EntradaController
 {
@@ -217,8 +218,16 @@ class EntradaController
         $referenciaFinal .= ' | Ref: ' . $referencia;
     }
 
+    $productIdsAudit = auditExtractProductIds(
+        $entradaExistente['detalle'] ?? [],
+        $detalle
+    );
+    $inventoryBefore = auditInventorySnapshot(
+        $productIdsAudit
+    );
+
     // Actualizar movimiento y sus detalles
-    return $this->movimientoModel->actualizarMovimiento($movimientoId, [
+    $resultado = $this->movimientoModel->actualizarMovimiento($movimientoId, [
         'folio' => $folio,
         'fecha' => $fecha,
         'almacen_id' => $almacenId,
@@ -227,6 +236,38 @@ class EntradaController
         'observaciones' => $observaciones,
         'usuario_id' => $usuarioId,
     ], $detalle);
+
+    if (!empty($resultado['success'])) {
+        $entradaActualizada =
+            $this->movimientoModel->obtenerEntradaPorId(
+                $movimientoId
+            );
+        $inventoryAfter = auditInventorySnapshot(
+            $productIdsAudit
+        );
+
+        auditLog([
+            'modulo' => 'Entradas',
+            'accion' => 'ACTUALIZAR_ENTRADA',
+            'entidad' => 'movimiento',
+            'registro_id' => $movimientoId,
+            'descripcion' => 'Actualizó la entrada '
+                . ($entradaActualizada['folio']
+                    ?? $entradaExistente['folio']
+                    ?? ('#' . $movimientoId))
+                . ', incluyendo sus productos, cantidades, lotes o ubicaciones.',
+            'anteriores' => [
+                'movimiento' => $entradaExistente,
+                'existencias' => $inventoryBefore,
+            ],
+            'nuevos' => [
+                'movimiento' => $entradaActualizada,
+                'existencias' => $inventoryAfter,
+            ],
+        ]);
+    }
+
+    return $resultado;
 }
     public function guardar(array $postData, int $usuarioId): array
     {
@@ -357,7 +398,12 @@ class EntradaController
             $referenciaFinal .= ' | Ref: ' . $referencia;
         }
 
-        return $this->movimientoModel->crearMovimiento([
+        $productIdsAudit = auditExtractProductIds($detalle);
+        $inventoryBefore = auditInventorySnapshot(
+            $productIdsAudit
+        );
+
+        $resultado = $this->movimientoModel->crearMovimiento([
             'folio' => $folio,
             'tipo_movimiento' => 'ENTRADA',
             'fecha' => $fecha,
@@ -367,11 +413,98 @@ class EntradaController
             'observaciones' => $observaciones,
             'usuario_id' => $usuarioId,
         ], $detalle);
+
+        if (!empty($resultado['success'])) {
+            $movimientoId = (int) (
+                $resultado['movimiento_id'] ?? 0
+            );
+            $entradaCreada = $movimientoId > 0
+                ? $this->movimientoModel->obtenerEntradaPorId(
+                    $movimientoId
+                )
+                : null;
+            $inventoryAfter = auditInventorySnapshot(
+                $productIdsAudit
+            );
+
+            auditLog([
+                'modulo' => 'Entradas',
+                'accion' => 'CREAR_ENTRADA',
+                'entidad' => 'movimiento',
+                'registro_id' => $movimientoId ?: null,
+                'descripcion' => 'Registró la entrada '
+                    . ($resultado['folio'] ?? $folio)
+                    . ' con ' . count($detalle) . ' producto(s).',
+                'anteriores' => [
+                    'existencias' => $inventoryBefore,
+                ],
+                'nuevos' => [
+                    'movimiento' => $entradaCreada ?? [
+                        'folio' => $resultado['folio'] ?? $folio,
+                        'almacen_id' => $almacenId,
+                        'detalle' => $detalle,
+                    ],
+                    'existencias' => $inventoryAfter,
+                ],
+            ]);
+        }
+
+        return $resultado;
     }
 
     public function cancelarEntrada(int $movimientoId, int $usuarioId, string $motivo = ''): array
     {
-        return $this->movimientoModel->cancelarEntrada($movimientoId, $usuarioId, $motivo);
+        $entradaAnterior =
+            $this->movimientoModel->obtenerEntradaPorId(
+                $movimientoId
+            );
+        $productIdsAudit = auditExtractProductIds(
+            $entradaAnterior['detalle'] ?? []
+        );
+        $inventoryBefore = auditInventorySnapshot(
+            $productIdsAudit
+        );
+        $resultado = $this->movimientoModel->cancelarEntrada(
+            $movimientoId,
+            $usuarioId,
+            $motivo
+        );
+
+        if (!empty($resultado['success'])) {
+            $entradaNueva =
+                $this->movimientoModel->obtenerEntradaPorId(
+                    $movimientoId
+                );
+            $inventoryAfter = auditInventorySnapshot(
+                $productIdsAudit
+            );
+
+            auditLog([
+                'modulo' => 'Entradas',
+                'accion' => 'CANCELAR_ENTRADA',
+                'entidad' => 'movimiento',
+                'registro_id' => $movimientoId,
+                'descripcion' => 'Canceló la entrada '
+                    . ($entradaAnterior['folio']
+                        ?? ('#' . $movimientoId))
+                    . '. Motivo: '
+                    . ($motivo !== '' ? $motivo : 'Sin motivo capturado')
+                    . '.',
+                'anteriores' => [
+                    'movimiento' => $entradaAnterior,
+                    'existencias' => $inventoryBefore,
+                ],
+                'nuevos' => [
+                    'movimiento' => $entradaNueva,
+                    'existencias' => $inventoryAfter,
+                ],
+                'metadata' => [
+                    'motivo_cancelacion' => $motivo,
+                ],
+            ]);
+        }
+
+        return $resultado;
     }
 
     /**

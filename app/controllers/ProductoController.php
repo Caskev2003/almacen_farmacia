@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/Producto.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class ProductoController
 {
@@ -9,6 +10,33 @@ class ProductoController
     public function __construct()
     {
         $this->productoModel = new Producto();
+    }
+
+    private function productoAuditData(?array $producto): array
+    {
+        if (!$producto) {
+            return [];
+        }
+
+        $fields = [
+            'id',
+            'codigo',
+            'codigo_barras',
+            'descripcion',
+            'categoria_id',
+            'proveedor_id',
+            'laboratorio',
+            'unidad_medida',
+            'precio_compra',
+            'precio_venta',
+            'ubicacion',
+            'estado',
+        ];
+
+        return array_intersect_key(
+            $producto,
+            array_flip($fields)
+        );
     }
 
     private function esAdministrador(): bool
@@ -179,9 +207,28 @@ class ProductoController
             ];
         }
 
+        $productoCreado = $this->productoModel->findByCodigo(
+            $data['codigo']
+        );
+
+        auditLog([
+            'modulo' => 'Productos',
+            'accion' => 'CREAR_PRODUCTO',
+            'entidad' => 'producto',
+            'registro_id' => $productoCreado['id'] ?? $data['codigo'],
+            'descripcion' => 'Creó el producto '
+                . ($productoCreado['descripcion'] ?? $data['descripcion'])
+                . ' con código ' . $data['codigo'] . '.',
+            'nuevos' => $this->productoAuditData($productoCreado)
+                ?: $data,
+        ]);
+
         return [
             'success' => true,
-            'message' => 'Producto registrado correctamente.'
+            'message' => 'Producto registrado correctamente.',
+            'producto_id' => isset($productoCreado['id'])
+                ? (int) $productoCreado['id']
+                : null,
         ];
     }
 
@@ -212,6 +259,26 @@ class ProductoController
                 'message' => 'No se pudo actualizar el producto.'
             ];
         }
+
+        $productoActualizado = $this->productoModel->findById($id);
+        $changes = auditChangedValues(
+            $this->productoAuditData($productoActual),
+            $this->productoAuditData($productoActualizado)
+        );
+
+        auditLog([
+            'modulo' => 'Productos',
+            'accion' => 'ACTUALIZAR_PRODUCTO',
+            'entidad' => 'producto',
+            'registro_id' => $id,
+            'descripcion' => 'Actualizó el producto '
+                . ($productoActualizado['descripcion']
+                    ?? $productoActual['descripcion']
+                    ?? ('#' . $id))
+                . '.',
+            'anteriores' => $changes['anteriores'],
+            'nuevos' => $changes['nuevos'],
+        ]);
 
         return [
             'success' => true,
@@ -279,6 +346,15 @@ class ProductoController
             $existencia = 0;
         }
 
+        $producto = $this->productoModel->findByCodigo($codigo);
+        $ubicacionAnterior = $producto
+            ? $this->productoModel->getUbicacionExistencia(
+                (int) $producto['id'],
+                $sucursal,
+                $ubicacion
+            )
+            : null;
+
         $ok = $this->productoModel->actualizarExistenciaPorCodigo(
             $codigo,
             $sucursal,
@@ -328,6 +404,45 @@ class ProductoController
             $existencia,
             $ubicacion
         );
+
+        if ($ok && $producto) {
+            $ubicacionNueva = $this->productoModel->getUbicacionExistencia(
+                (int) $producto['id'],
+                $sucursal,
+                $ubicacion
+            );
+
+            auditLog([
+                'modulo' => 'Productos',
+                'accion' => $ubicacionAnterior
+                    ? 'ACTUALIZAR_EXISTENCIA_UBICACION'
+                    : 'CREAR_UBICACION',
+                'entidad' => 'producto_existencia',
+                'registro_id' => $ubicacionNueva['id']
+                    ?? $ubicacionAnterior['id']
+                    ?? null,
+                'descripcion' => (
+                    $ubicacionAnterior
+                        ? 'Actualizó'
+                        : 'Creó'
+                )
+                    . ' la ubicación ' . $ubicacion
+                    . ' del producto '
+                    . ($producto['descripcion'] ?? $codigo)
+                    . ' en ' . $sucursal . '; existencia de '
+                    . (int) ($ubicacionAnterior['existencia'] ?? 0)
+                    . ' a '
+                    . (int) ($ubicacionNueva['existencia'] ?? $existencia)
+                    . '.',
+                'anteriores' => $ubicacionAnterior,
+                'nuevos' => $ubicacionNueva,
+                'metadata' => [
+                    'producto_id' => (int) $producto['id'],
+                    'codigo' => $codigo,
+                    'descripcion' => $producto['descripcion'] ?? null,
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,
@@ -384,6 +499,8 @@ class ProductoController
             $ubicacionAnterior
         );
 
+        $producto = $this->productoModel->findById($productoId);
+
         if (!$ubicacionExistente && $existencia > 0) {
             // Si no existe y queremos agregar existencia, crear nueva
             $ok = $this->productoModel->crearUbicacionExistencia(
@@ -392,6 +509,32 @@ class ProductoController
                 $ubicacionNueva,
                 $existencia
             );
+
+            if ($ok) {
+                $ubicacionDespues =
+                    $this->productoModel->getUbicacionExistencia(
+                        $productoId,
+                        $sucursal,
+                        $ubicacionNueva
+                    );
+
+                auditLog([
+                    'modulo' => 'Productos',
+                    'accion' => 'CREAR_UBICACION',
+                    'entidad' => 'producto_existencia',
+                    'registro_id' => $ubicacionDespues['id'] ?? null,
+                    'descripcion' => 'Creó la ubicación '
+                        . $ubicacionNueva . ' con '
+                        . $existencia . ' unidades para '
+                        . ($producto['descripcion'] ?? ('producto #' . $productoId))
+                        . '.',
+                    'nuevos' => $ubicacionDespues,
+                    'metadata' => [
+                        'producto_id' => $productoId,
+                        'sucursal' => $sucursal,
+                    ],
+                ]);
+            }
 
             return [
                 'success' => $ok,
@@ -412,6 +555,33 @@ class ProductoController
                 0
             );
 
+            if ($ok) {
+                $ubicacionDespues =
+                    $this->productoModel->getUbicacionExistencia(
+                        $productoId,
+                        $sucursal,
+                        $ubicacionNueva
+                    );
+
+                auditLog([
+                    'modulo' => 'Productos',
+                    'accion' => 'ACTUALIZAR_EXISTENCIA_UBICACION',
+                    'entidad' => 'producto_existencia',
+                    'registro_id' => $ubicacionDespues['id']
+                        ?? $ubicacionExistente['id']
+                        ?? null,
+                    'descripcion' => 'Cambió a 0 la existencia de '
+                        . ($producto['descripcion'] ?? ('producto #' . $productoId))
+                        . ' en la ubicación ' . $ubicacionNueva . '.',
+                    'anteriores' => $ubicacionExistente,
+                    'nuevos' => $ubicacionDespues,
+                    'metadata' => [
+                        'producto_id' => $productoId,
+                        'sucursal' => $sucursal,
+                    ],
+                ]);
+            }
+
             return [
                 'success' => $ok,
                 'message' => $ok
@@ -428,6 +598,36 @@ class ProductoController
             $ubicacionNueva,
             $existencia
         );
+
+        if ($ok) {
+            $ubicacionDespues =
+                $this->productoModel->getUbicacionExistencia(
+                    $productoId,
+                    $sucursal,
+                    $ubicacionNueva
+                );
+
+            auditLog([
+                'modulo' => 'Productos',
+                'accion' => 'ACTUALIZAR_UBICACION_EXISTENCIA',
+                'entidad' => 'producto_existencia',
+                'registro_id' => $ubicacionDespues['id']
+                    ?? $ubicacionExistente['id']
+                    ?? null,
+                'descripcion' => 'Actualizó la ubicación de '
+                    . ($producto['descripcion'] ?? ('producto #' . $productoId))
+                    . ' de ' . $ubicacionAnterior
+                    . ' a ' . $ubicacionNueva
+                    . ' y dejó la existencia en '
+                    . $existencia . ' unidades.',
+                'anteriores' => $ubicacionExistente,
+                'nuevos' => $ubicacionDespues,
+                'metadata' => [
+                    'producto_id' => $productoId,
+                    'sucursal' => $sucursal,
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,
@@ -474,7 +674,14 @@ class ProductoController
             $ubicacion
         );
 
-        if ($ubicacionData && ($ubicacionData['existencia_actual'] ?? 0) > 0) {
+        if (
+            $ubicacionData
+            && (int) (
+                $ubicacionData['existencia_actual']
+                ?? $ubicacionData['existencia']
+                ?? 0
+            ) > 0
+        ) {
             return [
                 'success' => false,
                 'message' => 'No se puede eliminar una ubicación que tiene existencia. Primero pon la existencia en 0.'
@@ -486,6 +693,28 @@ class ProductoController
             $sucursal,
             $ubicacion
         );
+
+        if ($ok && $ubicacionData) {
+            $producto = $this->productoModel->findById($productoId);
+
+            auditLog([
+                'modulo' => 'Productos',
+                'accion' => 'ELIMINAR_UBICACION',
+                'entidad' => 'producto_existencia',
+                'registro_id' => $ubicacionData['id'] ?? null,
+                'descripcion' => 'Eliminó la ubicación '
+                    . $ubicacion . ' de '
+                    . ($producto['descripcion'] ?? ('producto #' . $productoId))
+                    . ' en ' . $sucursal . '.',
+                'anteriores' => $ubicacionData,
+                'nuevos' => [
+                    'estado' => 'ELIMINADA'
+                ],
+                'metadata' => [
+                    'producto_id' => $productoId,
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,
@@ -514,6 +743,21 @@ class ProductoController
                 'message' => 'No se pudo eliminar el producto.'
             ];
         }
+
+        auditLog([
+            'modulo' => 'Productos',
+            'accion' => 'DESACTIVAR_PRODUCTO',
+            'entidad' => 'producto',
+            'registro_id' => $id,
+            'descripcion' => 'Desactivó el producto '
+                . ($producto['descripcion'] ?? ('#' . $id))
+                . '.',
+            'anteriores' => $this->productoAuditData($producto),
+            'nuevos' => array_merge(
+                $this->productoAuditData($producto),
+                ['estado' => 0]
+            ),
+        ]);
 
         return [
             'success' => true,

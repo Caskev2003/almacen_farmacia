@@ -280,6 +280,10 @@ $puedeRecibirResurtidos =
 
         <?php if ($esAdmin): ?>
 
+            <a href="historial_movimientos.php">
+                Historial de Movimientos
+            </a>
+
             <a href="usuario.php">
                 Usuarios
             </a>

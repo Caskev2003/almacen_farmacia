@@ -132,6 +132,20 @@ if (
         ) {
             $_SESSION['csrf_respaldo'] = bin2hex(random_bytes(32));
 
+            auditLog([
+                'modulo' => 'Respaldos',
+                'accion' => 'CREAR_RESPALDO',
+                'entidad' => 'archivo_respaldo',
+                'registro_id' => $nombreArchivo,
+                'descripcion' => 'Generó el respaldo '
+                    . $nombreArchivo . ' de la base de datos.',
+                'nuevos' => [
+                    'archivo' => $nombreArchivo,
+                    'tamano_bytes' => filesize($rutaArchivo),
+                    'base_datos' => $dbName,
+                ],
+            ]);
+
             header('Location: respaldos.php?ok=1');
             exit;
         }
@@ -153,6 +167,16 @@ if (
         } elseif ($codigo !== 0) {
             $error .= ' Código de salida: ' . $codigo . '.';
         }
+
+        auditLog([
+            'modulo' => 'Respaldos',
+            'accion' => 'RESPALDO_FALLIDO',
+            'descripcion' => 'Intentó generar un respaldo, pero el proceso falló.',
+            'metadata' => [
+                'codigo_salida' => $codigo,
+                'detalle' => $detalle,
+            ],
+        ]);
     }
 }
 
@@ -212,6 +236,19 @@ if (isset($_GET['descargar'])) {
         http_response_code(500);
         exit('No se puede leer el archivo solicitado.');
     }
+
+    auditLog([
+        'modulo' => 'Respaldos',
+        'accion' => 'DESCARGAR_RESPALDO',
+        'entidad' => 'archivo_respaldo',
+        'registro_id' => $archivo,
+        'descripcion' => 'Descargó el respaldo '
+            . $archivo . '.',
+        'metadata' => [
+            'archivo' => $archivo,
+            'tamano_bytes' => filesize($rutaArchivo),
+        ],
+    ]);
 
     // Limpiar cualquier contenido previo.
     while (ob_get_level() > 0) {

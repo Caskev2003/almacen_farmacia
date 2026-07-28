@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class SalidaController
 {
@@ -204,7 +205,12 @@ class SalidaController
                 : $textoFolio;
         }
 
-        return $this->movimientoModel->crearSalida([
+        $productIdsAudit = auditExtractProductIds($detalle);
+        $inventoryBefore = auditInventorySnapshot(
+            $productIdsAudit
+        );
+
+        $resultado = $this->movimientoModel->crearSalida([
             'folio' => $folio,
             'fecha' => $fecha,
             'almacen_id' => $almacenId,
@@ -213,6 +219,47 @@ class SalidaController
             'tipo_operacion' => $tipoOperacion,
             'observaciones' => $observacionesFinales,
         ], $detalle);
+
+        if (!empty($resultado['success'])) {
+            $movimientoId = (int) (
+                $resultado['movimiento_id'] ?? 0
+            );
+            $salidaCreada = $movimientoId > 0
+                ? $this->movimientoModel->obtenerSalidaPorId(
+                    $movimientoId
+                )
+                : null;
+            $inventoryAfter = auditInventorySnapshot(
+                $productIdsAudit
+            );
+
+            auditLog([
+                'modulo' => 'Salidas',
+                'accion' => 'CREAR_SALIDA',
+                'entidad' => 'movimiento',
+                'registro_id' => $movimientoId ?: null,
+                'descripcion' => 'Registró la salida '
+                    . ($resultado['folio'] ?? $folio)
+                    . ' con ' . count($detalle)
+                    . ' producto(s) y documento '
+                    . $tipoOperacion . '.',
+                'anteriores' => [
+                    'existencias' => $inventoryBefore,
+                ],
+                'nuevos' => [
+                    'movimiento' => $salidaCreada ?? [
+                        'folio' => $resultado['folio'] ?? $folio,
+                        'almacen_id' => $almacenId,
+                        'tipo_operacion' => $tipoOperacion,
+                        'folio_operacion' => $folioOperacion,
+                        'detalle' => $detalle,
+                    ],
+                    'existencias' => $inventoryAfter,
+                ],
+            ]);
+        }
+
+        return $resultado;
     }
 
     public function obtenerSalida(int $movimientoId): ?array
@@ -243,12 +290,67 @@ class SalidaController
         );
     }
 
-    public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo = ''): array
+public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo = ''): array
 {
-    return $this->movimientoModel->cancelarSalida($movimientoId, $usuarioId, $motivo);
+    $salidaAnterior =
+        $this->movimientoModel->obtenerSalidaPorId(
+            $movimientoId
+        );
+    $productIdsAudit = auditExtractProductIds(
+        $salidaAnterior['detalle'] ?? []
+    );
+    $inventoryBefore = auditInventorySnapshot(
+        $productIdsAudit
+    );
+    $resultado = $this->movimientoModel->cancelarSalida(
+        $movimientoId,
+        $usuarioId,
+        $motivo
+    );
+
+    if (!empty($resultado['success'])) {
+        $salidaNueva =
+            $this->movimientoModel->obtenerSalidaPorId(
+                $movimientoId
+            );
+        $inventoryAfter = auditInventorySnapshot(
+            $productIdsAudit
+        );
+
+        auditLog([
+            'modulo' => 'Salidas',
+            'accion' => 'CANCELAR_SALIDA',
+            'entidad' => 'movimiento',
+            'registro_id' => $movimientoId,
+            'descripcion' => 'Canceló la salida '
+                . ($salidaAnterior['folio']
+                    ?? ('#' . $movimientoId))
+                . '. Motivo: '
+                . ($motivo !== '' ? $motivo : 'Sin motivo capturado')
+                . '.',
+            'anteriores' => [
+                'movimiento' => $salidaAnterior,
+                'existencias' => $inventoryBefore,
+            ],
+            'nuevos' => [
+                'movimiento' => $salidaNueva,
+                'existencias' => $inventoryAfter,
+            ],
+            'metadata' => [
+                'motivo_cancelacion' => $motivo,
+            ],
+        ]);
+    }
+
+    return $resultado;
 }
 public function actualizar(int $movimientoId, array $postData, int $usuarioId): array
 {
+    $salidaAnterior =
+        $this->movimientoModel->obtenerSalidaPorId(
+            $movimientoId
+        );
+
     $fecha = trim($postData['fecha'] ?? '');
     $tipoSalida = trim($postData['tipo_salida'] ?? '');
     $tipoOperacion = trim($postData['tipo_operacion'] ?? '');
@@ -321,11 +423,51 @@ public function actualizar(int $movimientoId, array $postData, int $usuarioId): 
             : $textoFolio;
     }
 
-    return $this->movimientoModel->editarSalida($movimientoId, [
+    $productIdsAudit = auditExtractProductIds(
+        $salidaAnterior['detalle'] ?? [],
+        $detalle
+    );
+    $inventoryBefore = auditInventorySnapshot(
+        $productIdsAudit
+    );
+
+    $resultado = $this->movimientoModel->editarSalida($movimientoId, [
         'fecha' => $fecha,
         'referencia' => $tipoSalida,
         'tipo_operacion' => $tipoOperacion,
         'observaciones' => $observacionesFinales,
     ], $detalle, $usuarioId);
+
+    if (!empty($resultado['success'])) {
+        $salidaNueva =
+            $this->movimientoModel->obtenerSalidaPorId(
+                $movimientoId
+            );
+        $inventoryAfter = auditInventorySnapshot(
+            $productIdsAudit
+        );
+
+        auditLog([
+            'modulo' => 'Salidas',
+            'accion' => 'ACTUALIZAR_SALIDA',
+            'entidad' => 'movimiento',
+            'registro_id' => $movimientoId,
+            'descripcion' => 'Actualizó la salida '
+                . ($salidaNueva['folio']
+                    ?? $salidaAnterior['folio']
+                    ?? ('#' . $movimientoId))
+                . ', incluyendo sus productos, cantidades o ubicaciones.',
+            'anteriores' => [
+                'movimiento' => $salidaAnterior,
+                'existencias' => $inventoryBefore,
+            ],
+            'nuevos' => [
+                'movimiento' => $salidaNueva,
+                'existencias' => $inventoryAfter,
+            ],
+        ]);
+    }
+
+    return $resultado;
 }
 }

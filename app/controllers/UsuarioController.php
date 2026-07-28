@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../models/Usuario.php';
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../helpers/audit.php';
 
 class UsuarioController
 {
@@ -85,6 +86,31 @@ class UsuarioController
             'estado' => 1,
         ]);
 
+        if ($ok) {
+            $usuarioCreado =
+                $this->usuarioModel->findByUsuarioOrCorreo(
+                    $usuario
+                );
+
+            auditLog([
+                'modulo' => 'Usuarios',
+                'accion' => 'CREAR_USUARIO',
+                'entidad' => 'usuario',
+                'registro_id' => $usuarioCreado['id'] ?? null,
+                'descripcion' => 'Creó al usuario '
+                    . $nombre . ' con rol ' . $rol . '.',
+                'nuevos' => [
+                    'id' => $usuarioCreado['id'] ?? null,
+                    'nombre' => $nombre,
+                    'usuario' => $usuario,
+                    'correo' => $correo,
+                    'rol' => $rol,
+                    'almacen_id' => $almacenId,
+                    'estado' => 1,
+                ],
+            ]);
+        }
+
         return [
             'success' => $ok,
             'message' => $ok ? 'Usuario creado correctamente.' : 'No se pudo crear el usuario.'
@@ -109,7 +135,25 @@ class UsuarioController
             ];
         }
 
+        $usuarioObjetivo = $this->usuarioModel->findById($id);
+
         $ok = $this->usuarioModel->updatePassword($id, $password);
+
+        if ($ok) {
+            auditLog([
+                'modulo' => 'Usuarios',
+                'accion' => 'CAMBIAR_CONTRASENA',
+                'entidad' => 'usuario',
+                'registro_id' => $id,
+                'descripcion' => 'Cambió la contraseña del usuario '
+                    . ($usuarioObjetivo['nombre'] ?? ('#' . $id))
+                    . '. Por seguridad, la contraseña no se almacenó en la bitácora.',
+                'metadata' => [
+                    'usuario_afectado' => $usuarioObjetivo['usuario'] ?? null,
+                    'correo' => $usuarioObjetivo['correo'] ?? null,
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,
@@ -126,7 +170,35 @@ class UsuarioController
             ];
         }
 
+        $usuarioAnterior = $this->usuarioModel->findById($id);
         $ok = $this->usuarioModel->updateEstado($id, $estado);
+
+        if ($ok) {
+            $usuarioNuevo = $this->usuarioModel->findById($id);
+
+            auditLog([
+                'modulo' => 'Usuarios',
+                'accion' => $estado === 1
+                    ? 'ACTIVAR_USUARIO'
+                    : 'DESACTIVAR_USUARIO',
+                'entidad' => 'usuario',
+                'registro_id' => $id,
+                'descripcion' => (
+                    $estado === 1
+                        ? 'Activó'
+                        : 'Desactivó'
+                )
+                    . ' al usuario '
+                    . ($usuarioAnterior['nombre'] ?? ('#' . $id))
+                    . '.',
+                'anteriores' => [
+                    'estado' => $usuarioAnterior['estado'] ?? null,
+                ],
+                'nuevos' => [
+                    'estado' => $usuarioNuevo['estado'] ?? $estado,
+                ],
+            ]);
+        }
 
         return [
             'success' => $ok,
@@ -167,6 +239,8 @@ class UsuarioController
         $almacenId = null;
     }
 
+    $usuarioAnterior = $this->usuarioModel->findById($id);
+
     $ok = $this->usuarioModel->update($id, [
         'nombre' => $nombre,
         'usuario' => $usuario,
@@ -174,6 +248,28 @@ class UsuarioController
         'rol' => $rol,
         'almacen_id' => $almacenId,
     ]);
+
+    if ($ok) {
+        $usuarioNuevo = $this->usuarioModel->findById($id);
+        $changes = auditChangedValues(
+            $usuarioAnterior ?? [],
+            $usuarioNuevo ?? []
+        );
+
+        auditLog([
+            'modulo' => 'Usuarios',
+            'accion' => 'ACTUALIZAR_USUARIO',
+            'entidad' => 'usuario',
+            'registro_id' => $id,
+            'descripcion' => 'Actualizó los datos del usuario '
+                . ($usuarioNuevo['nombre']
+                    ?? $usuarioAnterior['nombre']
+                    ?? ('#' . $id))
+                . '.',
+            'anteriores' => $changes['anteriores'],
+            'nuevos' => $changes['nuevos'],
+        ]);
+    }
 
     return [
         'success' => $ok,

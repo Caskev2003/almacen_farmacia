@@ -655,6 +655,122 @@ if ($action !== '') {
     }
 
     // --------------------------------------------------
+    // CONCLUIR UNA SOLICITUD PARCIAL
+    // --------------------------------------------------
+
+    if ($action === 'concluir_parcial') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            responderJson(
+                false,
+                'Método no permitido.',
+                [],
+                405
+            );
+        }
+
+        if (
+            !in_array(
+                $rol,
+                ['ENCARGADO', 'ADMINISTRADOR'],
+                true
+            )
+        ) {
+            responderJson(
+                false,
+                'No tiene permisos para concluir solicitudes.',
+                [],
+                403
+            );
+        }
+
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
+
+        $resurtidoId = (int) (
+            $datos['id'] ?? 0
+        );
+
+        if ($resurtidoId <= 0) {
+            responderJson(
+                false,
+                'La solicitud indicada no es válida.',
+                [],
+                422
+            );
+        }
+
+        try {
+            $resurtido = $controller->obtenerPorId(
+                $resurtidoId
+            );
+
+            if (!$resurtido) {
+                responderJson(
+                    false,
+                    'No se encontró la solicitud.',
+                    [],
+                    404
+                );
+            }
+
+            verificarTipoSolicitudModulo(
+                $resurtido,
+                $tipoSolicitudModulo
+            );
+
+            verificarAccesoResurtido(
+                $resurtido,
+                $rol,
+                $usuarioId,
+                $almacenId
+            );
+
+            if (
+                strtoupper(
+                    (string) ($resurtido['estado'] ?? '')
+                ) !== 'PARCIAL'
+            ) {
+                responderJson(
+                    false,
+                    'Solo se pueden concluir solicitudes parciales.',
+                    [],
+                    422
+                );
+            }
+
+            $controller->cambiarEstado(
+                $resurtidoId,
+                'SURTIDO',
+                $usuarioId
+            );
+
+            responderJson(
+                true,
+                'La solicitud parcial se marcó como concluida. '
+                . 'Ya no aparecerá como pendiente.',
+                [
+                    'resurtido' =>
+                        $controller->obtenerPorId(
+                            $resurtidoId
+                        )
+                ]
+            );
+        } catch (Throwable $e) {
+            error_log(
+                'Error al concluir solicitud parcial: '
+                . $e->getMessage()
+            );
+
+            responderJson(
+                false,
+                $e->getMessage(),
+                [],
+                500
+            );
+        }
+    }
+
+    // --------------------------------------------------
     // ACTUALIZAR LISTA SIN RECARGAR LA PÁGINA
     // --------------------------------------------------
 
@@ -1108,6 +1224,20 @@ require __DIR__
                         (string) $resurtido['estado']
                     );
 
+                    $totalSolicitado = (float) (
+                        $resurtido['total_cantidad'] ?? 0
+                    );
+
+                    $totalSurtido = (float) (
+                        $resurtido['total_cantidad_surtida'] ?? 0
+                    );
+
+                    $estadoVisible =
+                        $estado === 'SURTIDO'
+                        && $totalSurtido < $totalSolicitado
+                            ? 'CONCLUIDO'
+                            : $estado;
+
                     $puedeSurtir =
                         in_array(
                             $rol,
@@ -1123,6 +1253,14 @@ require __DIR__
                             ],
                             true
                         );
+
+                    $puedeConcluir =
+                        in_array(
+                            $rol,
+                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            true
+                        )
+                        && $estado === 'PARCIAL';
                     ?>
 
                     <article class="resurtido-item">
@@ -1163,14 +1301,14 @@ require __DIR__
 
                             <span
                                 class="estado estado-<?=
-                                    strtolower($estado)
+                                    strtolower($estadoVisible)
                                 ?>"
                             >
                                 <?= htmlspecialchars(
                                     str_replace(
                                         '_',
                                         ' ',
-                                        $estado
+                                        $estadoVisible
                                     ),
                                     ENT_QUOTES,
                                     'UTF-8'
@@ -1203,6 +1341,20 @@ require __DIR__
                                     <?= $estado === 'PENDIENTE'
                                         ? 'Surtir'
                                         : 'Continuar' ?>
+                                </button>
+
+                            <?php endif; ?>
+
+                            <?php if ($puedeConcluir): ?>
+
+                                <button
+                                    type="button"
+                                    class="btn-concluir"
+                                    data-concluir-resurtido="<?=
+                                        (int) $resurtido['id']
+                                    ?>"
+                                >
+                                    Concluir
                                 </button>
 
                             <?php endif; ?>
@@ -2178,6 +2330,24 @@ require __DIR__
 
         let productosHtml = '';
 
+        const estadoReal = String(
+            resurtido.estado || ''
+        ).toUpperCase();
+
+        const totalSolicitado = Number(
+            resurtido.total_cantidad_solicitada || 0
+        );
+
+        const totalSurtido = Number(
+            resurtido.total_cantidad_surtida || 0
+        );
+
+        const estadoVisible =
+            estadoReal === 'SURTIDO'
+            && totalSurtido < totalSolicitado
+                ? 'CONCLUIDO'
+                : estadoReal;
+
         if (!productos.length) {
             productosHtml =
                 '<div class="lista-vacia">'
@@ -2281,7 +2451,7 @@ require __DIR__
                 <p>
                     <strong>Estado:</strong>
                     ${escaparHtml(
-                        String(resurtido.estado)
+                        estadoVisible
                             .replaceAll('_', ' ')
                     )}
                 </p>
@@ -2334,6 +2504,33 @@ require __DIR__
     }
 
     enlazarBotonesSurtirSolicitud();
+
+    function enlazarBotonesConcluirSolicitud() {
+        document
+            .querySelectorAll('[data-concluir-resurtido]')
+            .forEach(function (boton) {
+                if (boton.dataset.eventoConcluirActivo === '1') {
+                    return;
+                }
+
+                boton.dataset.eventoConcluirActivo = '1';
+
+                boton.addEventListener(
+                    'click',
+                    function () {
+                        concluirSolicitudParcial(
+                            Number(
+                                this.dataset
+                                    .concluirResurtido
+                            ),
+                            this
+                        );
+                    }
+                );
+            });
+    }
+
+    enlazarBotonesConcluirSolicitud();
 
     async function iniciarSurtido(id, boton) {
         if (!id) {
@@ -2389,6 +2586,67 @@ require __DIR__
         }
     }
 
+    async function concluirSolicitudParcial(
+        id,
+        boton
+    ) {
+        if (!id) {
+            return;
+        }
+
+        if (
+            !confirm(
+                '¿Desea dar por concluida esta solicitud parcial?\n\n'
+                + 'Las cantidades faltantes ya no se surtirán y '
+                + 'la notificación pendiente desaparecerá.'
+            )
+        ) {
+            return;
+        }
+
+        const textoOriginal = boton.textContent;
+
+        boton.disabled = true;
+        boton.textContent = 'Concluyendo...';
+
+        try {
+            const respuesta = await fetch(
+                endpointModulo + '?action=concluir_parcial',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: id,
+                        csrf_token: csrfToken
+                    })
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible concluir la solicitud.'
+                );
+            }
+
+            alert(resultado.mensaje);
+
+            huellaSolicitudes = '';
+
+            await consultarActualizacionesSolicitudes();
+        } catch (error) {
+            alert(error.message);
+
+            boton.disabled = false;
+            boton.textContent = textoOriginal;
+        }
+    }
+
     // ==================================================
     // ACTUALIZACIÓN AUTOMÁTICA SIN RECARGAR
     // ==================================================
@@ -2417,6 +2675,20 @@ require __DIR__
                 const estado = String(
                     solicitud.estado || 'PENDIENTE'
                 ).toUpperCase();
+
+                const totalSolicitado = Number(
+                    solicitud.total_cantidad || 0
+                );
+
+                const totalSurtido = Number(
+                    solicitud.total_cantidad_surtida || 0
+                );
+
+                const estadoVisible =
+                    estado === 'SURTIDO'
+                    && totalSurtido < totalSolicitado
+                        ? 'CONCLUIDO'
+                        : estado;
 
                 const folioVisible = esModuloTicket
                     ? (
@@ -2459,6 +2731,20 @@ require __DIR__
                     `
                     : '';
 
+                const botonConcluir =
+                    puedeSurtirSolicitudes
+                    && estado === 'PARCIAL'
+                        ? `
+                            <button
+                                type="button"
+                                class="btn-concluir"
+                                data-concluir-resurtido="${id}"
+                            >
+                                Concluir
+                            </button>
+                        `
+                        : '';
+
                 return `
                     <article
                         class="resurtido-item"
@@ -2480,12 +2766,12 @@ require __DIR__
                             <span
                                 class="estado estado-${
                                     escaparHtml(
-                                        estado.toLowerCase()
+                                        estadoVisible.toLowerCase()
                                     )
                                 }"
                             >
                                 ${escaparHtml(
-                                    estado.replaceAll('_', ' ')
+                                    estadoVisible.replaceAll('_', ' ')
                                 )}
                             </span>
                         </div>
@@ -2500,6 +2786,7 @@ require __DIR__
                             </button>
 
                             ${botonSurtir}
+                            ${botonConcluir}
                         </div>
                     </article>
                 `;
@@ -2507,6 +2794,7 @@ require __DIR__
 
         enlazarBotonesVerSolicitud();
         enlazarBotonesSurtirSolicitud();
+        enlazarBotonesConcluirSolicitud();
     }
 
     function mostrarAvisoNuevaSolicitud(

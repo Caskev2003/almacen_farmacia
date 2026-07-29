@@ -127,6 +127,88 @@ if (!function_exists('salidasCantidadesSurtidas')) {
     }
 }
 
+if (!function_exists('salidasValidarCantidadesPendientes')) {
+    /**
+     * Impide que una salida nueva descuente más unidades que las
+     * que todavía están pendientes en el resurtido o ticket.
+     */
+    function salidasValidarCantidadesPendientes(
+        array $postData,
+        array $detallesResurtido
+    ): string {
+        $pendientes = [];
+
+        foreach ($detallesResurtido as $detalle) {
+            $productoId = (int) (
+                $detalle['producto_id'] ?? 0
+            );
+
+            if ($productoId <= 0) {
+                continue;
+            }
+
+            $solicitada = (float) (
+                $detalle['cantidad_solicitada'] ?? 0
+            );
+
+            $surtida = (float) (
+                $detalle['cantidad_surtida'] ?? 0
+            );
+
+            $pendientes[$productoId] = [
+                'cantidad' => max(0, $solicitada - $surtida),
+                'codigo' => (string) (
+                    $detalle['codigo'] ?? ('#' . $productoId)
+                )
+            ];
+        }
+
+        $cantidadesCapturadas = salidasCantidadesSurtidas(
+            $postData,
+            $detallesResurtido
+        );
+
+        foreach ($cantidadesCapturadas as $producto) {
+            $productoId = (int) (
+                $producto['producto_id'] ?? 0
+            );
+
+            $cantidad = (float) (
+                $producto['cantidad_surtida'] ?? 0
+            );
+
+            if (!isset($pendientes[$productoId])) {
+                continue;
+            }
+
+            $pendiente = (float) (
+                $pendientes[$productoId]['cantidad']
+            );
+
+            if ($cantidad > $pendiente) {
+                return 'La cantidad del producto '
+                    . $pendientes[$productoId]['codigo']
+                    . ' supera lo que queda pendiente ('
+                    . rtrim(
+                        rtrim(
+                            number_format(
+                                $pendiente,
+                                3,
+                                '.',
+                                ''
+                            ),
+                            '0'
+                        ),
+                        '.'
+                    )
+                    . ').';
+            }
+        }
+
+        return '';
+    }
+}
+
 /* =========================================================
    MODO EDICION
 ========================================================= */
@@ -201,8 +283,15 @@ if ($resurtidoId > 0 && !$modoEdicion) {
                 $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' está cancelada y no puede surtirse.';
                 $resurtidoAvisoTipo = 'danger';
                 $resurtidoBloqueado = true;
-            } elseif ($estadoResurtido === 'SURTIDO' || !empty($resurtido['salida_id'])) {
+            } elseif ($estadoResurtido === 'SURTIDO') {
                 $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' ya fue surtida y está vinculada a una salida anterior.';
+                $resurtidoAvisoTipo = 'danger';
+                $resurtidoBloqueado = true;
+            } elseif (
+                !empty($resurtido['salida_id'])
+                && $estadoResurtido !== 'PARCIAL'
+            ) {
+                $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' ya está vinculada a una salida anterior.';
                 $resurtidoAvisoTipo = 'danger';
                 $resurtidoBloqueado = true;
             }
@@ -248,7 +337,26 @@ $movimientoGuardadoId = 0;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
 
-    if ($editarPostId > 0) {
+    $errorCantidadPendiente = '';
+
+    if (
+        $modoResurtido
+        && $editarPostId <= 0
+        && $resurtido !== null
+    ) {
+        $errorCantidadPendiente =
+            salidasValidarCantidadesPendientes(
+                $_POST,
+                $resurtido['productos'] ?? []
+            );
+    }
+
+    if ($errorCantidadPendiente !== '') {
+        $result = [
+            'success' => false,
+            'message' => $errorCantidadPendiente
+        ];
+    } elseif ($editarPostId > 0) {
         $result = $controller->actualizar($editarPostId, $_POST, (int)$user['id']);
     } else {
         $result = $controller->guardar($_POST, (int)$user['id']);
@@ -1072,6 +1180,20 @@ function cambiarCantidad(valor) {
     let nuevo = (parseInt(cantidadInput.value) || 0) + valor;
     if (nuevo < 1) nuevo = 1;
 
+    const pedido = productoSeleccionado
+        ? obtenerPedidoResurtido(
+            productoSeleccionado.id
+        )
+        : null;
+
+    if (pedido && nuevo > pedido.pendiente) {
+        nuevo = pedido.pendiente;
+        mostrarToast(
+            `⚠️ Máximo pendiente: ${pedido.pendiente}`,
+            'warning'
+        );
+    }
+
     if (productoSeleccionado && nuevo > productoSeleccionado.existencia_total) {
         nuevo = productoSeleccionado.existencia_total;
         mostrarToast(`⚠️ Máximo disponible: ${productoSeleccionado.existencia_total}`, 'warning');
@@ -1082,7 +1204,16 @@ function cambiarCantidad(valor) {
 
 function setMaxCantidad() {
     if (productoSeleccionado) {
-        cantidadInput.value = productoSeleccionado.existencia_total;
+        const pedido = obtenerPedidoResurtido(
+            productoSeleccionado.id
+        );
+
+        cantidadInput.value = pedido
+            ? Math.min(
+                pedido.pendiente,
+                productoSeleccionado.existencia_total
+            )
+            : productoSeleccionado.existencia_total;
     }
 }
 
@@ -1125,7 +1256,7 @@ function agregarFila(producto, cantidad, ubicacion, precio) {
         <td data-label="Cantidad">
             <div class="qty-cell">
                 <button type="button" class="qty-step" onclick="pasoCantidadFila(this, -1)">−</button>
-                <input type="number" class="qty-input" value="${cantidad}" min="1" step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
+                <input type="number" class="qty-input" value="${cantidad}" min="1" ${pedido ? `max="${pedido.pendiente}"` : ''} step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
                 <button type="button" class="qty-step" onclick="pasoCantidadFila(this, 1)">+</button>
             </div>
             ${pedido ? `<span class="pedido-chip">Pedido: ${pedido.pendiente}</span>` : ''}
@@ -1181,6 +1312,19 @@ function agregarProducto() {
         return;
     }
 
+    const pedido = obtenerPedidoResurtido(producto.id);
+
+    if (
+        pedido
+        && cantidad > pedido.pendiente
+    ) {
+        mostrarToast(
+            `❌ Solo quedan ${pedido.pendiente} unidad(es) pendientes`,
+            'error'
+        );
+        return;
+    }
+
     const filasExistentes = document.querySelectorAll('#detalleBody tr[data-producto-id]');
     for (let fila of filasExistentes) {
         if (Number(fila.dataset.productoId) === Number(producto.id)) {
@@ -1217,6 +1361,21 @@ function actualizarCantidadFila(input) {
     let cantidad = parseInt(input.value);
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
 
+    const solicitado = parseInt(tr.dataset.solicitado || '0');
+
+    if (solicitado > 0 && cantidad > solicitado) {
+        cantidad = solicitado;
+        input.value = cantidad;
+
+        mostrarToast(
+            `⚠️ Máximo pendiente: ${solicitado}`,
+            'warning'
+        );
+    }
+
+    const hiddenInput = tr.querySelector('input[name="cantidad[]"]');
+    if (hiddenInput) hiddenInput.value = cantidad;
+
     const precio = parseFloat(tr.dataset.precio || '0') || 0;
     const nuevoImporte = cantidad * precio;
 
@@ -1226,10 +1385,6 @@ function actualizarCantidadFila(input) {
         importeTd.innerHTML = `<strong>$${nuevoImporte.toFixed(2)}</strong>`;
     }
 
-    const hiddenInput = tr.querySelector('input[name="cantidad[]"]');
-    if (hiddenInput) hiddenInput.value = cantidad;
-
-    const solicitado = parseInt(tr.dataset.solicitado || '0');
     if (solicitado > 0) {
         tr.classList.toggle('fila-incompleta', cantidad < solicitado);
     }

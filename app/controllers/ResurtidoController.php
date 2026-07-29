@@ -614,7 +614,10 @@ class ResurtidoController
             );
         }
 
-        if (!empty($resurtido['salida_id'])) {
+        if (
+            !empty($resurtido['salida_id'])
+            && ($resurtido['estado'] ?? '') !== 'PARCIAL'
+        ) {
             throw new RuntimeException(
                 'Esta solicitud ya se encuentra vinculada con una salida.'
             );

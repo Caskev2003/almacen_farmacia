@@ -200,6 +200,7 @@ button:focus-visible {
 .btn-guardar,
 .btn-ver,
 .btn-surtir,
+.btn-concluir,
 .btn-eliminar,
 .btn-cancelar {
     border: none;
@@ -217,6 +218,7 @@ button:focus-visible {
 .btn-guardar:active,
 .btn-ver:active,
 .btn-surtir:active,
+.btn-concluir:active,
 .btn-eliminar:active,
 .btn-cancelar:active {
     transform: scale(0.98);
@@ -266,6 +268,21 @@ button:focus-visible {
 
 .btn-surtir:hover {
     background: #0b3a63;
+}
+
+.btn-concluir {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1.5px solid #6ee7b7;
+}
+
+.btn-concluir:hover {
+    background: #d1fae5;
+}
+
+.btn-concluir:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
 }
 
 .btn-eliminar {
@@ -546,6 +563,11 @@ button:focus-visible {
 .estado-surtido {
     background: #dcfce7;
     color: #166534;
+}
+
+.estado-concluido {
+    background: #e0e7ff;
+    color: #3730a3;
 }
 
 .estado-parcial {

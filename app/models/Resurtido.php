@@ -818,7 +818,12 @@ class Resurtido
                 COALESCE(
                     SUM(rd.cantidad_solicitada),
                     0
-                ) AS total_cantidad
+                ) AS total_cantidad,
+
+                COALESCE(
+                    SUM(rd.cantidad_surtida),
+                    0
+                ) AS total_cantidad_surtida
 
             FROM resurtidos AS r
 
@@ -925,7 +930,12 @@ class Resurtido
                 COALESCE(
                     SUM(rd.cantidad_solicitada),
                     0
-                ) AS total_cantidad
+                ) AS total_cantidad,
+
+                COALESCE(
+                    SUM(rd.cantidad_surtida),
+                    0
+                ) AS total_cantidad_surtida
 
             FROM resurtidos AS r
 
@@ -1298,10 +1308,50 @@ class Resurtido
                 );
             }
 
-            if (!empty($resurtido['salida_id'])) {
+            if (
+                !empty($resurtido['salida_id'])
+                && $resurtido['estado'] !== 'PARCIAL'
+            ) {
                 throw new RuntimeException(
                     'El resurtido ya está vinculado con otra salida.'
                 );
+            }
+
+            $sqlDetallesBloqueo = "
+                SELECT
+                    producto_id,
+                    cantidad_solicitada,
+                    cantidad_surtida
+                FROM resurtido_detalles
+                WHERE resurtido_id = :resurtido_id
+                FOR UPDATE
+            ";
+
+            $stmtDetallesBloqueo = $this->db->prepare(
+                $sqlDetallesBloqueo
+            );
+
+            $stmtDetallesBloqueo->execute([
+                ':resurtido_id' => $resurtidoId
+            ]);
+
+            $detallesBloqueados = [];
+
+            foreach (
+                $stmtDetallesBloqueo->fetchAll() as $detalleBloqueado
+            ) {
+                $productoIdDetalle = (int) (
+                    $detalleBloqueado['producto_id'] ?? 0
+                );
+
+                $detallesBloqueados[$productoIdDetalle] = [
+                    'solicitada' => (float) (
+                        $detalleBloqueado['cantidad_solicitada'] ?? 0
+                    ),
+                    'surtida' => (float) (
+                        $detalleBloqueado['cantidad_surtida'] ?? 0
+                    )
+                ];
             }
 
             $sqlActualizarDetalle = "
@@ -1336,17 +1386,46 @@ class Resurtido
                     );
                 }
 
-                $stmtActualizarDetalle->execute([
-                    ':cantidad_surtida' => $cantidadSurtida,
-                    ':resurtido_id' => $resurtidoId,
-                    ':producto_id' => $productoId
-                ]);
-
-                if ($stmtActualizarDetalle->rowCount() === 0) {
+                if (!isset($detallesBloqueados[$productoId])) {
                     throw new RuntimeException(
                         'Uno de los productos no pertenece al resurtido.'
                     );
                 }
+
+                $cantidadSolicitada = (float) (
+                    $detallesBloqueados[$productoId]['solicitada']
+                );
+
+                $cantidadAcumulada = (float) (
+                    $detallesBloqueados[$productoId]['surtida']
+                );
+
+                $cantidadPendiente = max(
+                    0,
+                    $cantidadSolicitada - $cantidadAcumulada
+                );
+
+                if ($cantidadSurtida > $cantidadPendiente) {
+                    throw new RuntimeException(
+                        'La cantidad surtida supera la cantidad pendiente '
+                        . 'del producto.'
+                    );
+                }
+
+                $nuevaCantidadAcumulada = min(
+                    $cantidadSolicitada,
+                    $cantidadAcumulada + $cantidadSurtida
+                );
+
+                $stmtActualizarDetalle->execute([
+                    ':cantidad_surtida' =>
+                        $nuevaCantidadAcumulada,
+                    ':resurtido_id' => $resurtidoId,
+                    ':producto_id' => $productoId
+                ]);
+
+                $detallesBloqueados[$productoId]['surtida'] =
+                    $nuevaCantidadAcumulada;
             }
 
             $estadoFinal = $this->calcularEstadoFinal(
@@ -2001,6 +2080,12 @@ class Resurtido
             if (isset($resurtido['total_cantidad'])) {
                 $resurtido['total_cantidad'] = (float) (
                     $resurtido['total_cantidad']
+                );
+            }
+
+            if (isset($resurtido['total_cantidad_surtida'])) {
+                $resurtido['total_cantidad_surtida'] = (float) (
+                    $resurtido['total_cantidad_surtida']
                 );
             }
         }

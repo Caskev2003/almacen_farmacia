@@ -409,13 +409,7 @@ $meses = [
         </div>
     </section>
 
-    <?php if (!$puedeModificar): ?>
-        <div class="aviso-consulta" role="status">
-            <strong>Modo consulta:</strong>
-            la cuenta de Gerente puede visualizar y filtrar las
-            devoluciones, pero no puede agregar, editar ni marcar tickets.
-        </div>
-    <?php endif; ?>
+
 
     <div
         id="mensajeDevoluciones"

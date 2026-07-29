@@ -429,6 +429,7 @@ function auditModuleForScript(string $script): string
         'agotados.php' => 'Agotados',
         'resurtidos.php' => 'Resurtidos',
         'tickets.php' => 'Tickets',
+        'devoluciones.php' => 'Devoluciones',
         'kardex.php' => 'Kardex',
         'reportes.php' => 'Reportes',
         'inventario_fisico.php' => 'Inventario físico',
@@ -482,13 +483,22 @@ function auditTrackCurrentRequest(): void
 
     // Evita llenar la bitácora con los sondeos automáticos.
     if (
-        in_array($script, ['resurtidos.php', 'tickets.php'], true)
+        in_array(
+            $script,
+            [
+                'resurtidos.php',
+                'tickets.php',
+                'devoluciones.php',
+            ],
+            true
+        )
         && in_array(
             $action,
             [
                 'notificaciones',
                 'actualizaciones',
-                'buscar_producto'
+                'buscar_producto',
+                'buscar_productos',
             ],
             true
         )

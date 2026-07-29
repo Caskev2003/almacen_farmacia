@@ -81,6 +81,11 @@ $puedeRecibirTickets =
     $esAdmin
     || ($esEncargado && $almacenId === 1);
 
+$puedeVerDevoluciones =
+    $esAdmin
+    || $esEncargado
+    || $esGerente;
+
 ?>
 
 <!DOCTYPE html>
@@ -283,6 +288,14 @@ $puedeRecibirTickets =
                     </span>
 
                 <?php endif; ?>
+            </a>
+
+        <?php endif; ?>
+
+        <?php if ($puedeVerDevoluciones): ?>
+
+            <a href="devoluciones.php">
+                Devoluciones
             </a>
 
         <?php endif; ?>

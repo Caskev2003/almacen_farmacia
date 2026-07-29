@@ -227,7 +227,7 @@ if ($action !== '') {
     if (
         in_array(
             $action,
-            ['guardar', 'actualizar', 'ticket'],
+            ['guardar', 'actualizar', 'ticket', 'eliminar'],
             true
         )
     ) {
@@ -253,6 +253,23 @@ if ($action !== '') {
         validarCsrfDevoluciones($datos);
 
         try {
+            if ($action === 'eliminar') {
+                $id = (int) ($datos['id'] ?? 0);
+                $registro = $controller->eliminar(
+                    $id,
+                    $usuarioId,
+                    $almacenLimite
+                );
+
+                responderJsonDevoluciones(
+                    true,
+                    'La devolución se eliminó de la tabla.',
+                    [
+                        'registro_eliminado' => $registro,
+                    ]
+                );
+            }
+
             if ($action === 'ticket') {
                 $id = (int) ($datos['id'] ?? 0);
                 $tieneTicket = filter_var(
@@ -409,7 +426,13 @@ $meses = [
         </div>
     </section>
 
-
+    <?php if (!$puedeModificar): ?>
+        <div class="aviso-consulta" role="status">
+            <strong>Modo consulta:</strong>
+            la cuenta de Gerente puede visualizar y filtrar las
+            devoluciones, pero no puede agregar, editar ni marcar tickets.
+        </div>
+    <?php endif; ?>
 
     <div
         id="mensajeDevoluciones"
@@ -838,9 +861,20 @@ $meses = [
         function prepararTabla() {
             tabla.addEventListener('click', function (evento) {
                 const editar = evento.target.closest('[data-editar]');
+                const eliminar = evento.target.closest(
+                    '[data-eliminar-devolucion]'
+                );
 
                 if (editar && configuracion.puedeModificar) {
                     iniciarEdicion(Number(editar.dataset.editar));
+                    return;
+                }
+
+                if (eliminar && configuracion.puedeModificar) {
+                    eliminarDevolucion(
+                        Number(eliminar.dataset.eliminarDevolucion),
+                        eliminar
+                    );
                 }
             });
 
@@ -1155,6 +1189,68 @@ $meses = [
             }
         }
 
+        async function eliminarDevolucion(id, boton) {
+            const registro = registros.find(function (item) {
+                return Number(item.id) === id;
+            });
+
+            if (!registro) {
+                mostrarMensaje(
+                    'La devolución ya no está disponible.',
+                    'error'
+                );
+                return;
+            }
+
+            if (
+                !window.confirm(
+                    '¿Eliminar de la tabla la devolución de '
+                    + registro.codigo
+                    + ' - '
+                    + registro.descripcion
+                    + '? Esta acción no se puede deshacer.'
+                )
+            ) {
+                return;
+            }
+
+            boton.disabled = true;
+            boton.textContent = 'Eliminando...';
+
+            try {
+                const respuesta = await fetchJson(
+                    'devoluciones.php?action=eliminar',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({
+                            csrf_token: configuracion.csrfToken,
+                            id: id
+                        })
+                    }
+                );
+
+                registros = registros.filter(function (item) {
+                    return Number(item.id) !== id;
+                });
+
+                if (editandoId === id) {
+                    limpiarFormulario();
+                }
+
+                huellaActual = '';
+                renderizarTabla();
+                mostrarMensaje(respuesta.mensaje, 'exito');
+            } catch (error) {
+                boton.disabled = false;
+                boton.textContent = 'Eliminar';
+                mostrarMensaje(error.message, 'error');
+            }
+        }
+
         async function cargarRegistros(forzar) {
             if (actualizando) {
                 return;
@@ -1228,9 +1324,15 @@ $meses = [
                     + '</label>';
 
                 const accion = configuracion.puedeModificar
-                    ? '<button type="button" class="btn-editar-fila"'
+                    ? '<div class="acciones-fila">'
+                        + '<button type="button" class="btn-editar-fila"'
                         + ' data-editar="' + Number(registro.id) + '">'
                         + 'Editar</button>'
+                        + '<button type="button" class="btn-eliminar-fila"'
+                        + ' data-eliminar-devolucion="'
+                        + Number(registro.id)
+                        + '">Eliminar</button>'
+                        + '</div>'
                     : '<span class="solo-lectura">Consulta</span>';
 
                 return ''

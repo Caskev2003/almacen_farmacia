@@ -359,6 +359,35 @@ button:focus-visible {
     font-weight: 700;
 }
 
+.resultado-producto .cantidad-devolucion,
+.producto-datos .cantidad-devolucion {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    width: fit-content;
+    margin-top: 5px;
+    padding: 7px 10px;
+    border: 1px solid #f4c66a;
+    border-radius: 8px;
+    background: #fff8dc;
+    color: #8a4b08;
+    font-weight: 800;
+}
+
+.resultado-producto .cantidad-devolucion strong,
+.producto-datos .cantidad-devolucion strong {
+    color: #9a3412;
+    font-size: inherit;
+}
+
+.resultado-producto .cantidad-devolucion small,
+.producto-datos .cantidad-devolucion small {
+    color: #7c5b25;
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .resultado-producto .existencia-disponible strong {
     font-size: inherit;
 }

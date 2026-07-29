@@ -203,6 +203,7 @@
 .btn-devolucion,
 .btn-agregar-producto,
 .btn-editar-fila,
+.btn-eliminar-fila,
 .btn-link-cancelar {
     border: 0;
     border-radius: 9px;
@@ -216,13 +217,15 @@
 
 .btn-devolucion:hover,
 .btn-agregar-producto:hover,
-.btn-editar-fila:hover {
+.btn-editar-fila:hover,
+.btn-eliminar-fila:hover {
     transform: translateY(-1px);
 }
 
 .btn-devolucion:disabled,
 .btn-agregar-producto:disabled,
-.btn-editar-fila:disabled {
+.btn-editar-fila:disabled,
+.btn-eliminar-fila:disabled {
     cursor: wait;
     opacity: 0.6;
     transform: none;
@@ -564,6 +567,22 @@
     padding: 8px 11px;
     background: #e4effa;
     color: #175986;
+}
+
+.acciones-fila {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-eliminar-fila {
+    padding: 8px 11px;
+    background: #fee2e2;
+    color: #b42318;
+}
+
+.btn-eliminar-fila:hover {
+    background: #fecaca;
 }
 
 .solo-lectura {

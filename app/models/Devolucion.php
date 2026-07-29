@@ -255,6 +255,30 @@ class Devolucion
         return $stmt->rowCount() > 0;
     }
 
+    public function eliminar(
+        int $id,
+        ?int $almacenLimite = null
+    ): bool {
+        $sql = "
+            DELETE FROM devoluciones
+            WHERE id = :id
+        ";
+
+        $params = [
+            ':id' => $id,
+        ];
+
+        if ($almacenLimite !== null) {
+            $sql .= ' AND almacen_id = :almacen_limite';
+            $params[':almacen_limite'] = $almacenLimite;
+        }
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->rowCount() > 0;
+    }
+
     public function obtenerPorId(
         int $id,
         ?int $almacenLimite = null

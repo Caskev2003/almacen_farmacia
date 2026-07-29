@@ -252,6 +252,56 @@ class DevolucionController
         return $nuevo;
     }
 
+    public function eliminar(
+        int $id,
+        int $usuarioId,
+        ?int $almacenLimite
+    ): array {
+        if ($id <= 0) {
+            throw new InvalidArgumentException(
+                'La devolución indicada no es válida.'
+            );
+        }
+
+        $registro = $this->model->obtenerPorId(
+            $id,
+            $almacenLimite
+        );
+
+        if (!$registro) {
+            throw new RuntimeException(
+                'No se encontró la devolución o no pertenece a su almacén.'
+            );
+        }
+
+        if (
+            !$this->model->eliminar(
+                $id,
+                $almacenLimite
+            )
+        ) {
+            throw new RuntimeException(
+                'No fue posible eliminar la devolución.'
+            );
+        }
+
+        auditLog([
+            'modulo' => 'Devoluciones',
+            'accion' => 'ELIMINAR',
+            'entidad' => 'devolucion',
+            'registro_id' => $id,
+            'descripcion' => 'Eliminó de la tabla la devolución de '
+                . $registro['piezas'] . ' pieza(s) del producto '
+                . $registro['codigo'] . '.',
+            'anteriores' => $registro,
+            'metadata' => [
+                'usuario_id_accion' => $usuarioId,
+            ],
+        ]);
+
+        return $registro;
+    }
+
     private function validarDatos(array $datos): array
     {
         $productoId = (int) ($datos['producto_id'] ?? 0);

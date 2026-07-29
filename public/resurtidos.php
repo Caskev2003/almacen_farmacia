@@ -1729,6 +1729,11 @@ require __DIR__
                     producto.cantidad_reservada
                 );
 
+            const cantidadDevolucion =
+                normalizarCantidadVisual(
+                    producto.cantidad_devolucion
+                );
+
             const elemento =
                 document.createElement('button');
 
@@ -1781,6 +1786,25 @@ require __DIR__
                                     cantidadReservada
                                 )}
                             </strong>
+                        </span>
+                    `
+                    : ''}
+
+                ${cantidadDevolucion > 0
+                    ? `
+                        <span class="cantidad-devolucion">
+                            Apartado en devoluciones:
+                            <strong>
+                                ${formatearCantidad(
+                                    cantidadDevolucion
+                                )}
+                                ${cantidadDevolucion === 1
+                                    ? 'pieza'
+                                    : 'piezas'}
+                            </strong>
+                            <small>
+                                Ya descontado de lo disponible.
+                            </small>
                         </span>
                     `
                     : ''}
@@ -1851,6 +1875,10 @@ require __DIR__
                 cantidad_reservada:
                     normalizarCantidadVisual(
                         producto.cantidad_reservada
+                    ),
+                cantidad_devolucion:
+                    normalizarCantidadVisual(
+                        producto.cantidad_devolucion
                     )
             });
         }
@@ -1878,6 +1906,11 @@ require __DIR__
             function (producto, indice) {
                 const fila =
                     document.createElement('div');
+
+                const cantidadDevolucion =
+                    normalizarCantidadVisual(
+                        producto.cantidad_devolucion
+                    );
 
                 fila.className = 'producto-agregado';
 
@@ -1918,6 +1951,25 @@ require __DIR__
                                 )}
                             </strong>
                         </span>
+
+                        ${cantidadDevolucion > 0
+                            ? `
+                                <span class="cantidad-devolucion">
+                                    Apartado en devoluciones:
+                                    <strong>
+                                        ${formatearCantidad(
+                                            cantidadDevolucion
+                                        )}
+                                        ${cantidadDevolucion === 1
+                                            ? 'pieza'
+                                            : 'piezas'}
+                                    </strong>
+                                    <small>
+                                        Ya descontado de lo disponible.
+                                    </small>
+                                </span>
+                            `
+                            : ''}
                     </div>
 
                     <div class="producto-cantidad">

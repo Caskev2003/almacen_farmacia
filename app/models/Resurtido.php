@@ -70,6 +70,8 @@ class Resurtido
             ':codigo' => $ultimosDigitos,
             ':codigo_barras' => $ultimosDigitos,
             ':almacen_reservado_busqueda' =>
+                $almacenId,
+            ':almacen_devolucion_busqueda' =>
                 $almacenId
         ];
 
@@ -103,6 +105,10 @@ class Resurtido
                     - COALESCE(
                         reservas.cantidad_reservada,
                         0
+                    )
+                    - COALESCE(
+                        devoluciones_activas.cantidad_devolucion,
+                        0
                     ),
                     0
                 ) AS existencia_disponible,
@@ -115,7 +121,12 @@ class Resurtido
                 COALESCE(
                     reservas.cantidad_reservada,
                     0
-                ) AS cantidad_reservada
+                ) AS cantidad_reservada,
+
+                COALESCE(
+                    devoluciones_activas.cantidad_devolucion,
+                    0
+                ) AS cantidad_devolucion
 
             FROM productos AS p
 
@@ -181,6 +192,22 @@ class Resurtido
             ) AS reservas
                 ON reservas.producto_id = p.id
 
+            LEFT JOIN (
+                SELECT
+                    d.producto_id,
+                    SUM(d.piezas) AS cantidad_devolucion
+                FROM devoluciones AS d
+                WHERE
+                    d.almacen_id =
+                        :almacen_devolucion_busqueda
+                    AND d.estatus IN (
+                        'PENDIENTE',
+                        'EN_PROCESO'
+                    )
+                GROUP BY d.producto_id
+            ) AS devoluciones_activas
+                ON devoluciones_activas.producto_id = p.id
+
             WHERE p.estado = 1
 
             AND (
@@ -218,6 +245,10 @@ class Resurtido
 
             $producto['cantidad_reservada'] = (int) (
                 $producto['cantidad_reservada'] ?? 0
+            );
+
+            $producto['cantidad_devolucion'] = (int) (
+                $producto['cantidad_devolucion'] ?? 0
             );
         }
 
@@ -1659,6 +1690,8 @@ class Resurtido
 
         $params = [
             ':almacen_reservado_stock' =>
+                $almacenId,
+            ':almacen_devolucion_stock' =>
                 $almacenId
         ];
 
@@ -1697,6 +1730,10 @@ class Resurtido
                     - COALESCE(
                         reservas.cantidad_reservada,
                         0
+                    )
+                    - COALESCE(
+                        devoluciones_activas.cantidad_devolucion,
+                        0
                     ),
                     0
                 ) AS existencia_disponible,
@@ -1709,7 +1746,12 @@ class Resurtido
                 COALESCE(
                     reservas.cantidad_reservada,
                     0
-                ) AS cantidad_reservada
+                ) AS cantidad_reservada,
+
+                COALESCE(
+                    devoluciones_activas.cantidad_devolucion,
+                    0
+                ) AS cantidad_devolucion
 
             FROM productos AS p
 
@@ -1768,6 +1810,22 @@ class Resurtido
             ) AS reservas
                 ON reservas.producto_id = p.id
 
+            LEFT JOIN (
+                SELECT
+                    d.producto_id,
+                    SUM(d.piezas) AS cantidad_devolucion
+                FROM devoluciones AS d
+                WHERE
+                    d.almacen_id =
+                        :almacen_devolucion_stock
+                    AND d.estatus IN (
+                        'PENDIENTE',
+                        'EN_PROCESO'
+                    )
+                GROUP BY d.producto_id
+            ) AS devoluciones_activas
+                ON devoluciones_activas.producto_id = p.id
+
             WHERE
                 p.estado = 1
                 AND p.id IN (
@@ -1780,7 +1838,8 @@ class Resurtido
                 p.id,
                 p.codigo,
                 p.descripcion,
-                reservas.cantidad_reservada
+                reservas.cantidad_reservada,
+                devoluciones_activas.cantidad_devolucion
         ";
 
         $stmt = $this->db->prepare($sql);
@@ -1814,6 +1873,12 @@ class Resurtido
             $producto['cantidad_reservada'] =
                 (float) (
                     $producto['cantidad_reservada']
+                    ?? 0
+                );
+
+            $producto['cantidad_devolucion'] =
+                (float) (
+                    $producto['cantidad_devolucion']
                     ?? 0
                 );
 

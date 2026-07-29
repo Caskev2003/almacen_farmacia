@@ -65,6 +65,11 @@ class ResurtidoController
         int $usuarioId,
         string $password
     ): bool {
+        // El inicio de sesión también elimina espacios accidentales.
+        // Mantener ambas validaciones iguales evita rechazos por el
+        // teclado predictivo o el autocompletado de una tableta.
+        $password = trim($password);
+
         if ($usuarioId <= 0 || $password === '') {
             return false;
         }

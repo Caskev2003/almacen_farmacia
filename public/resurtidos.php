@@ -397,8 +397,10 @@ if ($action !== '') {
 
         $productos = $datos['productos'] ?? [];
 
-        $passwordGerente = (string) (
-            $datos['password_gerente'] ?? ''
+        $passwordGerente = trim(
+            (string) (
+                $datos['password_gerente'] ?? ''
+            )
         );
 
         $observaciones = trim(
@@ -1998,13 +2000,35 @@ require __DIR__
                 }
             );
 
-            const resultado = await respuesta.json();
+            const contenidoRespuesta =
+                await respuesta.text();
+
+            let resultado;
+
+            try {
+                resultado = JSON.parse(
+                    contenidoRespuesta
+                );
+            } catch (errorJson) {
+                throw new Error(
+                    'El servidor no devolvió una respuesta válida. '
+                    + 'Verifique que se ejecutó el archivo '
+                    + 'database/instalar_tickets.sql.'
+                );
+            }
 
             if (!respuesta.ok || !resultado.ok) {
-                throw new Error(
+                const errorSolicitud = new Error(
                     resultado.mensaje
                     || 'No fue posible guardar.'
                 );
+
+                errorSolicitud.esPasswordIncorrecto =
+                    respuesta.status === 403
+                    && resultado.mensaje ===
+                        'La contraseña del gerente es incorrecta.';
+
+                throw errorSolicitud;
             }
 
             alert(resultado.mensaje);
@@ -2013,6 +2037,8 @@ require __DIR__
                 endpointModulo;
         } catch (error) {
             if (
+                error.esPasswordIncorrecto === true
+                &&
                 rolActual === 'GERENTE'
                 && modalPasswordGerente
                     ?.classList
@@ -2045,9 +2071,10 @@ require __DIR__
     botonConfirmarPassword?.addEventListener(
         'click',
         async function () {
-            const password =
+            const password = (
                 inputPasswordGerente?.value
-                ?? '';
+                ?? ''
+            ).trim();
 
             if (password === '') {
                 if (errorPasswordGerente) {

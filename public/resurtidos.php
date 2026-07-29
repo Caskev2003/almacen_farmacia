@@ -108,6 +108,9 @@ function responderJson(
     header(
         'Content-Type: application/json; charset=utf-8'
     );
+    header(
+        'Cache-Control: no-store, no-cache, must-revalidate, max-age=0'
+    );
 
     echo json_encode(
         [
@@ -235,6 +238,51 @@ function verificarAccesoResurtido(
             403
         );
     }
+}
+
+function obtenerSolicitudesVisibles(
+    ResurtidoController $controller,
+    string $rol,
+    int $usuarioId,
+    int $almacenId,
+    string $tipoSolicitudModulo
+): array {
+    if ($rol === 'GERENTE') {
+        return $controller->obtenerPorGerente(
+            $usuarioId,
+            100,
+            $tipoSolicitudModulo
+        );
+    }
+
+    if ($rol === 'ENCARGADO') {
+        return $controller->obtenerTodos(
+            $almacenId > 0 ? $almacenId : null,
+            150,
+            $tipoSolicitudModulo
+        );
+    }
+
+    return $controller->obtenerTodos(
+        null,
+        150,
+        $tipoSolicitudModulo
+    );
+}
+
+function generarHuellaSolicitudes(
+    array $solicitudes
+): string {
+    $json = json_encode(
+        $solicitudes,
+        JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
+    );
+
+    return hash(
+        'sha256',
+        is_string($json) ? $json : ''
+    );
 }
 
 // ======================================================
@@ -605,6 +653,64 @@ if ($action !== '') {
     }
 
     // --------------------------------------------------
+    // ACTUALIZAR LISTA SIN RECARGAR LA PÁGINA
+    // --------------------------------------------------
+
+    if ($action === 'actualizaciones') {
+        try {
+            $solicitudes = obtenerSolicitudesVisibles(
+                $controller,
+                $rol,
+                $usuarioId,
+                $almacenId,
+                $tipoSolicitudModulo
+            );
+
+            $huellaActual = generarHuellaSolicitudes(
+                $solicitudes
+            );
+
+            $huellaCliente = trim(
+                (string) ($_GET['huella'] ?? '')
+            );
+
+            $hayCambios =
+                $huellaCliente === ''
+                || !hash_equals(
+                    $huellaActual,
+                    $huellaCliente
+                );
+
+            responderJson(
+                true,
+                $hayCambios
+                    ? 'La lista cambió.'
+                    : 'Sin cambios.',
+                [
+                    'cambio' => $hayCambios,
+                    'huella' => $huellaActual,
+                    'solicitudes' => $hayCambios
+                        ? $solicitudes
+                        : [],
+                    'consultado_en' => date('c')
+                ]
+            );
+        } catch (Throwable $e) {
+            error_log(
+                'Error al actualizar solicitudes en tiempo real: '
+                . $e->getMessage()
+            );
+
+            responderJson(
+                false,
+                'No fue posible actualizar la lista.',
+                [],
+                500
+            );
+        }
+    }
+
+    // --------------------------------------------------
     // CONSULTAR NOTIFICACIONES
     // --------------------------------------------------
 
@@ -791,27 +897,27 @@ if ($action !== '') {
 // ======================================================
 
 $errorPagina = '';
+$huellaSolicitudes = '';
+$idsSolicitudesIniciales = [];
 
 try {
-    if ($rol === 'GERENTE') {
-        $resurtidos = $controller->obtenerPorGerente(
-            $usuarioId,
-            100,
-            $tipoSolicitudModulo
-        );
-    } elseif ($rol === 'ENCARGADO') {
-        $resurtidos = $controller->obtenerTodos(
-            $almacenId > 0 ? $almacenId : null,
-            150,
-            $tipoSolicitudModulo
-        );
-    } else {
-        $resurtidos = $controller->obtenerTodos(
-            null,
-            150,
-            $tipoSolicitudModulo
-        );
-    }
+    $resurtidos = obtenerSolicitudesVisibles(
+        $controller,
+        $rol,
+        $usuarioId,
+        $almacenId,
+        $tipoSolicitudModulo
+    );
+
+    $huellaSolicitudes = generarHuellaSolicitudes(
+        $resurtidos
+    );
+
+    $idsSolicitudesIniciales = array_map(
+        static fn (array $solicitud): int =>
+            (int) ($solicitud['id'] ?? 0),
+        $resurtidos
+    );
 } catch (Throwable $e) {
     error_log(
         'Error al cargar ' . $nombreSolicitudes . ': '
@@ -819,6 +925,7 @@ try {
     );
 
     $resurtidos = [];
+    $huellaSolicitudes = generarHuellaSolicitudes([]);
 
     $errorPagina =
         'No fue posible cargar las solicitudes de '
@@ -977,7 +1084,11 @@ require __DIR__
                 : 'Solicitudes recibidas' ?>
         </h2>
 
-        <div class="lista-resurtidos">
+        <div
+            class="lista-resurtidos"
+            id="listaSolicitudesActuales"
+            aria-live="polite"
+        >
 
             <?php if (empty($resurtidos)): ?>
 
@@ -1269,6 +1380,20 @@ require __DIR__
         <?= json_encode($tipoSolicitudModulo) ?>;
     const esModuloTicket =
         tipoSolicitudModulo === 'TICKET';
+    let huellaSolicitudes =
+        <?= json_encode($huellaSolicitudes) ?>;
+    const idsSolicitudesConocidas = new Set(
+        <?= json_encode($idsSolicitudesIniciales) ?>
+            .map(Number)
+    );
+    const listaSolicitudesActuales =
+        document.getElementById(
+            'listaSolicitudesActuales'
+        );
+    const puedeSurtirSolicitudes =
+        ['ENCARGADO', 'ADMINISTRADOR']
+            .includes(rolActual);
+    let consultaActualizacionesEnCurso = false;
 
     const productosSolicitud = [];
 
@@ -1952,20 +2077,30 @@ require __DIR__
     // VER RESURTIDO
     // ==================================================
 
-    document
-        .querySelectorAll('[data-ver-resurtido]')
-        .forEach(function (boton) {
-            boton.addEventListener(
-                'click',
-                function () {
-                    verResurtido(
-                        Number(
-                            this.dataset.verResurtido
-                        )
-                    );
+    function enlazarBotonesVerSolicitud() {
+        document
+            .querySelectorAll('[data-ver-resurtido]')
+            .forEach(function (boton) {
+                if (boton.dataset.eventoVerActivo === '1') {
+                    return;
                 }
-            );
-        });
+
+                boton.dataset.eventoVerActivo = '1';
+
+                boton.addEventListener(
+                    'click',
+                    function () {
+                        verResurtido(
+                            Number(
+                                this.dataset.verResurtido
+                            )
+                        );
+                    }
+                );
+            });
+    }
+
+    enlazarBotonesVerSolicitud();
 
     async function verResurtido(id) {
         if (!id || !modal || !contenidoModal) {
@@ -2146,22 +2281,32 @@ require __DIR__
     // INICIAR SURTIDO
     // ==================================================
 
-    document
-        .querySelectorAll('[data-surtir-resurtido]')
-        .forEach(function (boton) {
-            boton.addEventListener(
-                'click',
-                function () {
-                    iniciarSurtido(
-                        Number(
-                            this.dataset
-                                .surtirResurtido
-                        ),
-                        this
-                    );
+    function enlazarBotonesSurtirSolicitud() {
+        document
+            .querySelectorAll('[data-surtir-resurtido]')
+            .forEach(function (boton) {
+                if (boton.dataset.eventoSurtirActivo === '1') {
+                    return;
                 }
-            );
-        });
+
+                boton.dataset.eventoSurtirActivo = '1';
+
+                boton.addEventListener(
+                    'click',
+                    function () {
+                        iniciarSurtido(
+                            Number(
+                                this.dataset
+                                    .surtirResurtido
+                            ),
+                            this
+                        );
+                    }
+                );
+            });
+    }
+
+    enlazarBotonesSurtirSolicitud();
 
     async function iniciarSurtido(id, boton) {
         if (!id) {
@@ -2216,6 +2361,264 @@ require __DIR__
             boton.textContent = textoOriginal;
         }
     }
+
+    // ==================================================
+    // ACTUALIZACIÓN AUTOMÁTICA SIN RECARGAR
+    // ==================================================
+
+    function renderizarSolicitudesActuales(
+        solicitudes
+    ) {
+        if (!listaSolicitudesActuales) {
+            return;
+        }
+
+        if (!Array.isArray(solicitudes) || !solicitudes.length) {
+            listaSolicitudesActuales.innerHTML = `
+                <div class="lista-vacia">
+                    No existen solicitudes de
+                    ${esModuloTicket ? 'ticket' : 'resurtido'}.
+                </div>
+            `;
+
+            return;
+        }
+
+        listaSolicitudesActuales.innerHTML =
+            solicitudes.map(function (solicitud) {
+                const id = Number(solicitud.id) || 0;
+                const estado = String(
+                    solicitud.estado || 'PENDIENTE'
+                ).toUpperCase();
+
+                const folioVisible = esModuloTicket
+                    ? (
+                        solicitud.folio_documento
+                        || solicitud.folio
+                        || ''
+                    )
+                    : (solicitud.folio || '');
+
+                const controlInterno = esModuloTicket
+                    ? `
+                        <span>
+                            Control interno:
+                            ${escaparHtml(
+                                solicitud.folio || ''
+                            )}
+                        </span>
+                    `
+                    : '';
+
+                const puedeSurtir =
+                    puedeSurtirSolicitudes
+                    && [
+                        'PENDIENTE',
+                        'EN_PROCESO',
+                        'PARCIAL'
+                    ].includes(estado);
+
+                const botonSurtir = puedeSurtir
+                    ? `
+                        <button
+                            type="button"
+                            class="btn-surtir"
+                            data-surtir-resurtido="${id}"
+                        >
+                            ${estado === 'PENDIENTE'
+                                ? 'Surtir'
+                                : 'Continuar'}
+                        </button>
+                    `
+                    : '';
+
+                return `
+                    <article
+                        class="resurtido-item"
+                        data-solicitud-id="${id}"
+                    >
+                        <div class="resurtido-informacion">
+                            <strong>
+                                ${escaparHtml(folioVisible)}
+                            </strong>
+
+                            ${controlInterno}
+
+                            <span>
+                                ${escaparHtml(
+                                    solicitud.fecha || ''
+                                )}
+                            </span>
+
+                            <span
+                                class="estado estado-${
+                                    escaparHtml(
+                                        estado.toLowerCase()
+                                    )
+                                }"
+                            >
+                                ${escaparHtml(
+                                    estado.replaceAll('_', ' ')
+                                )}
+                            </span>
+                        </div>
+
+                        <div class="resurtido-acciones">
+                            <button
+                                type="button"
+                                class="btn-ver"
+                                data-ver-resurtido="${id}"
+                            >
+                                Ver
+                            </button>
+
+                            ${botonSurtir}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+        enlazarBotonesVerSolicitud();
+        enlazarBotonesSurtirSolicitud();
+    }
+
+    function mostrarAvisoNuevaSolicitud(
+        cantidad
+    ) {
+        const avisoAnterior =
+            document.getElementById(
+                'avisoNuevaSolicitud'
+            );
+
+        avisoAnterior?.remove();
+
+        const aviso = document.createElement('div');
+        aviso.id = 'avisoNuevaSolicitud';
+        aviso.className = 'aviso-tiempo-real';
+        aviso.setAttribute('role', 'status');
+
+        aviso.textContent =
+            cantidad === 1
+                ? 'Nueva solicitud recibida.'
+                : cantidad
+                    + ' nuevas solicitudes recibidas.';
+
+        document.body.appendChild(aviso);
+
+        window.setTimeout(function () {
+            aviso.classList.add('visible');
+        }, 20);
+
+        window.setTimeout(function () {
+            aviso.classList.remove('visible');
+
+            window.setTimeout(function () {
+                aviso.remove();
+            }, 250);
+        }, 4500);
+    }
+
+    async function consultarActualizacionesSolicitudes() {
+        if (
+            document.hidden
+            || consultaActualizacionesEnCurso
+            || !listaSolicitudesActuales
+        ) {
+            return;
+        }
+
+        consultaActualizacionesEnCurso = true;
+
+        try {
+            const url =
+                endpointModulo
+                + '?action=actualizaciones&huella='
+                + encodeURIComponent(huellaSolicitudes);
+
+            const respuesta = await fetch(
+                url,
+                {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With':
+                            'XMLHttpRequest'
+                    }
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.ok) {
+                return;
+            }
+
+            huellaSolicitudes =
+                String(resultado.datos?.huella ?? '');
+
+            if (!resultado.datos?.cambio) {
+                return;
+            }
+
+            const solicitudes =
+                Array.isArray(
+                    resultado.datos?.solicitudes
+                )
+                    ? resultado.datos.solicitudes
+                    : [];
+
+            const nuevasSolicitudes =
+                solicitudes.filter(function (solicitud) {
+                    const id = Number(solicitud.id) || 0;
+
+                    return (
+                        id > 0
+                        && !idsSolicitudesConocidas.has(id)
+                    );
+                });
+
+            solicitudes.forEach(function (solicitud) {
+                const id = Number(solicitud.id) || 0;
+
+                if (id > 0) {
+                    idsSolicitudesConocidas.add(id);
+                }
+            });
+
+            renderizarSolicitudesActuales(
+                solicitudes
+            );
+
+            if (
+                nuevasSolicitudes.length > 0
+                && rolActual !== 'GERENTE'
+            ) {
+                mostrarAvisoNuevaSolicitud(
+                    nuevasSolicitudes.length
+                );
+            }
+        } catch (error) {
+            console.warn(
+                'No fue posible actualizar las solicitudes.'
+            );
+        } finally {
+            consultaActualizacionesEnCurso = false;
+        }
+    }
+
+    window.setInterval(
+        consultarActualizacionesSolicitudes,
+        3000
+    );
+
+    document.addEventListener(
+        'visibilitychange',
+        function () {
+            if (!document.hidden) {
+                consultarActualizacionesSolicitudes();
+            }
+        }
+    );
 
     // ==================================================
     // ABRIR Y CERRAR MODAL

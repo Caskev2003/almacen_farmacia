@@ -448,12 +448,12 @@ $puedeRecibirTickets =
             consultarResurtidosPendientes();
 
             /*
-             * Consultar cada 30 segundos si hay nuevas
+             * Consultar cada 3 segundos si hay nuevas
              * solicitudes de resurtido.
              */
             window.setInterval(
                 consultarResurtidosPendientes,
-                30000
+                3000
             );
         })();
     </script>
@@ -538,7 +538,7 @@ $puedeRecibirTickets =
 
             window.setInterval(
                 consultarTicketsPendientes,
-                30000
+                3000
             );
         })();
     </script>

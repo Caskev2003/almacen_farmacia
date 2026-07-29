@@ -480,12 +480,16 @@ function auditTrackCurrentRequest(): void
         trim((string) ($_GET['action'] ?? ''))
     );
 
-    // Evita llenar la bitácora con el sondeo automático cada 30 segundos.
+    // Evita llenar la bitácora con los sondeos automáticos.
     if (
         in_array($script, ['resurtidos.php', 'tickets.php'], true)
         && in_array(
             $action,
-            ['notificaciones', 'buscar_producto'],
+            [
+                'notificaciones',
+                'actualizaciones',
+                'buscar_producto'
+            ],
             true
         )
     ) {

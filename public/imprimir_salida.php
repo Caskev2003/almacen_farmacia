@@ -64,21 +64,25 @@ $aliasUsuario = obtenerIniciales($salida['usuario_nombre'] ?? '');
 $tipoOperacion = strtoupper(trim($salida['tipo_operacion'] ?? ''));
 $mostrarFirmas = true;
 $mostrarEntregado = false;
+$mostrarFirmaGerente = false;
 
 // Si es AJUSTE -> NO mostrar firmas
 if ($tipoOperacion === 'AJUSTE') {
     $mostrarFirmas = false;
     $mostrarEntregado = false;
+    $mostrarFirmaGerente = false;
 } 
-// Si es RESURTIDO -> mostrar 4 firmas (con Entregado)
+// Si es RESURTIDO -> mostrar 5 firmas (incluye Entregó y Firma del gerente)
 elseif ($tipoOperacion === 'RESURTIDO') {
     $mostrarFirmas = true;
     $mostrarEntregado = true;
+    $mostrarFirmaGerente = true;
 }
 // Para TICKET, TRASPASO, OTRO (solo 3 firmas, sin Entregado)
 else {
     $mostrarFirmas = true;
     $mostrarEntregado = false;
+    $mostrarFirmaGerente = false;
 }
 
 // Diagnóstico (opcional, eliminar después)
@@ -277,9 +281,10 @@ else {
             grid-template-columns: repeat(3, 1fr);
         }
         
-        /* Para 4 firmas (SOLO RESURTIDO) */
-        .firmas-4columnas {
-            grid-template-columns: repeat(4, 1fr);
+        /* Para 5 firmas (SOLO RESURTIDO) */
+        .firmas-5columnas {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 18px;
         }
 
         .firma-item {
@@ -470,7 +475,7 @@ function imprimirYLimpiar() {
     </table>
 
     <?php if ($mostrarFirmas): ?>
-        <div class="firmas-box <?= $mostrarEntregado ? 'firmas-4columnas' : 'firmas-3columnas' ?>">
+        <div class="firmas-box <?= $mostrarFirmaGerente ? 'firmas-5columnas' : 'firmas-3columnas' ?>">
             <!-- Surtió (siempre) -->
             <div class="firma-item">
                 <div class="firma-linea"></div>
@@ -500,6 +505,15 @@ function imprimirYLimpiar() {
                 <div class="firma-titulo">Recibió</div>
                 <div class="firma-nombre">Nombre y firma</div>
             </div>
+
+            <!-- Firma del gerente (SOLO si es RESURTIDO) -->
+            <?php if ($mostrarFirmaGerente): ?>
+                <div class="firma-item">
+                    <div class="firma-linea"></div>
+                    <div class="firma-titulo">Firma del gerente</div>
+                    <div class="firma-nombre">Nombre y firma</div>
+                </div>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 

@@ -292,6 +292,115 @@ function generarHuellaSolicitudes(
 if ($action !== '') {
 
     // --------------------------------------------------
+    // ADMINISTRAR VERIFICADORES DE RESURTIDO
+    // --------------------------------------------------
+
+    if (
+        in_array(
+            $action,
+            [
+                'crear_verificador',
+                'cambiar_password_verificador',
+                'cambiar_estado_verificador'
+            ],
+            true
+        )
+    ) {
+        if (
+            $esModuloTicket
+            || $rol !== 'ADMINISTRADOR'
+        ) {
+            responderJson(
+                false,
+                'Solamente el administrador puede gestionar verificadores.',
+                [],
+                403
+            );
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            responderJson(
+                false,
+                'Método no permitido.',
+                [],
+                405
+            );
+        }
+
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
+
+        try {
+            if ($action === 'crear_verificador') {
+                $verificador = $controller->crearVerificador(
+                    (string) ($datos['nombre'] ?? ''),
+                    (string) ($datos['password'] ?? ''),
+                    (int) ($datos['almacen_id'] ?? 0)
+                );
+
+                responderJson(
+                    true,
+                    'El verificador se creó correctamente.',
+                    [
+                        'verificador' => $verificador
+                    ]
+                );
+            }
+
+            $verificadorId = (int) (
+                $datos['verificador_id'] ?? 0
+            );
+
+            if ($action === 'cambiar_password_verificador') {
+                $controller->cambiarPasswordVerificador(
+                    $verificadorId,
+                    (string) ($datos['password'] ?? '')
+                );
+
+                responderJson(
+                    true,
+                    'La contraseña se cambió correctamente.'
+                );
+            }
+
+            $activo = (int) (
+                $datos['activo'] ?? 0
+            ) === 1;
+
+            $controller->cambiarEstadoVerificador(
+                $verificadorId,
+                $activo
+            );
+
+            responderJson(
+                true,
+                $activo
+                    ? 'El verificador quedó activo.'
+                    : 'El verificador quedó inactivo.'
+            );
+        } catch (InvalidArgumentException $e) {
+            responderJson(
+                false,
+                $e->getMessage(),
+                [],
+                422
+            );
+        } catch (Throwable $e) {
+            error_log(
+                'Error al administrar verificadores: '
+                . $e->getMessage()
+            );
+
+            responderJson(
+                false,
+                'No fue posible actualizar al verificador.',
+                [],
+                500
+            );
+        }
+    }
+
+    // --------------------------------------------------
     // BUSCAR PRODUCTO
     // --------------------------------------------------
 
@@ -403,6 +512,16 @@ if ($action !== '') {
             )
         );
 
+        $verificadorId = (int) (
+            $datos['verificador_id'] ?? 0
+        );
+
+        $passwordVerificador = trim(
+            (string) (
+                $datos['password_verificador'] ?? ''
+            )
+        );
+
         $observaciones = trim(
             (string) (
                 $datos['observaciones'] ?? ''
@@ -432,6 +551,8 @@ if ($action !== '') {
         }
 
         try {
+            $verificadorValidado = null;
+
             if (
                 $rol === 'GERENTE'
                 && !$controller->validarPasswordGerente(
@@ -447,9 +568,50 @@ if ($action !== '') {
                 );
             }
 
+            if (
+                !$esModuloTicket
+                && $rol === 'GERENTE'
+            ) {
+                if (
+                    $verificadorId <= 0
+                    || $passwordVerificador === ''
+                ) {
+                    responderJson(
+                        false,
+                        'Seleccione su nombre y escriba la contraseña del verificador.',
+                        [],
+                        422
+                    );
+                }
+
+                $verificadorValidado =
+                    $controller->validarCredencialesVerificador(
+                        $verificadorId,
+                        $almacenId,
+                        $passwordVerificador
+                    );
+
+                if (!$verificadorValidado) {
+                    responderJson(
+                        false,
+                        'El nombre o la contraseña del verificador son incorrectos.',
+                        [],
+                        403
+                    );
+                }
+            }
+
             $resultado = $controller->crear([
                 'usuario_id' => $usuarioId,
                 'almacen_id' => $almacenId,
+                'verificador_id' => (
+                    $verificadorValidado['id']
+                    ?? null
+                ),
+                'verificador_nombre' => (
+                    $verificadorValidado['nombre']
+                    ?? null
+                ),
                 'tipo_solicitud' => $tipoSolicitudModulo,
                 'folio_documento' => $folioDocumento,
                 'observaciones' => $observaciones,
@@ -1015,8 +1177,12 @@ if ($action !== '') {
 // ======================================================
 
 $errorPagina = '';
+$errorVerificadores = '';
 $huellaSolicitudes = '';
 $idsSolicitudesIniciales = [];
+$verificadoresActivos = [];
+$verificadoresAdministracion = [];
+$almacenesVerificadores = [];
 
 try {
     $resurtidos = obtenerSolicitudesVisibles(
@@ -1048,6 +1214,34 @@ try {
     $errorPagina =
         'No fue posible cargar las solicitudes de '
         . $nombreSolicitud . '.';
+}
+
+if (!$esModuloTicket) {
+    try {
+        if ($rol === 'GERENTE') {
+            $verificadoresActivos =
+                $controller->obtenerVerificadoresActivos(
+                    $almacenId
+                );
+        }
+
+        if ($rol === 'ADMINISTRADOR') {
+            $verificadoresAdministracion =
+                $controller->obtenerVerificadores();
+
+            $almacenesVerificadores =
+                $controller->obtenerAlmacenesVerificadores();
+        }
+    } catch (Throwable $e) {
+        error_log(
+            'Error al cargar verificadores: '
+            . $e->getMessage()
+        );
+
+        $errorVerificadores =
+            'No fue posible cargar los verificadores. '
+            . 'Ejecute database/instalar_verificadores_resurtido.sql.';
+    }
 }
 
 // El encabezado ya genera DOCTYPE, head y body.
@@ -1100,6 +1294,233 @@ require __DIR__
 
     <?php endif; ?>
 
+    <?php if (
+        !$esModuloTicket
+        && $rol === 'ADMINISTRADOR'
+    ): ?>
+
+        <section class="tarjeta administracion-verificadores">
+
+            <h2>Administrar verificadores</h2>
+
+            <p class="ayuda-verificadores">
+                Cree una identidad y una contraseña diferente para
+                cada persona que captura resurtidos. Las contraseñas
+                se guardan cifradas.
+            </p>
+
+            <?php if ($errorVerificadores !== ''): ?>
+
+                <div class="alerta alerta-error">
+                    <?= htmlspecialchars(
+                        $errorVerificadores,
+                        ENT_QUOTES,
+                        'UTF-8'
+                    ) ?>
+                </div>
+
+            <?php else: ?>
+
+                <form
+                    id="formularioNuevoVerificador"
+                    class="formulario-verificador"
+                    autocomplete="off"
+                >
+                    <div class="campo">
+                        <label for="nombreNuevoVerificador">
+                            Nombre completo
+                        </label>
+
+                        <input
+                            type="text"
+                            id="nombreNuevoVerificador"
+                            maxlength="150"
+                            autocomplete="off"
+                            required
+                        >
+                    </div>
+
+                    <div class="campo">
+                        <label for="almacenNuevoVerificador">
+                            Almacén
+                        </label>
+
+                        <select
+                            id="almacenNuevoVerificador"
+                            required
+                        >
+                            <option value="">
+                                Seleccione un almacén
+                            </option>
+
+                            <?php foreach (
+                                $almacenesVerificadores
+                                as $almacenVerificador
+                            ): ?>
+                                <option
+                                    value="<?= (int) (
+                                        $almacenVerificador['id']
+                                        ?? 0
+                                    ) ?>"
+                                >
+                                    <?= htmlspecialchars(
+                                        (string) (
+                                            $almacenVerificador['nombre']
+                                            ?? ''
+                                        ),
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="campo">
+                        <label for="passwordNuevoVerificador">
+                            Contraseña personal
+                        </label>
+
+                        <input
+                            type="password"
+                            id="passwordNuevoVerificador"
+                            minlength="4"
+                            maxlength="255"
+                            autocomplete="new-password"
+                            required
+                        >
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="btn-principal"
+                    >
+                        Crear verificador
+                    </button>
+                </form>
+
+                <div class="lista-verificadores">
+
+                    <?php if (empty($verificadoresAdministracion)): ?>
+
+                        <div class="lista-vacia">
+                            Todavía no hay verificadores registrados.
+                        </div>
+
+                    <?php else: ?>
+
+                        <?php foreach (
+                            $verificadoresAdministracion
+                            as $verificadorAdministracion
+                        ): ?>
+
+                            <?php
+                            $verificadorActivo =
+                                (int) (
+                                    $verificadorAdministracion['estado']
+                                    ?? 0
+                                ) === 1;
+                            ?>
+
+                            <article class="verificador-item">
+                                <div>
+                                    <strong>
+                                        <?= htmlspecialchars(
+                                            (string) (
+                                                $verificadorAdministracion['nombre']
+                                                ?? ''
+                                            ),
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>
+                                    </strong>
+
+                                    <span>
+                                        <?= htmlspecialchars(
+                                            (string) (
+                                                $verificadorAdministracion['almacen_nombre']
+                                                ?? 'Sin almacén'
+                                            ),
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>
+                                    </span>
+
+                                    <span
+                                        class="estado <?= $verificadorActivo
+                                            ? 'estado-surtido'
+                                            : 'estado-cancelado' ?>"
+                                    >
+                                        <?= $verificadorActivo
+                                            ? 'ACTIVO'
+                                            : 'INACTIVO' ?>
+                                    </span>
+                                </div>
+
+                                <div class="verificador-acciones">
+                                    <div class="verificador-cambio-password">
+                                        <input
+                                            type="password"
+                                            maxlength="255"
+                                            minlength="4"
+                                            autocomplete="new-password"
+                                            placeholder="Nueva contraseña"
+                                            data-password-input-verificador="<?=
+                                                (int) (
+                                                    $verificadorAdministracion['id']
+                                                    ?? 0
+                                                )
+                                            ?>"
+                                        >
+
+                                        <button
+                                            type="button"
+                                            class="btn-ver"
+                                            data-password-verificador="<?=
+                                                (int) (
+                                                    $verificadorAdministracion['id']
+                                                    ?? 0
+                                                )
+                                            ?>"
+                                        >
+                                            Cambiar contraseña
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        class="<?= $verificadorActivo
+                                            ? 'btn-eliminar'
+                                            : 'btn-surtir' ?>"
+                                        data-estado-verificador="<?=
+                                            (int) (
+                                                $verificadorAdministracion['id']
+                                                ?? 0
+                                            )
+                                        ?>"
+                                        data-nuevo-estado="<?= $verificadorActivo
+                                            ? '0'
+                                            : '1' ?>"
+                                    >
+                                        <?= $verificadorActivo
+                                            ? 'Desactivar'
+                                            : 'Activar' ?>
+                                    </button>
+                                </div>
+                            </article>
+
+                        <?php endforeach; ?>
+
+                    <?php endif; ?>
+
+                </div>
+
+            <?php endif; ?>
+
+        </section>
+
+    <?php endif; ?>
+
     <?php if ($puedeCrearSolicitud): ?>
 
         <section
@@ -1111,6 +1532,95 @@ require __DIR__
                 Nueva solicitud de
                 <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
             </h2>
+
+            <?php if (
+                !$esModuloTicket
+                && $rol === 'GERENTE'
+            ): ?>
+
+                <div class="identificacion-verificador">
+                    <h3>Quién está solicitando</h3>
+
+                    <p>
+                        Seleccione su propio nombre y escriba su
+                        contraseña personal. Después el gerente
+                        autorizará el envío.
+                    </p>
+
+                    <?php if ($errorVerificadores !== ''): ?>
+
+                        <div class="alerta alerta-error">
+                            <?= htmlspecialchars(
+                                $errorVerificadores,
+                                ENT_QUOTES,
+                                'UTF-8'
+                            ) ?>
+                        </div>
+
+                    <?php elseif (empty($verificadoresActivos)): ?>
+
+                        <div class="alerta alerta-error">
+                            El administrador debe registrar por lo
+                            menos un verificador activo para este
+                            almacén.
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="campos-verificador-solicitud">
+                            <div class="campo">
+                                <label for="verificadorId">
+                                    Nombre del verificador
+                                </label>
+
+                                <select id="verificadorId" required>
+                                    <option value="">
+                                        Seleccione su nombre
+                                    </option>
+
+                                    <?php foreach (
+                                        $verificadoresActivos
+                                        as $verificadorActivo
+                                    ): ?>
+                                        <option
+                                            value="<?= (int) (
+                                                $verificadorActivo['id']
+                                                ?? 0
+                                            ) ?>"
+                                        >
+                                            <?= htmlspecialchars(
+                                                (string) (
+                                                    $verificadorActivo['nombre']
+                                                    ?? ''
+                                                ),
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="campo">
+                                <label for="passwordVerificador">
+                                    Contraseña del verificador
+                                </label>
+
+                                <input
+                                    type="password"
+                                    id="passwordVerificador"
+                                    maxlength="255"
+                                    autocomplete="new-password"
+                                    placeholder="Contraseña personal"
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                    <?php endif; ?>
+                </div>
+
+            <?php endif; ?>
 
             <?php if ($esModuloTicket): ?>
 
@@ -1186,6 +1696,16 @@ require __DIR__
                 type="button"
                 id="btnGuardarResurtido"
                 class="btn-guardar"
+                <?php if (
+                    !$esModuloTicket
+                    && $rol === 'GERENTE'
+                    && (
+                        $errorVerificadores !== ''
+                        || empty($verificadoresActivos)
+                    )
+                ): ?>
+                    disabled
+                <?php endif; ?>
             >
                 Enviar solicitud
             </button>
@@ -1298,6 +1818,22 @@ require __DIR__
                                     'UTF-8'
                                 ) ?>
                             </span>
+
+                            <?php if (!$esModuloTicket): ?>
+                                <span class="verificador-solicitud">
+                                    Solicitó:
+                                    <strong>
+                                        <?= htmlspecialchars(
+                                            (string) (
+                                                $resurtido['verificador_nombre']
+                                                ?: 'Sin identificar'
+                                            ),
+                                            ENT_QUOTES,
+                                            'UTF-8'
+                                        ) ?>
+                                    </strong>
+                                </span>
+                            <?php endif; ?>
 
                             <span
                                 class="estado estado-<?=
@@ -1572,6 +2108,12 @@ require __DIR__
     const folioDocumentoInput =
         document.getElementById('folioDocumento');
 
+    const verificadorIdInput =
+        document.getElementById('verificadorId');
+
+    const passwordVerificadorInput =
+        document.getElementById('passwordVerificador');
+
     const formularioResurtido =
         document.getElementById('formularioResurtido');
 
@@ -1604,6 +2146,189 @@ require __DIR__
         );
 
     // ==================================================
+    // ADMINISTRACIÓN DE VERIFICADORES
+    // ==================================================
+
+    const formularioNuevoVerificador =
+        document.getElementById(
+            'formularioNuevoVerificador'
+        );
+
+    formularioNuevoVerificador?.addEventListener(
+        'submit',
+        async function (evento) {
+            evento.preventDefault();
+
+            const nombre = document
+                .getElementById('nombreNuevoVerificador')
+                ?.value
+                .trim() ?? '';
+
+            const almacenId = Number(
+                document
+                    .getElementById('almacenNuevoVerificador')
+                    ?.value
+                ?? 0
+            );
+
+            const password = document
+                .getElementById('passwordNuevoVerificador')
+                ?.value
+                .trim() ?? '';
+
+            if (
+                nombre.length < 3
+                || almacenId <= 0
+                || password.length < 4
+            ) {
+                alert(
+                    'Complete el nombre, el almacén y una '
+                    + 'contraseña de al menos 4 caracteres.'
+                );
+                return;
+            }
+
+            const boton = this.querySelector(
+                'button[type="submit"]'
+            );
+
+            await enviarAccionVerificador(
+                'crear_verificador',
+                {
+                    nombre: nombre,
+                    almacen_id: almacenId,
+                    password: password
+                },
+                boton
+            );
+        }
+    );
+
+    document
+        .querySelectorAll('[data-password-verificador]')
+        .forEach(function (boton) {
+            boton.addEventListener(
+                'click',
+                async function () {
+                    const verificadorId = Number(
+                        this.dataset.passwordVerificador
+                    );
+
+                    const input = document.querySelector(
+                        '[data-password-input-verificador="'
+                        + verificadorId
+                        + '"]'
+                    );
+
+                    const password =
+                        input?.value.trim() ?? '';
+
+                    if (password.length < 4) {
+                        alert(
+                            'Escriba una nueva contraseña de '
+                            + 'al menos 4 caracteres.'
+                        );
+                        input?.focus();
+                        return;
+                    }
+
+                    await enviarAccionVerificador(
+                        'cambiar_password_verificador',
+                        {
+                            verificador_id: verificadorId,
+                            password: password
+                        },
+                        this
+                    );
+                }
+            );
+        });
+
+    document
+        .querySelectorAll('[data-estado-verificador]')
+        .forEach(function (boton) {
+            boton.addEventListener(
+                'click',
+                async function () {
+                    const verificadorId = Number(
+                        this.dataset.estadoVerificador
+                    );
+
+                    const activo = Number(
+                        this.dataset.nuevoEstado
+                    ) === 1;
+
+                    if (
+                        !confirm(
+                            '¿Desea '
+                            + (activo ? 'activar' : 'desactivar')
+                            + ' a este verificador?'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    await enviarAccionVerificador(
+                        'cambiar_estado_verificador',
+                        {
+                            verificador_id: verificadorId,
+                            activo: activo ? 1 : 0
+                        },
+                        this
+                    );
+                }
+            );
+        });
+
+    async function enviarAccionVerificador(
+        accion,
+        datos,
+        boton
+    ) {
+        const textoOriginal = boton?.textContent ?? '';
+
+        if (boton) {
+            boton.disabled = true;
+            boton.textContent = 'Guardando...';
+        }
+
+        try {
+            const respuesta = await fetch(
+                endpointModulo + '?action=' + accion,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        csrf_token: csrfToken,
+                        ...datos
+                    })
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible guardar el cambio.'
+                );
+            }
+
+            alert(resultado.mensaje);
+            window.location.reload();
+        } catch (error) {
+            alert(error.message);
+
+            if (boton) {
+                boton.disabled = false;
+                boton.textContent = textoOriginal;
+            }
+        }
+    }
+
+    // ==================================================
     // BOTÓN NUEVO RESURTIDO
     // ==================================================
 
@@ -1614,6 +2339,15 @@ require __DIR__
         });
 
         window.setTimeout(function () {
+            if (
+                !esModuloTicket
+                && rolActual === 'GERENTE'
+                && !verificadorIdInput?.value
+            ) {
+                verificadorIdInput?.focus();
+                return;
+            }
+
             codigoInput?.focus();
         }, 400);
     });
@@ -2093,6 +2827,30 @@ require __DIR__
             return;
         }
 
+        if (
+            !esModuloTicket
+            && rolActual === 'GERENTE'
+        ) {
+            if (
+                Number(verificadorIdInput?.value ?? 0) <= 0
+            ) {
+                alert('Seleccione su nombre de verificador.');
+                verificadorIdInput?.focus();
+                return;
+            }
+
+            if (
+                (passwordVerificadorInput?.value ?? '')
+                    .trim() === ''
+            ) {
+                alert(
+                    'Escriba la contraseña personal del verificador.'
+                );
+                passwordVerificadorInput?.focus();
+                return;
+            }
+        }
+
         if (!productosSolicitud.length) {
             alert(
                 'Agregue por lo menos un producto.'
@@ -2181,6 +2939,18 @@ require __DIR__
                         password_gerente:
                             passwordGerente,
 
+                        verificador_id:
+                            Number(
+                                verificadorIdInput?.value
+                                ?? 0
+                            ),
+
+                        password_verificador:
+                            passwordVerificadorInput
+                                ?.value
+                                .trim()
+                            ?? '',
+
                         tipo_solicitud:
                             tipoSolicitudModulo,
 
@@ -2232,6 +3002,11 @@ require __DIR__
                     && resultado.mensaje ===
                         'La contraseña del gerente es incorrecta.';
 
+                errorSolicitud.esVerificadorIncorrecto =
+                    respuesta.status === 403
+                    && resultado.mensaje ===
+                        'El nombre o la contraseña del verificador son incorrectos.';
+
                 throw errorSolicitud;
             }
 
@@ -2254,6 +3029,25 @@ require __DIR__
 
                 inputPasswordGerente?.focus();
                 inputPasswordGerente?.select();
+            } else if (
+                error.esVerificadorIncorrecto === true
+            ) {
+                if (modalPasswordGerente) {
+                    modalPasswordGerente.classList.remove(
+                        'activo'
+                    );
+
+                    modalPasswordGerente.setAttribute(
+                        'aria-hidden',
+                        'true'
+                    );
+
+                    document.body.style.overflow = '';
+                }
+
+                alert(error.message);
+                passwordVerificadorInput?.focus();
+                passwordVerificadorInput?.select();
             } else {
                 alert(error.message);
             }
@@ -2484,13 +3278,31 @@ require __DIR__
                     )}
                 </p>
 
-                <p>
-                    <strong>Solicitante:</strong>
-                    ${escaparHtml(
-                        resurtido.solicitante_nombre
-                        ?? 'Sin información'
-                    )}
-                </p>
+                ${!esModuloTicket ? `
+                    <p>
+                        <strong>Verificador que solicitó:</strong>
+                        ${escaparHtml(
+                            resurtido.verificador_nombre
+                            || 'Sin identificar'
+                        )}
+                    </p>
+
+                    <p>
+                        <strong>Gerente que autorizó:</strong>
+                        ${escaparHtml(
+                            resurtido.solicitante_nombre
+                            || 'Sin información'
+                        )}
+                    </p>
+                ` : `
+                    <p>
+                        <strong>Solicitante:</strong>
+                        ${escaparHtml(
+                            resurtido.solicitante_nombre
+                            || 'Sin información'
+                        )}
+                    </p>
+                `}
 
                 <p>
                     <strong>Almacén:</strong>
@@ -2761,6 +3573,20 @@ require __DIR__
                     `
                     : '';
 
+                const verificadorSolicitud = !esModuloTicket
+                    ? `
+                        <span class="verificador-solicitud">
+                            Solicitó:
+                            <strong>
+                                ${escaparHtml(
+                                    solicitud.verificador_nombre
+                                    || 'Sin identificar'
+                                )}
+                            </strong>
+                        </span>
+                    `
+                    : '';
+
                 const puedeSurtir =
                     puedeSurtirSolicitudes
                     && [
@@ -2814,6 +3640,8 @@ require __DIR__
                                     solicitud.fecha || ''
                                 )}
                             </span>
+
+                            ${verificadorSolicitud}
 
                             <span
                                 class="estado estado-${

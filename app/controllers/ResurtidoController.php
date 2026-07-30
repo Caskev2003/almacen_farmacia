@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../models/Resurtido.php';
+require_once __DIR__ . '/../models/VerificadorResurtido.php';
 require_once __DIR__ . '/../helpers/audit.php';
 
 class ResurtidoController
 {
     private PDO $db;
     private Resurtido $resurtidoModel;
+    private VerificadorResurtido $verificadorModel;
 
     public function __construct(?PDO $db = null)
     {
         $this->db = $db ?? $this->obtenerConexion();
 
         $this->resurtidoModel = new Resurtido(
+            $this->db
+        );
+
+        $this->verificadorModel = new VerificadorResurtido(
             $this->db
         );
     }
@@ -119,6 +125,158 @@ class ResurtidoController
     }
 
     // ==================================================
+    // IDENTIFICAR AL VERIFICADOR QUE CAPTURA EL RESURTIDO
+    // ==================================================
+
+    public function obtenerVerificadoresActivos(
+        int $almacenId
+    ): array {
+        return $this
+            ->verificadorModel
+            ->listarActivosPorAlmacen($almacenId);
+    }
+
+    public function obtenerVerificadores(): array
+    {
+        return $this
+            ->verificadorModel
+            ->listarTodos();
+    }
+
+    public function obtenerAlmacenesVerificadores(): array
+    {
+        return $this
+            ->verificadorModel
+            ->listarAlmacenes();
+    }
+
+    public function validarCredencialesVerificador(
+        int $verificadorId,
+        int $almacenId,
+        string $password
+    ): ?array {
+        return $this
+            ->verificadorModel
+            ->verificarCredenciales(
+                $verificadorId,
+                $almacenId,
+                $password
+            );
+    }
+
+    public function crearVerificador(
+        string $nombre,
+        string $password,
+        int $almacenId
+    ): array {
+        $verificador = $this
+            ->verificadorModel
+            ->crear(
+                $nombre,
+                $password,
+                $almacenId
+            );
+
+        auditLog([
+            'modulo' => 'Resurtidos',
+            'accion' => 'CREAR_VERIFICADOR',
+            'entidad' => 'verificador_resurtido',
+            'registro_id' => $verificador['id'] ?? null,
+            'descripcion' => 'Creó al verificador de resurtidos '
+                . ($verificador['nombre'] ?? '')
+                . '.',
+            'nuevos' => $verificador,
+        ]);
+
+        return $verificador;
+    }
+
+    public function cambiarPasswordVerificador(
+        int $verificadorId,
+        string $password
+    ): bool {
+        $verificador = $this
+            ->verificadorModel
+            ->obtenerPorId($verificadorId);
+
+        if (!$verificador) {
+            throw new InvalidArgumentException(
+                'No se encontró el verificador.'
+            );
+        }
+
+        $ok = $this
+            ->verificadorModel
+            ->cambiarPassword(
+                $verificadorId,
+                $password
+            );
+
+        if ($ok) {
+            auditLog([
+                'modulo' => 'Resurtidos',
+                'accion' => 'CAMBIAR_PASSWORD_VERIFICADOR',
+                'entidad' => 'verificador_resurtido',
+                'registro_id' => $verificadorId,
+                'descripcion' => 'Cambió la contraseña del verificador '
+                    . ($verificador['nombre'] ?? '')
+                    . '.',
+                'metadata' => [
+                    'verificador_id' => $verificadorId,
+                    'password_modificada' => true,
+                ],
+            ]);
+        }
+
+        return $ok;
+    }
+
+    public function cambiarEstadoVerificador(
+        int $verificadorId,
+        bool $activo
+    ): bool {
+        $verificador = $this
+            ->verificadorModel
+            ->obtenerPorId($verificadorId);
+
+        if (!$verificador) {
+            throw new InvalidArgumentException(
+                'No se encontró el verificador.'
+            );
+        }
+
+        $ok = $this
+            ->verificadorModel
+            ->cambiarEstado(
+                $verificadorId,
+                $activo
+            );
+
+        if ($ok) {
+            auditLog([
+                'modulo' => 'Resurtidos',
+                'accion' => $activo
+                    ? 'ACTIVAR_VERIFICADOR'
+                    : 'DESACTIVAR_VERIFICADOR',
+                'entidad' => 'verificador_resurtido',
+                'registro_id' => $verificadorId,
+                'descripcion' => ($activo ? 'Activó' : 'Desactivó')
+                    . ' al verificador '
+                    . ($verificador['nombre'] ?? '')
+                    . '.',
+                'anteriores' => [
+                    'estado' => $verificador['estado'] ?? null,
+                ],
+                'nuevos' => [
+                    'estado' => $activo ? 1 : 0,
+                ],
+            ]);
+        }
+
+        return $ok;
+    }
+
+    // ==================================================
     // CREAR SOLICITUD DE RESURTIDO
     // ==================================================
 
@@ -133,6 +291,17 @@ class ResurtidoController
         $almacenId = (int) (
             $datos['almacen_id']
             ?? 0
+        );
+
+        $verificadorId = isset($datos['verificador_id'])
+            ? (int) $datos['verificador_id']
+            : null;
+
+        $verificadorNombre = trim(
+            (string) (
+                $datos['verificador_nombre']
+                ?? ''
+            )
         );
 
         $observaciones = trim(
@@ -297,6 +466,12 @@ class ResurtidoController
         $resultado = $this->resurtidoModel->crear([
             'solicitante_id' => $solicitanteId,
             'almacen_id' => $almacenId,
+            'verificador_id' => $verificadorId,
+            'verificador_nombre' => (
+                $verificadorNombre !== ''
+                    ? $verificadorNombre
+                    : null
+            ),
             'tipo_solicitud' => $tipoSolicitud,
             'folio_documento' => (
                 $folioDocumento !== ''
@@ -332,6 +507,9 @@ class ResurtidoController
                 . ($resultado['folio'] ?? ('#' . $resurtidoId))
                 . ($esTicket
                     ? ' con folio de ticket ' . $folioDocumento
+                    : '')
+                . (!$esTicket && $verificadorNombre !== ''
+                    ? ', capturada por ' . $verificadorNombre
                     : '')
                 . ' con ' . count($productosValidados)
                 . ' producto(s).',

@@ -273,6 +273,17 @@ class Resurtido
             $datos['almacen_id'] ?? 0
         );
 
+        $verificadorId = isset($datos['verificador_id'])
+            && $datos['verificador_id'] !== null
+                ? (int) $datos['verificador_id']
+                : null;
+
+        $verificadorNombre = trim(
+            (string) (
+                $datos['verificador_nombre'] ?? ''
+            )
+        );
+
         $observaciones = trim(
             (string) (
                 $datos['observaciones'] ?? ''
@@ -413,6 +424,8 @@ class Resurtido
                     folio,
                     fecha_solicitud,
                     solicitante_id,
+                    verificador_id,
+                    verificador_nombre,
                     almacen_id,
                     tipo_solicitud,
                     folio_documento,
@@ -424,6 +437,8 @@ class Resurtido
                     :folio,
                     NOW(),
                     :solicitante_id,
+                    :verificador_id,
+                    :verificador_nombre,
                     :almacen_id,
                     :tipo_solicitud,
                     :folio_documento,
@@ -441,6 +456,17 @@ class Resurtido
             $stmtResurtido->execute([
                 ':folio' => $folioTemporal,
                 ':solicitante_id' => $solicitanteId,
+                ':verificador_id' => (
+                    $verificadorId !== null
+                    && $verificadorId > 0
+                        ? $verificadorId
+                        : null
+                ),
+                ':verificador_nombre' => (
+                    $verificadorNombre !== ''
+                        ? $verificadorNombre
+                        : null
+                ),
                 ':almacen_id' => $almacenId,
                 ':tipo_solicitud' => $tipoSolicitud,
                 ':folio_documento' => (
@@ -617,6 +643,8 @@ class Resurtido
                 r.folio,
                 r.fecha_solicitud,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.tipo_solicitud,
                 r.folio_documento,
@@ -665,6 +693,8 @@ class Resurtido
                 r.folio,
                 r.fecha_solicitud,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.tipo_solicitud,
                 r.folio_documento,
@@ -699,6 +729,11 @@ class Resurtido
         $resurtido['solicitante_id'] = (int) (
             $resurtido['solicitante_id']
         );
+
+        $resurtido['verificador_id'] =
+            $resurtido['verificador_id'] !== null
+                ? (int) $resurtido['verificador_id']
+                : null;
 
         $resurtido['almacen_id'] = (int) (
             $resurtido['almacen_id']
@@ -835,6 +870,8 @@ class Resurtido
                 r.tipo_solicitud,
                 r.folio_documento,
                 r.fecha_solicitud AS fecha,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.observaciones,
                 r.estado,
                 r.almacen_id,
@@ -876,6 +913,8 @@ class Resurtido
                 r.tipo_solicitud,
                 r.folio_documento,
                 r.fecha_solicitud,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.observaciones,
                 r.estado,
                 r.almacen_id,
@@ -946,6 +985,8 @@ class Resurtido
                 r.folio_documento,
                 r.fecha_solicitud AS fecha,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.observaciones,
                 r.estado,
@@ -991,6 +1032,8 @@ class Resurtido
                 r.folio_documento,
                 r.fecha_solicitud,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.observaciones,
                 r.estado,
@@ -1054,6 +1097,8 @@ class Resurtido
                 r.folio_documento,
                 r.fecha_solicitud AS fecha,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.observaciones,
                 r.estado,
@@ -1095,6 +1140,8 @@ class Resurtido
                 r.folio_documento,
                 r.fecha_solicitud,
                 r.solicitante_id,
+                r.verificador_id,
+                r.verificador_nombre,
                 r.almacen_id,
                 r.observaciones,
                 r.estado,
@@ -2114,6 +2161,13 @@ class Resurtido
                 $resurtido['solicitante_id'] = (int) (
                     $resurtido['solicitante_id']
                 );
+            }
+
+            if (array_key_exists('verificador_id', $resurtido)) {
+                $resurtido['verificador_id'] =
+                    $resurtido['verificador_id'] !== null
+                        ? (int) $resurtido['verificador_id']
+                        : null;
             }
 
             if (isset($resurtido['almacen_id'])) {

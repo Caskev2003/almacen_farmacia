@@ -112,6 +112,7 @@ button:focus-visible {
 }
 
 .campo input,
+.campo select,
 .campo textarea,
 .campo-busqueda input {
     width: 100%;
@@ -147,11 +148,99 @@ button:focus-visible {
 }
 
 .campo input:focus,
+.campo select:focus,
 .campo textarea:focus,
 .campo-busqueda input:focus {
     border-color: var(--res-azul);
     background: #ffffff;
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+/* ===== IDENTIFICACIÓN DEL VERIFICADOR ===== */
+.identificacion-verificador {
+    padding: 18px;
+    border: 1px solid #bfdbfe;
+    border-radius: 14px;
+    background: #eff6ff;
+}
+
+.identificacion-verificador h3 {
+    margin: 0 0 6px;
+    color: #1e3a8a;
+    font-size: 17px;
+}
+
+.identificacion-verificador > p,
+.ayuda-verificadores {
+    margin: 0 0 16px;
+    color: var(--res-texto-suave);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.campos-verificador-solicitud,
+.formulario-verificador {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+    gap: 14px;
+    align-items: end;
+}
+
+.formulario-verificador {
+    grid-template-columns:
+        minmax(220px, 1.3fr)
+        minmax(190px, 1fr)
+        minmax(190px, 1fr)
+        auto;
+    margin-bottom: 20px;
+}
+
+.lista-verificadores {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.verificador-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px;
+    border: 1px solid var(--res-borde);
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.verificador-item > div:first-child {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.verificador-acciones,
+.verificador-cambio-password {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.verificador-cambio-password input {
+    min-height: var(--res-toque);
+    width: 190px;
+    padding: 10px 12px;
+    border: 1.5px solid #d7dde5;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.verificador-solicitud {
+    color: #1d4ed8 !important;
+}
+
+.verificador-solicitud strong {
+    color: #1e3a8a;
 }
 
 .campo-password {
@@ -831,6 +920,10 @@ button:focus-visible {
         font-size: 17px;
     }
 
+    .formulario-verificador {
+        grid-template-columns: 1fr 1fr;
+    }
+
     /* Botón de envío siempre a la mano */
     .btn-guardar {
         position: sticky;
@@ -900,6 +993,23 @@ button:focus-visible {
         width: 100%;
         min-height: 56px;
         font-size: 16px;
+    }
+
+    .campos-verificador-solicitud,
+    .formulario-verificador {
+        grid-template-columns: 1fr;
+    }
+
+    .verificador-item,
+    .verificador-acciones,
+    .verificador-cambio-password {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .verificador-cambio-password input,
+    .verificador-acciones button {
+        width: 100%;
     }
 
     .resurtido-modal {

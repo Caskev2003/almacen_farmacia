@@ -1,10 +1,13 @@
 <?php
 
-// Duración de sesión: 1 año
-$tiempoSesion = 60 * 60 * 24 * 365;
+// Sesión de larga duración y sin cierre automático por inactividad.
+// El cierre manual desde "Cerrar sesión" sigue funcionando.
+$tiempoSesion = 60 * 60 * 24 * 365 * 10;
 
 ini_set('session.gc_maxlifetime', (string)$tiempoSesion);
 ini_set('session.cookie_lifetime', (string)$tiempoSesion);
+ini_set('session.gc_probability', '0');
+ini_set('session.use_strict_mode', '1');
 
 if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params([

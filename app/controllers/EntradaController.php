@@ -1,11 +1,13 @@
 <?php
 
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../models/EntradaBorrador.php';
 require_once __DIR__ . '/../helpers/audit.php';
 
 class EntradaController
 {
     private Movimiento $movimientoModel;
+    private EntradaBorrador $borradorModel;
 
     public function __construct()
     {
@@ -14,6 +16,7 @@ class EntradaController
         }
 
         $this->movimientoModel = new Movimiento();
+        $this->borradorModel = new EntradaBorrador();
     }
 
     private function obtenerAlmacenSesion(): int
@@ -504,7 +507,140 @@ class EntradaController
             ]);
         }
 
+    return $resultado;
+}
+
+    public function guardarBorrador(
+        array $postData,
+        int $usuarioId
+    ): array {
+        $usuario = $_SESSION['user'] ?? [];
+        $rol = strtoupper(
+            trim((string) ($usuario['rol'] ?? ''))
+        );
+        $almacenSesionId = (int) (
+            $usuario['almacen_id'] ?? 0
+        );
+        $almacenId = $rol === 'ADMINISTRADOR'
+            ? (int) ($postData['almacen_id'] ?? 0)
+            : $almacenSesionId;
+        $borradorId = (int) (
+            $postData['borrador_id'] ?? 0
+        );
+        $datos = $postData['datos'] ?? [];
+
+        if (!is_array($datos)) {
+            throw new InvalidArgumentException(
+                'Los datos del borrador no son válidos.'
+            );
+        }
+
+        $resultado = $this->borradorModel->guardar(
+            $usuarioId,
+            $almacenId,
+            (string) ($postData['nombre'] ?? ''),
+            $datos,
+            $borradorId > 0 ? $borradorId : null
+        );
+
+        auditLog([
+            'modulo' => 'Entradas',
+            'accion' => !empty($resultado['actualizado'])
+                ? 'ACTUALIZAR_BORRADOR_ENTRADA'
+                : 'CREAR_BORRADOR_ENTRADA',
+            'entidad' => 'entrada_borrador',
+            'registro_id' => $resultado['id'] ?? null,
+            'descripcion' => (
+                !empty($resultado['actualizado'])
+                    ? 'Actualizó'
+                    : 'Guardó'
+            ) . ' el borrador de entrada "'
+                . ($resultado['nombre'] ?? 'Sin nombre')
+                . '".',
+            'nuevos' => [
+                'nombre' => $resultado['nombre'] ?? '',
+                'almacen_id' => $almacenId,
+                'total_productos' => (
+                    $resultado['total_productos'] ?? 0
+                ),
+            ],
+        ]);
+
         return $resultado;
+    }
+
+    public function listarBorradores(
+        int $usuarioId
+    ): array {
+        return $this->borradorModel->listarPorUsuario(
+            $usuarioId
+        );
+    }
+
+    public function obtenerBorrador(
+        int $borradorId,
+        int $usuarioId
+    ): ?array {
+        $borrador = $this->borradorModel->obtener(
+            $borradorId,
+            $usuarioId
+        );
+
+        if ($borrador) {
+            auditLog([
+                'modulo' => 'Entradas',
+                'accion' => 'CONTINUAR_BORRADOR_ENTRADA',
+                'entidad' => 'entrada_borrador',
+                'registro_id' => $borradorId,
+                'descripcion' => 'Abrió el borrador de entrada "'
+                    . ($borrador['nombre'] ?? 'Sin nombre')
+                    . '" para continuar su captura.',
+            ]);
+        }
+
+        return $borrador;
+    }
+
+    public function eliminarBorrador(
+        int $borradorId,
+        int $usuarioId,
+        string $motivo = 'ELIMINADO'
+    ): bool {
+        $borrador = $this->borradorModel->obtener(
+            $borradorId,
+            $usuarioId
+        );
+
+        if (!$borrador) {
+            return false;
+        }
+
+        $eliminado = $this->borradorModel->eliminar(
+            $borradorId,
+            $usuarioId
+        );
+
+        if ($eliminado) {
+            $finalizado = strtoupper($motivo) === 'FINALIZADO';
+
+            auditLog([
+                'modulo' => 'Entradas',
+                'accion' => $finalizado
+                    ? 'FINALIZAR_BORRADOR_ENTRADA'
+                    : 'ELIMINAR_BORRADOR_ENTRADA',
+                'entidad' => 'entrada_borrador',
+                'registro_id' => $borradorId,
+                'descripcion' => $finalizado
+                    ? 'Convirtió el borrador "'
+                        . ($borrador['nombre'] ?? 'Sin nombre')
+                        . '" en una entrada definitiva.'
+                    : 'Eliminó el borrador de entrada "'
+                        . ($borrador['nombre'] ?? 'Sin nombre')
+                        . '".',
+            ]);
+        }
+
+        return $eliminado;
     }
 
     /**

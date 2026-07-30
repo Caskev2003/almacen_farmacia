@@ -9,6 +9,124 @@ requireLogin();
 $user = currentUser();
 $controller = new EntradaController();
 
+$csrfEntrada = $_SESSION['csrf_entradas'] ?? '';
+if (!is_string($csrfEntrada) || $csrfEntrada === '') {
+    $csrfEntrada = bin2hex(random_bytes(32));
+    $_SESSION['csrf_entradas'] = $csrfEntrada;
+}
+
+$accionEntrada = trim((string)($_GET['action'] ?? ''));
+
+if ($accionEntrada !== '') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+
+    try {
+        $usuarioId = (int)($user['id'] ?? 0);
+
+        if ($accionEntrada === 'listar_borradores') {
+            echo json_encode([
+                'success' => true,
+                'borradores' => $controller->listarBorradores(
+                    $usuarioId
+                ),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($accionEntrada === 'obtener_borrador') {
+            $borradorId = (int)($_GET['id'] ?? 0);
+            $borrador = $controller->obtenerBorrador(
+                $borradorId,
+                $usuarioId
+            );
+
+            if (!$borrador) {
+                http_response_code(404);
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'No se encontró el borrador.',
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            echo json_encode([
+                'success' => true,
+                'borrador' => $borrador,
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            throw new RuntimeException(
+                'Método no permitido.'
+            );
+        }
+
+        $datosJson = json_decode(
+            file_get_contents('php://input') ?: '{}',
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        if (!is_array($datosJson)
+            || !hash_equals(
+                $csrfEntrada,
+                (string)($datosJson['csrf'] ?? '')
+            )
+        ) {
+            http_response_code(419);
+            throw new RuntimeException(
+                'La sesión de captura cambió. Recargue la página.'
+            );
+        }
+
+        if ($accionEntrada === 'guardar_borrador') {
+            $resultado = $controller->guardarBorrador(
+                $datosJson,
+                $usuarioId
+            );
+
+            echo json_encode([
+                'success' => true,
+                'borrador' => $resultado,
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($accionEntrada === 'eliminar_borrador') {
+            $eliminado = $controller->eliminarBorrador(
+                (int)($datosJson['id'] ?? 0),
+                $usuarioId
+            );
+
+            echo json_encode([
+                'success' => $eliminado,
+                'message' => $eliminado
+                    ? 'Borrador eliminado.'
+                    : 'No se encontró el borrador.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        http_response_code(404);
+        throw new RuntimeException(
+            'Acción no encontrada.'
+        );
+    } catch (Throwable $e) {
+        if (http_response_code() < 400) {
+            http_response_code(400);
+        }
+
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $message = '';
 $messageType = 'danger';
 
@@ -71,6 +189,7 @@ foreach ($partesReferencia as $parte) {
 // Procesar formulario
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
+    $borradorPostId = (int)($_POST['borrador_id'] ?? 0);
 
     if ($editarPostId > 0) {
         $result = $controller->actualizar($editarPostId, $_POST, (int)$user['id']);
@@ -82,13 +201,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $movimientoId = (int)($result['movimiento_id'] ?? 0);
 
         if ($movimientoId > 0) {
+            if ($borradorPostId > 0) {
+                try {
+                    $controller->eliminarBorrador(
+                        $borradorPostId,
+                        (int)$user['id'],
+                        'FINALIZADO'
+                    );
+                } catch (Throwable $e) {
+                    error_log(
+                        'No se pudo cerrar el borrador de entrada: '
+                        . $e->getMessage()
+                    );
+                }
+            }
+
             header('Location: imprimir_entrada.php?id=' . $movimientoId . '&preview=1');
             exit;
         }
 
         $message = '✅ La entrada se guardó correctamente.';
         $messageType = 'success';
-        echo "<script>localStorage.removeItem('borradorEntrada');</script>";
     } else {
         $message = '❌ ' . ($result['message'] ?? 'Error al guardar la entrada');
         $messageType = 'danger';
@@ -290,6 +423,53 @@ body {
     font-size: 13px;
     color: #2c7a4d;
     font-weight: 500;
+}
+
+.draft-toolbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto auto;
+    gap: 10px;
+    align-items: center;
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid #bfdbfe;
+    border-radius: 14px;
+    background: #eff6ff;
+}
+
+.draft-toolbar input {
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid #93c5fd;
+    border-radius: 10px;
+    background: white;
+    color: #1e3a5f;
+}
+
+.draft-button {
+    border: 0;
+    border-radius: 10px;
+    padding: 11px 16px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.draft-button.primary {
+    color: white;
+    background: #2563eb;
+}
+
+.draft-button.secondary {
+    color: #1e40af;
+    background: white;
+    border: 1px solid #93c5fd;
+}
+
+.draft-current {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: #475569;
 }
 
 /* ===== SECCIÓN DE CAPTURA RÁPIDA ===== */
@@ -571,6 +751,79 @@ body {
     color: #2563eb;
 }
 
+.copy-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.copy-button {
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.copy-button:hover {
+    background: #dbeafe;
+}
+
+.draft-modal-content {
+    height: auto;
+    max-height: 78vh;
+    max-width: 850px;
+}
+
+.draft-list {
+    overflow: auto;
+    padding: 18px 22px;
+}
+
+.draft-empty {
+    padding: 38px 18px;
+    text-align: center;
+    color: #64748b;
+}
+
+.draft-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #f8fafc;
+}
+
+.draft-item h4 {
+    margin: 0 0 5px;
+    color: #1e293b;
+    font-size: 15px;
+}
+
+.draft-item p {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.draft-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.draft-delete {
+    color: #b91c1c;
+    background: #fff1f2;
+    border-color: #fecdd3;
+}
+
 .modal-excel-footer {
     padding: 16px 24px;
     border-top: 1px solid #e4e7eb;
@@ -655,6 +908,15 @@ body {
 
 .data-table tr:hover td {
     background: #fafbfc;
+}
+
+.data-table tr.fila-capturada-activa td {
+    background: #fff7cc;
+}
+
+.data-table tr.fila-producto-capturado:focus {
+    outline: 2px solid #f59e0b;
+    outline-offset: -2px;
 }
 
 .qty-input, .price-input {
@@ -813,6 +1075,18 @@ body {
         width: 95%;
         height: 85vh;
     }
+
+    .draft-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .draft-current {
+        grid-column: 1;
+    }
+
+    .draft-item {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 
@@ -832,6 +1106,8 @@ body {
 <form method="POST" id="formEntrada">
     <?php if ($modoEdicion && $entradaEditar): ?>
         <input type="hidden" name="editar_id" value="<?= (int)$entradaEditar['id'] ?>">
+    <?php else: ?>
+        <input type="hidden" name="borrador_id" id="borradorIdInput" value="">
     <?php endif; ?>
     <input type="hidden" name="referencia" id="referencia_final" value="<?= e($referenciaEditar) ?>">
 
@@ -937,6 +1213,35 @@ body {
         <div class="folio-previous">
             <span>📋 Último folio registrado: <?= e($folioAnterior ?: 'Sin entradas anteriores') ?></span>
         </div>
+
+        <?php if (!$modoEdicion): ?>
+            <div class="draft-toolbar">
+                <input
+                    type="text"
+                    id="nombreBorrador"
+                    maxlength="150"
+                    placeholder="Nombre del borrador (ej. Factura pendiente)"
+                >
+                <button
+                    type="button"
+                    class="draft-button primary"
+                    id="guardarBorradorBtn"
+                >
+                    💾 Guardar borrador
+                </button>
+                <button
+                    type="button"
+                    class="draft-button secondary"
+                    id="abrirBorradoresBtn"
+                >
+                    📂 Mis borradores
+                    (<span id="borradoresCount">0</span>)
+                </button>
+                <div class="draft-current" id="estadoBorradorActual">
+                    Puede guardar la captura aunque todavía esté incompleta.
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 
     <!-- SECCIÓN 2: CAPTURA RÁPIDA -->
@@ -1014,6 +1319,7 @@ body {
             <kbd>↑</kbd> <kbd>↓</kbd> Navegar resultados &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Enter</kbd> Seleccionar producto &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Enter</kbd> (en cantidad/precio/ubicación) Agregar &nbsp;&nbsp;|&nbsp;&nbsp;
+            <kbd>↑</kbd> <kbd>↓</kbd> Revisar renglones capturados &nbsp;&nbsp;|&nbsp;&nbsp;
             <kbd>Ctrl</kbd> + <kbd>Enter</kbd> Guardar entrada
         </div>
     </div>
@@ -1051,7 +1357,11 @@ body {
                             $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
                             $lote = e($item['numero_lote'] ?? '');
                         ?>
-                            <tr data-producto-id="<?= $productoId ?>">
+                            <tr
+                                class="fila-producto-capturado"
+                                tabindex="0"
+                                data-producto-id="<?= $productoId ?>"
+                            >
                                 <td>
                                     <input type="number" class="qty-input" value="<?= $cantidad ?>" min="1" onchange="actualizarCantidadFila(this)" style="width:70px; padding:6px;">
                                     <input type="hidden" name="cantidad[]" value="<?= $cantidad ?>">
@@ -1115,6 +1425,7 @@ body {
                         <th>Precio</th>
                         <th>Ubicación sugerida</th>
                         <th>Ubicaciones disponibles</th>
+                        <th>Copiar</th>
                     </tr>
                 </thead>
                 <tbody id="modalTableBody"></tbody>
@@ -1127,16 +1438,41 @@ body {
     </div>
 </div>
 
+<?php if (!$modoEdicion): ?>
+<div class="modal-excel" id="modalBorradores">
+    <div class="modal-excel-content draft-modal-content">
+        <div class="modal-excel-header">
+            <h3>📂 Borradores de entradas</h3>
+            <button
+                type="button"
+                class="modal-excel-close"
+                id="cerrarBorradoresBtn"
+            >✕</button>
+        </div>
+        <div class="draft-list" id="listaBorradores">
+            <div class="draft-empty">Cargando borradores...</div>
+        </div>
+        <div class="modal-excel-footer">
+            <span>Los borradores solamente aparecen en su cuenta.</span>
+            <span>Puede continuar o eliminar cada captura.</span>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script src="assets/js/ubicaciones-rapidas.js?v=20260729"></script>
 <script>
 // ===== VARIABLES =====
 const productos = <?php echo json_encode($productosJson, JSON_UNESCAPED_UNICODE); ?>;
+const csrfEntrada = <?php echo json_encode($csrfEntrada, JSON_UNESCAPED_UNICODE); ?>;
+const modoEdicionEntrada = <?php echo $modoEdicion ? 'true' : 'false'; ?>;
 
 console.log('Productos cargados:', productos.length);
 
 let productoSeleccionado = null;
 let modalProductosFiltrados = [];
 let modalSelectedIndex = -1;
+let borradorActualId = 0;
 
 // Elementos DOM
 const modal = document.getElementById('modalExcel');
@@ -1149,6 +1485,10 @@ const precioInput = document.getElementById('precioInput');
 const loteInput = document.getElementById('loteInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
+const modalBorradores = document.getElementById('modalBorradores');
+const listaBorradores = document.getElementById('listaBorradores');
+const nombreBorrador = document.getElementById('nombreBorrador');
+const borradorIdInput = document.getElementById('borradorIdInput');
 
 // ===== FECHA AUTOMÁTICA =====
 function ponerFechaActual() {
@@ -1187,7 +1527,7 @@ function cargarProductosEnModal(productosList) {
     modalResultCount.textContent = productosList.length;
     
     if (productosList.length === 0) {
-        modalTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
         return;
     }
     
@@ -1200,6 +1540,22 @@ function cargarProductosEnModal(productosList) {
                 <td>$${p.precio_compra.toFixed(2)}</td>
                 <td>${escapeHtml(p.ubicacion_sugerida || 'N/A')}</td>
                 <td><small>${escapeHtml(ubicacionesTexto || 'Ninguna')}</small></td>
+                <td>
+                    <div class="copy-actions">
+                        <button
+                            type="button"
+                            class="copy-button"
+                            data-copy-type="codigo"
+                            data-copy-idx="${idx}"
+                        >Código</button>
+                        <button
+                            type="button"
+                            class="copy-button"
+                            data-copy-type="descripcion"
+                            data-copy-idx="${idx}"
+                        >Descripción</button>
+                    </div>
+                </td>
             </tr>
         `;
     }).join('');
@@ -1212,6 +1568,59 @@ function cargarProductosEnModal(productosList) {
             }
         });
     });
+
+    document.querySelectorAll('#modalTableBody .copy-button').forEach(button => {
+        button.addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const idx = Number(button.dataset.copyIdx);
+            const tipo = button.dataset.copyType;
+            const producto = modalProductosFiltrados[idx];
+
+            if (!producto) return;
+
+            const texto = tipo === 'codigo'
+                ? producto.codigo
+                : producto.descripcion;
+            const etiqueta = tipo === 'codigo'
+                ? 'Código'
+                : 'Descripción';
+
+            copiarTexto(texto, etiqueta);
+        });
+    });
+}
+
+async function copiarTexto(texto, etiqueta) {
+    const valor = String(texto ?? '');
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(valor);
+        } else {
+            const auxiliar = document.createElement('textarea');
+            auxiliar.value = valor;
+            auxiliar.setAttribute('readonly', '');
+            auxiliar.style.position = 'fixed';
+            auxiliar.style.opacity = '0';
+            document.body.appendChild(auxiliar);
+            auxiliar.select();
+
+            if (!document.execCommand('copy')) {
+                throw new Error('El navegador rechazó la copia.');
+            }
+
+            auxiliar.remove();
+        }
+
+        mostrarToast(`📋 ${etiqueta} copiada`);
+    } catch (error) {
+        mostrarToast(
+            `❌ No se pudo copiar ${etiqueta.toLowerCase()}`,
+            'error'
+        );
+    }
 }
 
 function filtrarProductosModal() {
@@ -1318,31 +1727,16 @@ function agregarProducto() {
     const filaVacia = document.getElementById('filaVacia');
     if (filaVacia) filaVacia.remove();
     
-    const importe = cantidad * precio;
-    const tr = document.createElement('tr');
-    tr.dataset.productoId = productoSeleccionado.id;
-    tr.innerHTML = `
-        <td>
-            <input type="number" class="qty-input" value="${cantidad}" min="1" onchange="actualizarCantidadFila(this)" style="width:70px; padding:6px;">
-            <input type="hidden" name="cantidad[]" value="${cantidad}">
-            <input type="hidden" name="producto_id[]" value="${productoSeleccionado.id}">
-            <input type="hidden" name="costo_unitario[]" value="${precio.toFixed(2)}">
-            <input type="hidden" name="numero_lote[]" value="${escapeHtml(lote)}">
-            <input type="hidden" name="fecha_caducidad[]" value="">
-            <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
-        </td>
-        <td><strong>${escapeHtml(productoSeleccionado.codigo)}</strong></td>
-        <td>${escapeHtml(productoSeleccionado.descripcion.substring(0, 45))}</td>
-        <td>
-            <input type="number" class="price-input" value="${precio.toFixed(2)}" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
-        </td>
-        <td>${escapeHtml(lote)}</td>
-        <td>${escapeHtml(ubicacion)}</td>
-        <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
-        <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
-    `;
-    
-    detalleBody.appendChild(tr);
+    crearFilaProductoCapturado({
+        producto_id: productoSeleccionado.id,
+        codigo: productoSeleccionado.codigo,
+        descripcion: productoSeleccionado.descripcion,
+        cantidad,
+        precio,
+        lote,
+        ubicacion
+    });
+
     actualizarTotales();
     
     // Resetear
@@ -1355,6 +1749,150 @@ function agregarProducto() {
     window.UbicacionesRapidas?.limpiar(ubicacionInput);
     
     mostrarToast(`✅ ${cantidad} x producto agregado`);
+}
+
+function crearFilaProductoCapturado(item) {
+    const cantidad = Math.max(
+        1,
+        Number.parseInt(item.cantidad, 10) || 1
+    );
+    const precio = Math.max(
+        0,
+        Number.parseFloat(item.precio) || 0
+    );
+    const productoId = Number.parseInt(
+        item.producto_id,
+        10
+    ) || 0;
+    const codigo = String(item.codigo ?? '');
+    const descripcion = String(item.descripcion ?? '');
+    const lote = String(item.lote ?? '');
+    const ubicacion = String(item.ubicacion ?? '')
+        .trim()
+        .toUpperCase();
+    const importe = cantidad * precio;
+    const tr = document.createElement('tr');
+
+    tr.dataset.productoId = productoId;
+    tr.className = 'fila-producto-capturado';
+    tr.tabIndex = 0;
+    tr.innerHTML = `
+        <td>
+            <input type="number" class="qty-input" value="${cantidad}" min="1" onchange="actualizarCantidadFila(this)" style="width:70px; padding:6px;">
+            <input type="hidden" name="cantidad[]" value="${cantidad}">
+            <input type="hidden" name="producto_id[]" value="${productoId}">
+            <input type="hidden" name="costo_unitario[]" value="${precio.toFixed(2)}">
+            <input type="hidden" name="numero_lote[]" value="${escapeHtml(lote)}">
+            <input type="hidden" name="fecha_caducidad[]" value="">
+            <input type="hidden" name="ubicacion[]" value="${escapeHtml(ubicacion)}">
+        </td>
+        <td><strong>${escapeHtml(codigo)}</strong></td>
+        <td title="${escapeHtml(descripcion)}">${escapeHtml(descripcion.substring(0, 60))}</td>
+        <td>
+            <input type="number" class="price-input" value="${precio.toFixed(2)}" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
+        </td>
+        <td>${escapeHtml(lote)}</td>
+        <td>${escapeHtml(ubicacion)}</td>
+        <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
+        <td><button type="button" class="delete-btn" onclick="eliminarFila(this)">🗑️</button></td>
+    `;
+    
+    detalleBody.appendChild(tr);
+    prepararNavegacionFilas();
+
+    return tr;
+}
+
+function obtenerFilasCapturadas() {
+    return Array.from(
+        detalleBody.querySelectorAll(
+            'tr.fila-producto-capturado'
+        )
+    );
+}
+
+function activarFilaCapturada(fila, enfocar = false, selector = '') {
+    obtenerFilasCapturadas().forEach(item => {
+        item.classList.toggle(
+            'fila-capturada-activa',
+            item === fila
+        );
+    });
+
+    if (!enfocar || !fila) return;
+
+    const destino = selector
+        ? fila.querySelector(selector)
+        : fila;
+
+    destino?.focus();
+
+    if (destino instanceof HTMLInputElement) {
+        destino.select();
+    }
+}
+
+function prepararNavegacionFilas() {
+    obtenerFilasCapturadas().forEach(fila => {
+        if (fila.dataset.navegacionLista === '1') {
+            return;
+        }
+
+        fila.dataset.navegacionLista = '1';
+        fila.addEventListener('click', () => {
+            activarFilaCapturada(fila);
+        });
+        fila.addEventListener('focusin', () => {
+            activarFilaCapturada(fila);
+        });
+    });
+}
+
+function navegarFilasCapturadas(event) {
+    if (event.key !== 'ArrowUp'
+        && event.key !== 'ArrowDown'
+    ) {
+        return;
+    }
+
+    if (modal?.classList.contains('active')
+        || modalBorradores?.classList.contains('active')
+    ) {
+        return;
+    }
+
+    const filaActual = event.target.closest?.(
+        'tr.fila-producto-capturado'
+    );
+
+    if (!filaActual) return;
+
+    const filas = obtenerFilasCapturadas();
+    const indiceActual = filas.indexOf(filaActual);
+    const desplazamiento = event.key === 'ArrowDown'
+        ? 1
+        : -1;
+    const indiceNuevo = Math.max(
+        0,
+        Math.min(
+            filas.length - 1,
+            indiceActual + desplazamiento
+        )
+    );
+    const selector = event.target.classList?.contains('qty-input')
+        ? '.qty-input'
+        : (
+            event.target.classList?.contains('price-input')
+                ? '.price-input'
+                : ''
+        );
+
+    event.preventDefault();
+    activarFilaCapturada(
+        filas[indiceNuevo],
+        true,
+        selector
+    );
 }
 
 function actualizarCantidadFila(input) {
@@ -1404,6 +1942,7 @@ function eliminarFila(btn) {
     if (detalleBody.children.length === 0) {
         detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
     }
+    prepararNavegacionFilas();
     actualizarTotales();
     mostrarToast('🗑️ Producto eliminado', 'info');
 }
@@ -1411,6 +1950,7 @@ function eliminarFila(btn) {
 function limpiarTodo() {
     if (confirm('¿Eliminar todos los productos?')) {
         detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
+        prepararNavegacionFilas();
         actualizarTotales();
         mostrarToast('🧹 Lista limpiada', 'info');
     }
@@ -1438,12 +1978,535 @@ function mostrarToast(mensaje, tipo = 'success') {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return String(str).replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
+        if (m === "'") return '&#039;';
         return m;
     });
+}
+
+function valorCampo(selector) {
+    return document.querySelector(selector)?.value ?? '';
+}
+
+function obtenerAlmacenCaptura() {
+    return valorCampo('select[name="almacen_id"]')
+        || valorCampo('input[name="almacen_id"]');
+}
+
+function obtenerProductosBorrador() {
+    return obtenerFilasCapturadas().map(fila => ({
+        producto_id: Number(fila.dataset.productoId || 0),
+        codigo: fila.cells[1]?.innerText.trim() || '',
+        descripcion: fila.cells[2]?.title
+            || fila.cells[2]?.innerText.trim()
+            || '',
+        cantidad: Number(
+            fila.querySelector('.qty-input')?.value || 0
+        ),
+        precio: Number(
+            fila.querySelector('.price-input')?.value || 0
+        ),
+        lote: fila.querySelector(
+            'input[name="numero_lote[]"]'
+        )?.value || '',
+        ubicacion: fila.querySelector(
+            'input[name="ubicacion[]"]'
+        )?.value || ''
+    }));
+}
+
+function obtenerDatosBorrador() {
+    construirReferencia();
+
+    return {
+        folio: valorCampo('input[name="folio"]'),
+        fecha: valorCampo('input[name="fecha"]'),
+        tipo_entrada: valorCampo('select[name="tipo_entrada"]'),
+        almacen_id: Number(obtenerAlmacenCaptura() || 0),
+        proveedor_nombre: valorCampo(
+            'input[name="proveedor_nombre"]'
+        ),
+        tipo_documento: tipoDocumento?.value || '',
+        folio_documento: folioDocumento?.value || '',
+        referencia: referenciaFinal?.value || '',
+        observaciones: valorCampo(
+            'textarea[name="observaciones"]'
+        ),
+        producto_pendiente: productoSeleccionado
+            ? {
+                id: productoSeleccionado.id,
+                codigo: productoSeleccionado.codigo,
+                descripcion: productoSeleccionado.descripcion,
+                precio_compra: productoSeleccionado.precio_compra,
+                ubicacion_sugerida:
+                    productoSeleccionado.ubicacion_sugerida || '',
+                ubicaciones: productoSeleccionado.ubicaciones || []
+            }
+            : null,
+        captura_producto: {
+            cantidad: cantidadInput?.value || '1',
+            precio: precioInput?.value || '0.00',
+            lote: loteInput?.value || '',
+            ubicacion: ubicacionInput?.value || ''
+        },
+        productos: obtenerProductosBorrador()
+    };
+}
+
+async function solicitarJson(url, opciones = {}) {
+    const respuesta = await fetch(url, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        ...opciones
+    });
+    const datos = await respuesta.json().catch(() => ({
+        success: false,
+        message: 'El servidor devolvió una respuesta inválida.'
+    }));
+
+    if (!respuesta.ok || !datos.success) {
+        throw new Error(
+            datos.message || 'No se pudo completar la operación.'
+        );
+    }
+
+    return datos;
+}
+
+async function guardarBorradorEntrada() {
+    if (modoEdicionEntrada) return;
+
+    const boton = document.getElementById(
+        'guardarBorradorBtn'
+    );
+    const datos = obtenerDatosBorrador();
+
+    if (datos.almacen_id <= 0) {
+        mostrarToast(
+            '❌ Seleccione un almacén antes de guardar.',
+            'error'
+        );
+        return;
+    }
+
+    boton.disabled = true;
+    const textoOriginal = boton.textContent;
+    boton.textContent = 'Guardando...';
+
+    try {
+        const respuesta = await solicitarJson(
+            'entradas.php?action=guardar_borrador',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    csrf: csrfEntrada,
+                    borrador_id: borradorActualId,
+                    nombre: nombreBorrador?.value || '',
+                    almacen_id: datos.almacen_id,
+                    datos
+                })
+            }
+        );
+        const borrador = respuesta.borrador;
+
+        borradorActualId = Number(borrador.id || 0);
+
+        if (borradorIdInput) {
+            borradorIdInput.value = String(
+                borradorActualId
+            );
+        }
+
+        if (nombreBorrador) {
+            nombreBorrador.value = borrador.nombre || '';
+        }
+
+        actualizarEstadoBorrador(
+            `Borrador "${borrador.nombre}" guardado. `
+            + `${borrador.total_productos} producto(s).`
+        );
+        mostrarToast('💾 Borrador guardado');
+        await actualizarConteoBorradores();
+    } catch (error) {
+        mostrarToast(
+            `❌ ${error.message}`,
+            'error'
+        );
+    } finally {
+        boton.disabled = false;
+        boton.textContent = textoOriginal;
+    }
+}
+
+function actualizarEstadoBorrador(texto) {
+    const estado = document.getElementById(
+        'estadoBorradorActual'
+    );
+
+    if (estado) {
+        estado.textContent = texto;
+    }
+}
+
+function formatearFechaBorrador(fecha) {
+    if (!fecha) return 'Sin fecha';
+
+    const valor = String(fecha).replace(' ', 'T');
+    const fechaObjeto = new Date(valor);
+
+    if (Number.isNaN(fechaObjeto.getTime())) {
+        return String(fecha);
+    }
+
+    return fechaObjeto.toLocaleString('es-MX');
+}
+
+async function obtenerListaBorradores() {
+    const respuesta = await solicitarJson(
+        'entradas.php?action=listar_borradores'
+    );
+
+    return Array.isArray(respuesta.borradores)
+        ? respuesta.borradores
+        : [];
+}
+
+async function actualizarConteoBorradores() {
+    if (modoEdicionEntrada) return;
+
+    try {
+        const borradores = await obtenerListaBorradores();
+        const contador = document.getElementById(
+            'borradoresCount'
+        );
+
+        if (contador) {
+            contador.textContent = String(
+                borradores.length
+            );
+        }
+    } catch (error) {
+        actualizarEstadoBorrador(
+            'No fue posible consultar los borradores. '
+            + 'Verifique que ejecutó el archivo SQL de instalación.'
+        );
+    }
+}
+
+async function abrirBorradores() {
+    if (!modalBorradores || !listaBorradores) return;
+
+    modalBorradores.classList.add('active');
+    listaBorradores.innerHTML =
+        '<div class="draft-empty">Cargando borradores...</div>';
+
+    try {
+        const borradores = await obtenerListaBorradores();
+        const contador = document.getElementById(
+            'borradoresCount'
+        );
+
+        if (contador) {
+            contador.textContent = String(
+                borradores.length
+            );
+        }
+
+        if (borradores.length === 0) {
+            listaBorradores.innerHTML =
+                '<div class="draft-empty">'
+                + 'Todavía no tiene borradores guardados.'
+                + '</div>';
+            return;
+        }
+
+        listaBorradores.innerHTML = borradores.map(
+            borrador => `
+                <article class="draft-item">
+                    <div>
+                        <h4>${escapeHtml(borrador.nombre)}</h4>
+                        <p>
+                            ${Number(borrador.total_productos || 0)}
+                            producto(s) ·
+                            ${escapeHtml(borrador.almacen_nombre || 'Almacén')}
+                            · Actualizado:
+                            ${escapeHtml(formatearFechaBorrador(borrador.actualizado_en))}
+                        </p>
+                    </div>
+                    <div class="draft-item-actions">
+                        <button
+                            type="button"
+                            class="draft-button primary"
+                            data-continuar-borrador="${Number(borrador.id)}"
+                        >Continuar</button>
+                        <button
+                            type="button"
+                            class="draft-button secondary draft-delete"
+                            data-eliminar-borrador="${Number(borrador.id)}"
+                        >Eliminar</button>
+                    </div>
+                </article>
+            `
+        ).join('');
+
+        listaBorradores.querySelectorAll(
+            '[data-continuar-borrador]'
+        ).forEach(boton => {
+            boton.addEventListener('click', () => {
+                continuarBorrador(
+                    Number(boton.dataset.continuarBorrador)
+                );
+            });
+        });
+
+        listaBorradores.querySelectorAll(
+            '[data-eliminar-borrador]'
+        ).forEach(boton => {
+            boton.addEventListener('click', () => {
+                eliminarBorradorEntrada(
+                    Number(boton.dataset.eliminarBorrador)
+                );
+            });
+        });
+    } catch (error) {
+        listaBorradores.innerHTML = `
+            <div class="draft-empty">
+                ${escapeHtml(error.message)}
+                <br>
+                Ejecute database/instalar_borradores_entrada.sql.
+            </div>
+        `;
+    }
+}
+
+function cerrarBorradores() {
+    modalBorradores?.classList.remove('active');
+}
+
+function asignarValor(selector, valor) {
+    const campo = document.querySelector(selector);
+
+    if (!campo || valor === undefined || valor === null) {
+        return;
+    }
+
+    campo.value = String(valor);
+    campo.dispatchEvent(
+        new Event('change', { bubbles: true })
+    );
+}
+
+async function continuarBorrador(id) {
+    const hayOtraCaptura = obtenerFilasCapturadas().length > 0
+        && borradorActualId !== id;
+
+    if (hayOtraCaptura && !confirm(
+        'La captura actual será reemplazada por el borrador seleccionado. '
+        + '¿Desea continuar?'
+    )) {
+        return;
+    }
+
+    try {
+        const respuesta = await solicitarJson(
+            `entradas.php?action=obtener_borrador&id=${encodeURIComponent(id)}`
+        );
+        const borrador = respuesta.borrador;
+        const datos = borrador.datos || {};
+        const productosBorrador = Array.isArray(
+            datos.productos
+        ) ? datos.productos : [];
+        const capturaProducto = datos.captura_producto || {};
+
+        asignarValor(
+            'input[name="fecha"]',
+            datos.fecha
+        );
+        asignarValor(
+            'select[name="tipo_entrada"]',
+            datos.tipo_entrada
+        );
+        asignarValor(
+            'input[name="proveedor_nombre"]',
+            datos.proveedor_nombre
+        );
+        asignarValor(
+            'select[name="tipo_documento"]',
+            datos.tipo_documento
+        );
+        asignarValor(
+            'input[name="folio_documento"]',
+            datos.folio_documento
+        );
+        asignarValor(
+            'textarea[name="observaciones"]',
+            datos.observaciones
+        );
+
+        const almacenSelect = document.querySelector(
+            'select[name="almacen_id"]'
+        );
+
+        if (almacenSelect
+            && !almacenSelect.disabled
+            && datos.almacen_id
+        ) {
+            almacenSelect.value = String(
+                datos.almacen_id
+            );
+            almacenSelect.dispatchEvent(
+                new Event('change', { bubbles: true })
+            );
+        }
+
+        cantidadInput.value = String(
+            capturaProducto.cantidad ?? '1'
+        );
+        precioInput.value = String(
+            capturaProducto.precio ?? '0.00'
+        );
+        loteInput.value = String(
+            capturaProducto.lote ?? ''
+        );
+
+        window.UbicacionesRapidas?.establecerValor(
+            ubicacionInput,
+            String(capturaProducto.ubicacion ?? '')
+        );
+
+        if (datos.producto_pendiente) {
+            const pendiente = datos.producto_pendiente;
+            productoSeleccionado = productos.find(
+                producto => Number(producto.id)
+                    === Number(pendiente.id)
+            ) || pendiente;
+
+            document.getElementById(
+                'selectedInfo'
+            ).style.display = 'block';
+            document.getElementById(
+                'infoCodigo'
+            ).innerHTML = `<strong>${escapeHtml(
+                productoSeleccionado.codigo
+            )}</strong>`;
+            document.getElementById(
+                'infoDescripcion'
+            ).textContent = productoSeleccionado.descripcion || '';
+            document.getElementById(
+                'infoUbicacion'
+            ).textContent =
+                productoSeleccionado.ubicacion_sugerida
+                || 'No definida';
+            productoDisplayInput.value =
+                `${productoSeleccionado.codigo} - `
+                + String(
+                    productoSeleccionado.descripcion || ''
+                ).substring(0, 50);
+        } else {
+            productoSeleccionado = null;
+            document.getElementById(
+                'selectedInfo'
+            ).style.display = 'none';
+            productoDisplayInput.value = '';
+        }
+
+        detalleBody.innerHTML = '';
+        productosBorrador.forEach(
+            crearFilaProductoCapturado
+        );
+
+        if (productosBorrador.length === 0) {
+            detalleBody.innerHTML =
+                '<tr id="filaVacia"><td colspan="8" '
+                + 'style="text-align:center;padding:50px;color:#9ca3af;">'
+                + '📭 No hay productos. Presiona Ctrl+B para buscar'
+                + '</td></tr>';
+        }
+
+        borradorActualId = Number(borrador.id || 0);
+
+        if (borradorIdInput) {
+            borradorIdInput.value = String(
+                borradorActualId
+            );
+        }
+
+        if (nombreBorrador) {
+            nombreBorrador.value = borrador.nombre || '';
+        }
+
+        construirReferencia();
+        prepararNavegacionFilas();
+        actualizarTotales();
+        actualizarEstadoBorrador(
+            `Continuando "${borrador.nombre}". `
+            + 'Al guardar nuevamente se actualizará este borrador.'
+        );
+        cerrarBorradores();
+        mostrarToast('📂 Borrador recuperado');
+    } catch (error) {
+        mostrarToast(
+            `❌ ${error.message}`,
+            'error'
+        );
+    }
+}
+
+async function eliminarBorradorEntrada(id) {
+    if (!confirm(
+        '¿Eliminar este borrador? Esta acción no elimina ninguna entrada definitiva.'
+    )) {
+        return;
+    }
+
+    try {
+        await solicitarJson(
+            'entradas.php?action=eliminar_borrador',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    csrf: csrfEntrada,
+                    id
+                })
+            }
+        );
+
+        if (borradorActualId === id) {
+            borradorActualId = 0;
+
+            if (borradorIdInput) {
+                borradorIdInput.value = '';
+            }
+
+            if (nombreBorrador) {
+                nombreBorrador.value = '';
+            }
+
+            actualizarEstadoBorrador(
+                'El borrador se eliminó; la captura abierta se conserva.'
+            );
+        }
+
+        mostrarToast('🗑️ Borrador eliminado', 'info');
+        await abrirBorradores();
+    } catch (error) {
+        mostrarToast(
+            `❌ ${error.message}`,
+            'error'
+        );
+    }
 }
 
 // ===== REFERENCIA DOCUMENTO =====
@@ -1581,6 +2644,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     actualizarTotales();
     ponerFechaActual();
+    prepararNavegacionFilas();
+    actualizarConteoBorradores();
+
+    document.addEventListener(
+        'keydown',
+        navegarFilasCapturadas
+    );
     
     // Ctrl+B para abrir modal
     document.addEventListener('keydown', function(e) {
@@ -1620,6 +2690,21 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
     document.getElementById('agregarBtn')?.addEventListener('click', agregarProducto);
     document.getElementById('guardarBtn')?.addEventListener('click', guardarEntrada);
+    document.getElementById('guardarBorradorBtn')
+        ?.addEventListener(
+            'click',
+            guardarBorradorEntrada
+        );
+    document.getElementById('abrirBorradoresBtn')
+        ?.addEventListener(
+            'click',
+            abrirBorradores
+        );
+    document.getElementById('cerrarBorradoresBtn')
+        ?.addEventListener(
+            'click',
+            cerrarBorradores
+        );
     
     // Modal teclado
     if (modalSearch) {
@@ -1652,11 +2737,26 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.target === modal) cerrarModal();
         });
     }
+
+    modalBorradores?.addEventListener(
+        'click',
+        function(event) {
+            if (event.target === modalBorradores) {
+                cerrarBorradores();
+            }
+        }
+    );
     
     // Escape global
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
             cerrarModal();
+        }
+
+        if (e.key === 'Escape'
+            && modalBorradores?.classList.contains('active')
+        ) {
+            cerrarBorradores();
         }
     });
     

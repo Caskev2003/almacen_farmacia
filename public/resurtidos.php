@@ -2008,6 +2008,8 @@ require __DIR__
             <p class="password-gerente-ayuda">
                 El gerente debe escribir su contraseña de
                 inicio de sesión para autorizar el envío.
+                Puede regresar a la captura sin perder los
+                productos que ya agregó.
             </p>
 
             <div class="campo-password">
@@ -2041,7 +2043,7 @@ require __DIR__
                 id="cancelarPasswordGerente"
                 class="btn-cancelar"
             >
-                Cancelar
+                ← Regresar a la captura
             </button>
 
             <button

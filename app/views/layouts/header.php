@@ -117,7 +117,7 @@ $puedeVerDevoluciones =
 
     <style>
         /* ==============================================
-           ENLACE Y CONTADOR DE RESURTIDOS
+           ENLACES, CONTADORES Y ALERTAS MÓVILES
         ============================================== */
 
         .nav-resurtidos {
@@ -164,6 +164,125 @@ $puedeVerDevoluciones =
                 transform: scale(1.2);
             }
         }
+
+        .btn-alertas-moviles {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 34px;
+            padding: 7px 11px;
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            color: #ffffff;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            transition:
+                background 0.2s ease,
+                color 0.2s ease,
+                transform 0.15s ease;
+        }
+
+        .btn-alertas-moviles:hover {
+            background: rgba(255, 255, 255, 0.24);
+        }
+
+        .btn-alertas-moviles:active {
+            transform: scale(0.97);
+        }
+
+        .btn-alertas-moviles.alertas-activas {
+            border-color: #bbf7d0;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .alerta-movil-toast {
+            position: fixed;
+            z-index: 10050;
+            right: 18px;
+            bottom: 18px;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 11px;
+            width: min(420px, calc(100vw - 28px));
+            padding: 14px 15px;
+            border: 1px solid #93c5fd;
+            border-radius: 14px;
+            background: #ffffff;
+            color: #172033;
+            text-align: left;
+            box-shadow:
+                0 18px 42px rgba(15, 23, 42, 0.28);
+            cursor: pointer;
+            animation: alertaMovilEntrada 0.25s ease-out;
+        }
+
+        .alerta-movil-toast.alerta-nueva {
+            border-left: 7px solid #dc3545;
+        }
+
+        .alerta-movil-toast.alerta-estado {
+            border-left: 7px solid #16a34a;
+        }
+
+        .alerta-movil-icono {
+            font-size: 25px;
+        }
+
+        .alerta-movil-contenido {
+            display: grid;
+            gap: 4px;
+        }
+
+        .alerta-movil-contenido strong {
+            color: #0f4c81;
+            font-size: 15px;
+        }
+
+        .alerta-movil-contenido small {
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .alerta-movil-cerrar {
+            color: #64748b;
+            font-size: 24px;
+            line-height: 1;
+        }
+
+        @keyframes alertaMovilEntrada {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 720px) {
+            .topbar-right {
+                justify-content: flex-end;
+            }
+
+            .btn-alertas-moviles {
+                order: 3;
+                width: 100%;
+            }
+
+            .alerta-movil-toast {
+                right: 14px;
+                bottom: 14px;
+            }
+        }
     </style>
 </head>
 
@@ -182,6 +301,26 @@ $puedeVerDevoluciones =
     <div class="topbar-right">
 
         <?php if ($user): ?>
+
+            <?php if (
+                $puedeRecibirResurtidos
+                || $puedeRecibirTickets
+            ): ?>
+
+                <button
+                    type="button"
+                    id="botonAlertasMoviles"
+                    class="btn-alertas-moviles"
+                    aria-pressed="false"
+                    title="Activar sonido y vibración"
+                >
+                    <span aria-hidden="true">🔔</span>
+                    <span class="texto-alertas">
+                        Activar alertas
+                    </span>
+                </button>
+
+            <?php endif; ?>
 
             <span>
                 <?= e($user['nombre'] ?? '') ?>
@@ -364,197 +503,31 @@ $puedeVerDevoluciones =
 
 <?php endif; ?>
 
-<?php if ($user && $puedeRecibirResurtidos): ?>
+<?php if (
+    $user
+    && (
+        $puedeRecibirResurtidos
+        || $puedeRecibirTickets
+    )
+): ?>
 
     <script>
-        (function () {
-            'use strict';
-
-            const contador =
-                document.getElementById(
-                    'contadorResurtidos'
-                );
-
-            let cantidadAnterior = null;
-
-            if (!contador) {
-                return;
-            }
-
-            async function consultarResurtidosPendientes() {
-                try {
-                    const respuesta = await fetch(
-                        'resurtidos.php?action=notificaciones',
-                        {
-                            method: 'GET',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Requested-With':
-                                    'XMLHttpRequest'
-                            }
-                        }
-                    );
-
-                    if (!respuesta.ok) {
-                        return;
-                    }
-
-                    const resultado =
-                        await respuesta.json();
-
-                    if (!resultado.ok) {
-                        return;
-                    }
-
-                    const cantidad = Number(
-                        resultado.datos?.cantidad ?? 0
-                    );
-
-                    if (
-                        !Number.isInteger(cantidad)
-                        || cantidad <= 0
-                    ) {
-                        contador.textContent = '0';
-                        contador.hidden = true;
-                        cantidadAnterior = 0;
-
-                        return;
-                    }
-
-                    contador.textContent =
-                        cantidad > 99
-                            ? '99+'
-                            : String(cantidad);
-
-                    contador.hidden = false;
-
-                    /*
-                     * Animar solamente si la cantidad aumentó.
-                     */
-                    if (
-                        cantidadAnterior !== null
-                        && cantidad > cantidadAnterior
-                    ) {
-                        contador.classList.remove(
-                            'nuevas'
-                        );
-
-                        void contador.offsetWidth;
-
-                        contador.classList.add(
-                            'nuevas'
-                        );
-                    }
-
-                    cantidadAnterior = cantidad;
-                } catch (error) {
-                    /*
-                     * La consulta se ejecuta silenciosamente
-                     * para no interrumpir el uso del sistema.
-                     */
-                    console.warn(
-                        'No fue posible consultar los resurtidos pendientes.'
-                    );
-                }
-            }
-
-            consultarResurtidosPendientes();
-
-            /*
-             * Consultar cada 3 segundos si hay nuevas
-             * solicitudes de resurtido.
-             */
-            window.setInterval(
-                consultarResurtidosPendientes,
-                3000
-            );
-        })();
+        window.AlmacenNotificacionesConfig = {
+            usuarioId: <?= (int) ($user['id'] ?? 0) ?>,
+            recibeResurtidos:
+                <?= $puedeRecibirResurtidos ? 'true' : 'false' ?>,
+            recibeTickets:
+                <?= $puedeRecibirTickets ? 'true' : 'false' ?>,
+            endpoint: 'api_notificaciones_pendientes.php',
+            serviceWorker: 'sw-notificaciones.js',
+            intervalo: 5000
+        };
     </script>
 
-<?php endif; ?>
-
-<?php if ($user && $puedeRecibirTickets): ?>
-
-    <script>
-        (function () {
-            'use strict';
-
-            const contador =
-                document.getElementById('contadorTickets');
-
-            let cantidadAnterior = null;
-
-            if (!contador) {
-                return;
-            }
-
-            async function consultarTicketsPendientes() {
-                try {
-                    const respuesta = await fetch(
-                        'tickets.php?action=notificaciones',
-                        {
-                            method: 'GET',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Requested-With':
-                                    'XMLHttpRequest'
-                            }
-                        }
-                    );
-
-                    if (!respuesta.ok) {
-                        return;
-                    }
-
-                    const resultado = await respuesta.json();
-
-                    if (!resultado.ok) {
-                        return;
-                    }
-
-                    const cantidad = Number(
-                        resultado.datos?.cantidad ?? 0
-                    );
-
-                    if (
-                        !Number.isInteger(cantidad)
-                        || cantidad <= 0
-                    ) {
-                        contador.textContent = '0';
-                        contador.hidden = true;
-                        cantidadAnterior = 0;
-                        return;
-                    }
-
-                    contador.textContent =
-                        cantidad > 99 ? '99+' : String(cantidad);
-                    contador.hidden = false;
-
-                    if (
-                        cantidadAnterior !== null
-                        && cantidad > cantidadAnterior
-                    ) {
-                        contador.classList.remove('nuevas');
-                        void contador.offsetWidth;
-                        contador.classList.add('nuevas');
-                    }
-
-                    cantidadAnterior = cantidad;
-                } catch (error) {
-                    console.warn(
-                        'No fue posible consultar los tickets pendientes.'
-                    );
-                }
-            }
-
-            consultarTicketsPendientes();
-
-            window.setInterval(
-                consultarTicketsPendientes,
-                3000
-            );
-        })();
-    </script>
+    <script
+        src="assets/js/notificaciones-movil.js?v=<?= time() ?>"
+        defer
+    ></script>
 
 <?php endif; ?>
 

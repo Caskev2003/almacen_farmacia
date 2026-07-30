@@ -118,8 +118,8 @@
 
         if (texto) {
             texto.textContent = alertasActivas
-                ? 'Alertas activas'
-                : 'Activar alertas';
+                ? 'Timbre activo'
+                : 'Activar timbre';
         }
     }
 
@@ -158,12 +158,14 @@
         contexto,
         frecuencia,
         inicio,
-        duracion
+        duracion,
+        tipoOnda = 'square',
+        nivel = 0.42
     ) {
         const oscilador = contexto.createOscillator();
         const volumen = contexto.createGain();
 
-        oscilador.type = 'sine';
+        oscilador.type = tipoOnda;
         oscilador.frequency.setValueAtTime(
             frecuencia,
             inicio
@@ -171,8 +173,15 @@
 
         volumen.gain.setValueAtTime(0.0001, inicio);
         volumen.gain.exponentialRampToValueAtTime(
-            0.22,
-            inicio + 0.02
+            nivel,
+            inicio + 0.015
+        );
+        volumen.gain.setValueAtTime(
+            nivel,
+            Math.max(
+                inicio + 0.02,
+                inicio + duracion - 0.045
+            )
         );
         volumen.gain.exponentialRampToValueAtTime(
             0.0001,
@@ -185,7 +194,7 @@
         oscilador.stop(inicio + duracion + 0.03);
     }
 
-    async function reproducirSonido() {
+    async function reproducirSonido(prueba = false) {
         if (!alertasActivas) {
             return;
         }
@@ -199,24 +208,41 @@
 
             const ahora = contextoAudio.currentTime + 0.02;
 
-            reproducirTono(
-                contextoAudio,
-                784,
-                ahora,
-                0.18
-            );
-            reproducirTono(
-                contextoAudio,
-                1046,
-                ahora + 0.2,
-                0.22
-            );
-            reproducirTono(
-                contextoAudio,
-                1318,
-                ahora + 0.44,
-                0.32
-            );
+            const ciclos = prueba ? 1 : 3;
+
+            /*
+             * Timbre fuerte para computadora: tres ráfagas de dos tonos.
+             * El volumen final también depende de Windows, Android y de las
+             * bocinas del dispositivo.
+             */
+            for (let ciclo = 0; ciclo < ciclos; ciclo++) {
+                const base = ahora + (ciclo * 1.05);
+
+                reproducirTono(
+                    contextoAudio,
+                    880,
+                    base,
+                    0.28,
+                    'square',
+                    0.46
+                );
+                reproducirTono(
+                    contextoAudio,
+                    1174,
+                    base + 0.32,
+                    0.28,
+                    'square',
+                    0.46
+                );
+                reproducirTono(
+                    contextoAudio,
+                    880,
+                    base + 0.64,
+                    0.3,
+                    'sawtooth',
+                    0.4
+                );
+            }
         } catch (error) {
             console.warn(
                 'El navegador no permitió reproducir el sonido.'
@@ -659,15 +685,15 @@
 
         await desbloquearAudio();
         await solicitarPermisoSistema();
-        await reproducirSonido();
+        await reproducirSonido(true);
         vibrar(true);
 
         const mensaje = window.isSecureContext
-            ? 'El celular sonará y vibrará al recibir solicitudes nuevas.'
-            : 'Sonido y vibración activos con esta página abierta. Para avisos con el navegador cerrado se requiere HTTPS y Web Push.';
+            ? 'La computadora sonará fuerte; en celular también vibrará al recibir solicitudes nuevas.'
+            : 'Timbre fuerte activo mientras el sistema esté abierto. En celular también vibrará. Para avisos con el navegador cerrado se requiere HTTPS y Web Push.';
 
         mostrarToast(
-            'Alertas activadas',
+            'Timbre activado',
             mensaje,
             '',
             'estado'

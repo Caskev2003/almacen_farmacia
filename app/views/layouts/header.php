@@ -195,9 +195,11 @@ $puedeVerDevoluciones =
         }
 
         .btn-alertas-moviles.alertas-activas {
-            border-color: #bbf7d0;
-            background: #dcfce7;
-            color: #166534;
+            border-color: #fde68a;
+            background: #fef3c7;
+            color: #92400e;
+            box-shadow:
+                0 0 0 3px rgba(253, 230, 138, 0.22);
         }
 
         .alerta-movil-toast {
@@ -312,11 +314,11 @@ $puedeVerDevoluciones =
                     id="botonAlertasMoviles"
                     class="btn-alertas-moviles"
                     aria-pressed="false"
-                    title="Activar sonido y vibración"
+                    title="Activar timbre fuerte y vibración"
                 >
                     <span aria-hidden="true">🔔</span>
                     <span class="texto-alertas">
-                        Activar alertas
+                        Activar timbre
                     </span>
                 </button>
 

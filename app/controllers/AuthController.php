@@ -74,6 +74,8 @@ class AuthController
             ];
         }
 
+        session_regenerate_id(true);
+
         $_SESSION['user'] = [
             'id' => (int)$user['id'],
             'nombre' => $user['nombre'],
@@ -86,6 +88,15 @@ class AuthController
             'almacen_nombre' => $user['almacen_nombre'] ?? null,
             'almacen_codigo' => $user['almacen_codigo'] ?? null
         ];
+        $_SESSION['ultimo_acceso'] = time();
+
+        if (function_exists('renovarCookieSesion')) {
+            renovarCookieSesion();
+        }
+
+        if (function_exists('crearSesionPersistente')) {
+            crearSesionPersistente($user);
+        }
 
         auditLog([
             'modulo' => 'Autenticación',

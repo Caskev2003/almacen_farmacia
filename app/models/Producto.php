@@ -479,6 +479,30 @@ class Producto
         return $producto ?: null;
     }
 
+    /**
+     * Buscar únicamente por el código principal.
+     *
+     * Incluye productos inactivos para poder reactivar el mismo registro
+     * sin duplicar su código ni perder la relación con sus movimientos.
+     */
+    public function findByCodigoExacto(string $codigo): ?array
+    {
+        $sql = "SELECT *
+                FROM productos
+                WHERE codigo = :codigo
+                ORDER BY estado DESC, id ASC
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':codigo' => trim($codigo)
+        ]);
+
+        $producto = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $producto ?: null;
+    }
+
     public function existsByCodigo(string $codigo, ?int $excludeId = null): bool
     {
         $sql = "SELECT id
@@ -602,6 +626,67 @@ class Producto
         ]);
     }
 
+    /**
+     * Reactivar un producto dado de baja y actualizar sus datos de catálogo.
+     *
+     * Se conserva el mismo ID para no romper entradas, salidas, devoluciones
+     * ni cualquier otro movimiento histórico vinculado con el producto.
+     */
+    public function reactivate(int $id, array $data): bool
+    {
+        $proveedorId = $this->obtenerOCrearProveedor(
+            $data['proveedor_nombre'] ?? ''
+        );
+        $ubicacion = $this->limpiarUbicacion(
+            $data['ubicacion'] ?? ''
+        );
+
+        if ($ubicacion === 'SIN UBICACION') {
+            $ubicacion = null;
+        }
+
+        $sql = "UPDATE productos SET
+                    codigo = :codigo,
+                    codigo_barras = :codigo_barras,
+                    descripcion = :descripcion,
+                    categoria_id = :categoria_id,
+                    proveedor_id = :proveedor_id,
+                    laboratorio = :laboratorio,
+                    unidad_medida = :unidad_medida,
+                    precio_compra = :precio_compra,
+                    precio_venta = :precio_venta,
+                    stock_minimo = 0,
+                    stock_maximo = 0,
+                    ubicacion = :ubicacion,
+                    estado = 1
+                WHERE id = :id
+                  AND estado = 0";
+
+        $stmt = $this->conn->prepare($sql);
+
+        $ok = $stmt->execute([
+            ':codigo' => $data['codigo'],
+            ':codigo_barras' =>
+                $data['codigo_barras'] ?: $data['codigo'],
+            ':descripcion' => $data['descripcion'],
+            ':categoria_id' =>
+                $data['categoria_id'] ?: null,
+            ':proveedor_id' => $proveedorId,
+            ':laboratorio' =>
+                $data['laboratorio'] ?: null,
+            ':unidad_medida' =>
+                $data['unidad_medida'] ?: null,
+            ':precio_compra' =>
+                $data['precio_compra'] ?? 0,
+            ':precio_venta' =>
+                $data['precio_venta'] ?? 0,
+            ':ubicacion' => $ubicacion,
+            ':id' => $id
+        ]);
+
+        return $ok && $stmt->rowCount() > 0;
+    }
+
     public function crearOActualizarCatalogo(array $data): bool
     {
         $codigo = trim($data['codigo']);
@@ -622,6 +707,16 @@ class Producto
             'stock_maximo' => 0,
             'ubicacion' => $data['ubicacion'] ?? null
         ];
+
+        if (
+            $producto
+            && (int) ($producto['estado'] ?? 1) === 0
+        ) {
+            return $this->reactivate(
+                (int) $producto['id'],
+                $payload
+            );
+        }
 
         if ($producto) {
             return $this->update((int)$producto['id'], $payload);

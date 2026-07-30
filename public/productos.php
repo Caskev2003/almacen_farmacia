@@ -865,7 +865,7 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                             Editar
                                         </a>
 
-                                        <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto? Se eliminarán todas sus ubicaciones.');">
+                                        <form method="POST" action="" onsubmit="return confirm('¿Deseas eliminar este producto del catálogo visible? Se conservarán su historial y ubicaciones para poder reactivarlo posteriormente con el mismo código.');">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?= (int)$producto['id'] ?>">
                                             <button type="submit" class="btn-delete">

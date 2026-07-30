@@ -192,6 +192,76 @@ class ProductoController
     {
         $data = $this->sanitizeData($postData);
 
+        $productoInactivo =
+            $this->productoModel->findByCodigoExacto(
+                $data['codigo']
+            );
+
+        if (
+            $productoInactivo
+            && (int) ($productoInactivo['estado'] ?? 1) === 0
+        ) {
+            $productoId = (int) $productoInactivo['id'];
+            $validation = $this->validate(
+                $data,
+                $productoId
+            );
+
+            if (!$validation['success']) {
+                return $validation;
+            }
+
+            $ok = $this->productoModel->reactivate(
+                $productoId,
+                $data
+            );
+
+            if (!$ok) {
+                return [
+                    'success' => false,
+                    'message' =>
+                        'No se pudo reactivar el producto.'
+                ];
+            }
+
+            $productoReactivado =
+                $this->productoModel->findById(
+                    $productoId
+                );
+
+            auditLog([
+                'modulo' => 'Productos',
+                'accion' => 'REACTIVAR_PRODUCTO',
+                'entidad' => 'producto',
+                'registro_id' => $productoId,
+                'descripcion' =>
+                    'Reactivó el producto '
+                    . (
+                        $productoReactivado['descripcion']
+                        ?? $data['descripcion']
+                    )
+                    . ' con código '
+                    . $data['codigo']
+                    . '.',
+                'anteriores' =>
+                    $this->productoAuditData(
+                        $productoInactivo
+                    ),
+                'nuevos' =>
+                    $this->productoAuditData(
+                        $productoReactivado
+                    )
+            ]);
+
+            return [
+                'success' => true,
+                'message' =>
+                    'El producto estaba eliminado y fue reactivado correctamente. Conserva su historial y sus ubicaciones anteriores.',
+                'producto_id' => $productoId,
+                'reactivado' => true
+            ];
+        }
+
         $validation = $this->validate($data);
 
         if (!$validation['success']) {
@@ -761,7 +831,8 @@ class ProductoController
 
         return [
             'success' => true,
-            'message' => 'Producto eliminado correctamente.'
+            'message' =>
+                'Producto eliminado del catálogo visible. Podrás darlo de alta nuevamente con el mismo código.'
         ];
     }
 }

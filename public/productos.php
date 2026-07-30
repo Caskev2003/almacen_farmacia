@@ -115,6 +115,8 @@ $queryBase = http_build_query([
 $moduleCss = 'productos';
 include __DIR__ . '/../app/views/layouts/header.php';
 
+echo '<link rel="stylesheet" href="assets/css/ubicaciones-rapidas.css?v=20260729">';
+
 function estadoStockProducto(array $producto, bool $esAdmin): array
 {
     $existencia = $esAdmin
@@ -647,11 +649,16 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         name="ubicacion"
                         id="ubicacion"
                         list="listaUbicaciones"
+                        data-ubicacion-rapida
+                        data-ubicacion-placeholder="R_N_Z__"
                         autocomplete="off"
-                        placeholder="Ejemplo: R1N1Z01"
+                        placeholder="R_N_Z__"
                         value="<?= e($editando['ubicacion'] ?? '') ?>"
                     >
                     <datalist id="listaUbicaciones"></datalist>
+                    <small class="ubicacion-rapida-ayuda">
+                        Escribe solo números: <strong>1 1 01</strong> se convierte en <strong>R1N1Z01</strong>. Usa ↑ ↓ y Enter.
+                    </small>
                 </div>
             </div>
 
@@ -950,7 +957,19 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 
             <div class="form-group">
                 <label>Ubicación</label>
-                <input type="text" name="ubicacion" list="listaUbicaciones" required autocomplete="off" placeholder="Ejemplo: R1N1Z01">
+                <input
+                    type="text"
+                    name="ubicacion"
+                    list="listaUbicaciones"
+                    data-ubicacion-rapida
+                    data-ubicacion-placeholder="R_N_Z__"
+                    required
+                    autocomplete="off"
+                    placeholder="R_N_Z__"
+                >
+                <small class="ubicacion-rapida-ayuda">
+                    Escribe <strong>1 1 01</strong> y selecciona con Enter.
+                </small>
             </div>
 
             <div class="form-group">
@@ -986,7 +1005,20 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
 
             <div class="form-group">
                 <label>Ubicación nueva</label>
-                <input type="text" name="ubicacion_nueva" id="editarUbicacionNueva" list="listaUbicaciones" required autocomplete="off">
+                <input
+                    type="text"
+                    name="ubicacion_nueva"
+                    id="editarUbicacionNueva"
+                    list="listaUbicaciones"
+                    data-ubicacion-rapida
+                    data-ubicacion-placeholder="R_N_Z__"
+                    required
+                    autocomplete="off"
+                    placeholder="R_N_Z__"
+                >
+                <small class="ubicacion-rapida-ayuda">
+                    Escribe <strong>1 1 01</strong> y selecciona con Enter.
+                </small>
             </div>
 
             <div class="form-group">
@@ -1006,6 +1038,7 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
     </div>
 </div>
 
+<script src="assets/js/ubicaciones-rapidas.js?v=20260729"></script>
 <script>
 // Generar lista de ubicaciones
 document.addEventListener('DOMContentLoaded', function () {
@@ -1046,6 +1079,14 @@ function abrirModalUbicacion(codigo, descripcion) {
     document.getElementById('modalUbicacion').style.display = 'flex';
     document.getElementById('codigoUbicacion').value = codigo;
     document.getElementById('tituloProductoUbicacion').innerHTML = `➕ Agregar ubicación - ${escapeHtml(descripcion)}`;
+
+    const campoUbicacion = document.querySelector(
+        '#modalUbicacion input[name="ubicacion"]'
+    );
+    if (campoUbicacion) {
+        window.UbicacionesRapidas?.limpiar(campoUbicacion);
+        window.setTimeout(() => campoUbicacion.focus(), 50);
+    }
 }
 
 function cerrarModalUbicacion() {
@@ -1063,7 +1104,10 @@ function abrirModalEditarUbicacion(productoId, descripcion, sucursal, ubicacion,
     document.getElementById('editarProductoId').value = productoId;
     document.getElementById('editarSucursal').value = sucursal;
     document.getElementById('editarUbicacionAnterior').value = ubicacion;
-    document.getElementById('editarUbicacionNueva').value = ubicacion;
+    window.UbicacionesRapidas?.establecerValor(
+        document.getElementById('editarUbicacionNueva'),
+        ubicacion
+    );
     document.getElementById('editarExistencia').value = existencia;
 }
 

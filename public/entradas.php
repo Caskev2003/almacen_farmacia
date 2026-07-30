@@ -181,6 +181,8 @@ $moduleCss = 'entradas';
 include __DIR__ . '/../app/views/layouts/header.php';
 ?>
 
+<link rel="stylesheet" href="assets/css/ubicaciones-rapidas.css?v=20260729">
+
 <style>
 /* =========================================================
    DISEÑO CLARO Y ESPACIOSO CON MODAL GRANDE ESTILO EXCEL
@@ -976,7 +978,9 @@ body {
                     type="text"
                     id="ubicacionInput"
                     list="ubicacionesList"
-                    placeholder="Escriba o seleccione ubicación"
+                    data-ubicacion-rapida
+                    data-ubicacion-placeholder="R_N_Z__"
+                    placeholder="R_N_Z__"
                     autocomplete="off"
                 >
                 <datalist id="ubicacionesList">
@@ -986,6 +990,9 @@ body {
                 </datalist>
                 <small style="font-size: 11px; color: #6c7a8a;">
                     <?= count($ubicacionesGenerales) ?> ubicación(es) disponible(s)
+                </small>
+                <small class="ubicacion-rapida-ayuda">
+                    Escribe solo números: <strong>1 1 01</strong> se convierte en <strong>R1N1Z01</strong>. Usa ↑ ↓ y Enter.
                 </small>
             </div>
 
@@ -1120,6 +1127,7 @@ body {
     </div>
 </div>
 
+<script src="assets/js/ubicaciones-rapidas.js?v=20260729"></script>
 <script>
 // ===== VARIABLES =====
 const productos = <?php echo json_encode($productosJson, JSON_UNESCAPED_UNICODE); ?>;
@@ -1231,7 +1239,10 @@ function seleccionarProductoDelModal(producto) {
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
     precioInput.value = producto.precio_compra;
     if (producto.ubicacion_sugerida) {
-        ubicacionInput.value = producto.ubicacion_sugerida;
+        window.UbicacionesRapidas?.establecerValor(
+            ubicacionInput,
+            producto.ubicacion_sugerida
+        );
     }
     
     cerrarModal();
@@ -1272,7 +1283,19 @@ function agregarProducto() {
     const cantidad = parseInt(cantidadInput.value);
     const precio = parseFloat(precioInput.value);
     const lote = loteInput.value.trim();
-    let ubicacion = ubicacionInput.value.trim().toUpperCase();
+    const ubicacionNormalizada = window.UbicacionesRapidas
+        ?.obtenerValor(ubicacionInput);
+
+    if (ubicacionNormalizada === null) {
+        mostrarToast('❌ Completa la ubicación. Ejemplo: 1 1 01', 'error');
+        ubicacionInput.reportValidity();
+        ubicacionInput.focus();
+        return;
+    }
+
+    let ubicacion = (ubicacionNormalizada ?? ubicacionInput.value)
+        .trim()
+        .toUpperCase();
     
     if (!ubicacion) ubicacion = productoSeleccionado.ubicacion_sugerida || 'SIN UBICACION';
     
@@ -1329,7 +1352,7 @@ function agregarProducto() {
     cantidadInput.value = '1';
     precioInput.value = '0.00';
     loteInput.value = '';
-    ubicacionInput.value = '';
+    window.UbicacionesRapidas?.limpiar(ubicacionInput);
     
     mostrarToast(`✅ ${cantidad} x producto agregado`);
 }
@@ -1575,8 +1598,8 @@ document.addEventListener('DOMContentLoaded', function() {
     camposEnter.forEach(id => {
         const campo = document.getElementById(id);
         if (campo) {
-            campo.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
+            campo.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.defaultPrevented) {
                     e.preventDefault();
                     agregarProducto();
                 }

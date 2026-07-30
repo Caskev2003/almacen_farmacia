@@ -1,0 +1,74 @@
+.ubicacion-rapida-control {
+    position: relative;
+    width: 100%;
+}
+
+.ubicacion-rapida-control > input {
+    width: 100%;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.ubicacion-rapida-control > input::placeholder {
+    color: #7c8da0;
+    opacity: 1;
+}
+
+.ubicacion-rapida-control > input.ubicacion-rapida-incompleta {
+    border-color: #f59e0b !important;
+    background: #fffbeb !important;
+}
+
+.ubicacion-rapida-sugerencias {
+    position: absolute;
+    z-index: 100500;
+    left: 0;
+    right: 0;
+    top: calc(100% + 5px);
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 5px;
+    background: #ffffff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+}
+
+.ubicacion-rapida-sugerencias[hidden] {
+    display: none;
+}
+
+.ubicacion-rapida-opcion {
+    display: block;
+    width: 100%;
+    padding: 9px 11px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #1e293b;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ubicacion-rapida-opcion:hover,
+.ubicacion-rapida-opcion.activa {
+    color: #ffffff;
+    background: #0f5c99;
+}
+
+.ubicacion-rapida-ayuda {
+    display: block;
+    margin-top: 6px;
+    color: #52677d;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.ubicacion-rapida-ayuda strong {
+    color: #0f5c99;
+}

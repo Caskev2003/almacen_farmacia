@@ -1,0 +1,4 @@
+[client]
+user=root
+socket=/run/mysqld/mysqld.sock
+default-character-set=utf8mb4

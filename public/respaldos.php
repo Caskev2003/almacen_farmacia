@@ -15,19 +15,28 @@ if (!in_array($rol, ['ADMINISTRADOR', 'ENCARGADO'], true)) {
 }
 
 // ======================================================
-// CONFIGURACIÓN DEL RESPALDO PARA WINDOWS Y XAMPP
+// CONFIGURACIÓN PARA UBUNTU SERVER Y WINDOWS/XAMPP
 // ======================================================
 
-// La carpeta se creará en:
-// carpeta-del-proyecto/backups/inventario
-$backupDir = dirname(__DIR__)
-    . DIRECTORY_SEPARATOR
-    . 'backups'
-    . DIRECTORY_SEPARATOR
-    . 'inventario';
+$esWindows = PHP_OS_FAMILY === 'Windows';
 
-// Ruta de mysqldump de XAMPP.
-$mysqldump = 'C:\\xampp\\mysql\\bin\\mysqldump.exe';
+/*
+ * En Ubuntu se utiliza la misma carpeta del respaldo automático.
+ * En Windows se conserva la carpeta interna del proyecto.
+ */
+$backupDir = $esWindows
+    ? dirname(__DIR__)
+        . DIRECTORY_SEPARATOR
+        . 'backups'
+        . DIRECTORY_SEPARATOR
+        . 'inventario'
+    : '/backups/almacen_farmacia';
+
+$mysqldump = $esWindows
+    ? 'C:\\xampp\\mysql\\bin\\mysqldump.exe'
+    : '/usr/bin/mysqldump';
+
+$scriptRespaldoLinux = '/usr/local/bin/backup_almacen.sh';
 
 // Configuración de la base de datos.
 $dbHost = '127.0.0.1';
@@ -79,6 +88,90 @@ if (
         || !hash_equals($_SESSION['csrf_respaldo'], $tokenRecibido)
     ) {
         $error = 'La solicitud no es válida. Recarga la página e inténtalo nuevamente.';
+    } elseif (
+        !$esWindows
+        && !is_file($scriptRespaldoLinux)
+    ) {
+        $error = 'No se encontró el script automático: '
+            . $scriptRespaldoLinux
+            . '. Ejecuta primero el instalador de respaldos.';
+    } elseif (!$esWindows) {
+        /*
+         * En Ubuntu el mismo script sirve para cron y para el botón manual.
+         * sudoers permite únicamente este ejecutable sin aceptar argumentos.
+         */
+        $comando =
+            'sudo -n '
+            . escapeshellarg($scriptRespaldoLinux)
+            . ' 2>&1';
+        $salida = [];
+        $codigo = 0;
+
+        exec($comando, $salida, $codigo);
+
+        if ($codigo === 0) {
+            $_SESSION['csrf_respaldo'] =
+                bin2hex(random_bytes(32));
+
+            $archivosCreados = glob(
+                $backupDir
+                . DIRECTORY_SEPARATOR
+                . 'respaldo_*.sql'
+            ) ?: [];
+
+            usort(
+                $archivosCreados,
+                static fn($a, $b) =>
+                    filemtime($b) <=> filemtime($a)
+            );
+
+            $ultimoArchivo = $archivosCreados[0] ?? null;
+
+            auditLog([
+                'modulo' => 'Respaldos',
+                'accion' => 'CREAR_RESPALDO',
+                'entidad' => 'archivo_respaldo',
+                'registro_id' => $ultimoArchivo
+                    ? basename($ultimoArchivo)
+                    : null,
+                'descripcion' =>
+                    'Generó un respaldo manual en Ubuntu Server.',
+                'nuevos' => [
+                    'archivo' => $ultimoArchivo
+                        ? basename($ultimoArchivo)
+                        : null,
+                    'tamano_bytes' =>
+                        $ultimoArchivo
+                        && is_file($ultimoArchivo)
+                            ? filesize($ultimoArchivo)
+                            : null,
+                    'base_datos' => $dbName,
+                ],
+            ]);
+
+            header('Location: respaldos.php?ok=1');
+            exit;
+        }
+
+        $detalle = trim(implode(' ', $salida));
+        $error = 'No se pudo generar el respaldo en Ubuntu.';
+
+        if ($detalle !== '') {
+            $error .= ' Detalle: ' . $detalle;
+        } else {
+            $error .= ' Revisa /var/log/backup_almacen.log.';
+        }
+
+        auditLog([
+            'modulo' => 'Respaldos',
+            'accion' => 'RESPALDO_FALLIDO',
+            'descripcion' =>
+                'El script de respaldo de Ubuntu devolvió un error.',
+            'metadata' => [
+                'codigo_salida' => $codigo,
+                'detalle' => $detalle,
+            ],
+        ]);
     } elseif (!file_exists($mysqldump)) {
         $error = 'No se encontró mysqldump.exe en la ruta: ' . $mysqldump;
     } elseif (!is_file($mysqldump)) {
@@ -203,6 +296,28 @@ if ($archivos === false) {
 usort($archivos, function ($a, $b) {
     return filemtime($b) <=> filemtime($a);
 });
+
+$ultimoExitoAutomatico = '';
+$ultimoErrorAutomatico = '';
+
+if (!$esWindows) {
+    $archivoEstadoOk =
+        $backupDir . DIRECTORY_SEPARATOR . '.ultimo_exito';
+    $archivoEstadoError =
+        $backupDir . DIRECTORY_SEPARATOR . '.ultimo_error';
+
+    if (is_readable($archivoEstadoOk)) {
+        $ultimoExitoAutomatico = trim(
+            (string) file_get_contents($archivoEstadoOk)
+        );
+    }
+
+    if (is_readable($archivoEstadoError)) {
+        $ultimoErrorAutomatico = trim(
+            (string) file_get_contents($archivoEstadoError)
+        );
+    }
+}
 
 // ======================================================
 // DESCARGAR RESPALDO
@@ -563,6 +678,42 @@ function formatearTamano(int $bytes): string
             'UTF-8'
         ) ?>
     </div>
+
+    <?php if (!$esWindows): ?>
+
+        <div class="ruta-respaldo">
+            <strong>Horario automático:</strong>
+            todos los días a las 08:00, 12:00 y 17:00
+            (hora de México).
+        </div>
+
+        <?php if ($ultimoExitoAutomatico !== ''): ?>
+
+            <div class="alerta-ok">
+                Último respaldo correcto:
+                <?= htmlspecialchars(
+                    str_replace('|', ' · ', $ultimoExitoAutomatico),
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>
+            </div>
+
+        <?php endif; ?>
+
+        <?php if ($ultimoErrorAutomatico !== ''): ?>
+
+            <div class="alerta-error">
+                Último error automático:
+                <?= htmlspecialchars(
+                    str_replace('|', ' · ', $ultimoErrorAutomatico),
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>
+            </div>
+
+        <?php endif; ?>
+
+    <?php endif; ?>
 
     <?php if ($mensaje !== ''): ?>
 

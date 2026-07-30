@@ -1,0 +1,7 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+CRON_TZ=America/Mexico_City
+
+# Respaldos diarios: 08:00, 12:00 y 17:00 (hora de México).
+0 8,12,17 * * * root /usr/local/bin/backup_almacen.sh >> /var/log/backup_almacen_cron.log 2>&1

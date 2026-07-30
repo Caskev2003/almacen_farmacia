@@ -1,0 +1,2 @@
+# Permite exclusivamente que el botón del módulo Respaldos ejecute el script.
+www-data ALL=(root) NOPASSWD: /usr/local/bin/backup_almacen.sh

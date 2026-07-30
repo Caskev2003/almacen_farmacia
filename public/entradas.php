@@ -743,12 +743,35 @@ body {
 }
 
 .modal-excel-table tr.selected td {
-    background: #dbeafe;
+    background: #1d4ed8;
+    color: #ffffff;
+    border-bottom-color: #3b82f6;
+}
+
+.modal-excel-table tr.selected .product-code,
+.modal-excel-table tr.selected small {
+    color: #ffffff;
+}
+
+.modal-excel-table tr.selected .copy-button {
+    background: #ffffff;
+    color: #1d4ed8;
+    border-color: #ffffff;
 }
 
 .modal-excel-table .product-code {
     font-weight: 700;
     color: #2563eb;
+}
+
+.copyable-cell {
+    cursor: copy;
+    user-select: text;
+}
+
+.copyable-cell:hover {
+    text-decoration: underline;
+    text-decoration-style: dotted;
 }
 
 .copy-actions {
@@ -911,7 +934,20 @@ body {
 }
 
 .data-table tr.fila-capturada-activa td {
-    background: #fff7cc;
+    background: #1d4ed8;
+    color: #ffffff;
+    border-bottom-color: #3b82f6;
+}
+
+.data-table tr.fila-capturada-activa td strong {
+    color: #ffffff;
+}
+
+.data-table tr.fila-capturada-activa .qty-input,
+.data-table tr.fila-capturada-activa .price-input {
+    background: #ffffff;
+    color: #111827;
+    border-color: #93c5fd;
 }
 
 .data-table tr.fila-producto-capturado:focus {
@@ -1535,8 +1571,18 @@ function cargarProductosEnModal(productosList) {
         const ubicacionesTexto = p.ubicaciones.map(u => `${u.ubicacion}(${u.existencia_actual})`).join(', ');
         return `
             <tr data-idx="${idx}" data-producto-id="${p.id}" style="cursor: pointer;">
-                <td class="product-code">${escapeHtml(p.codigo)}</td>
-                <td>${escapeHtml(p.descripcion)}</td>
+                <td
+                    class="product-code copyable-cell"
+                    data-copy-type="codigo"
+                    data-copy-idx="${idx}"
+                    title="Clic para copiar el código"
+                >${escapeHtml(p.codigo)}</td>
+                <td
+                    class="copyable-cell"
+                    data-copy-type="descripcion"
+                    data-copy-idx="${idx}"
+                    title="Clic para copiar la descripción"
+                >${escapeHtml(p.descripcion)}</td>
                 <td>$${p.precio_compra.toFixed(2)}</td>
                 <td>${escapeHtml(p.ubicacion_sugerida || 'N/A')}</td>
                 <td><small>${escapeHtml(ubicacionesTexto || 'Ninguna')}</small></td>
@@ -1569,13 +1615,16 @@ function cargarProductosEnModal(productosList) {
         });
     });
 
-    document.querySelectorAll('#modalTableBody .copy-button').forEach(button => {
-        button.addEventListener('click', function(event) {
+    document.querySelectorAll(
+        '#modalTableBody .copy-button, '
+        + '#modalTableBody .copyable-cell'
+    ).forEach(control => {
+        control.addEventListener('click', function(event) {
             event.preventDefault();
             event.stopPropagation();
 
-            const idx = Number(button.dataset.copyIdx);
-            const tipo = button.dataset.copyType;
+            const idx = Number(control.dataset.copyIdx);
+            const tipo = control.dataset.copyType;
             const producto = modalProductosFiltrados[idx];
 
             if (!producto) return;
@@ -1666,11 +1715,9 @@ function actualizarSeleccionModal() {
     filas.forEach((fila, idx) => {
         if (idx === modalSelectedIndex) {
             fila.classList.add('selected');
-            fila.style.background = '#dbeafe';
             fila.scrollIntoView({ block: 'nearest' });
         } else {
             fila.classList.remove('selected');
-            fila.style.background = '';
         }
     });
 }
@@ -1799,6 +1846,7 @@ function crearFilaProductoCapturado(item) {
     
     detalleBody.appendChild(tr);
     prepararNavegacionFilas();
+    activarFilaCapturada(tr);
 
     return tr;
 }
@@ -1839,8 +1887,15 @@ function prepararNavegacionFilas() {
         }
 
         fila.dataset.navegacionLista = '1';
-        fila.addEventListener('click', () => {
-            activarFilaCapturada(fila);
+        fila.addEventListener('click', event => {
+            const esControl = event.target.closest(
+                'input, button, select, textarea'
+            );
+
+            activarFilaCapturada(
+                fila,
+                !esControl
+            );
         });
         fila.addEventListener('focusin', () => {
             activarFilaCapturada(fila);
@@ -1861,9 +1916,21 @@ function navegarFilasCapturadas(event) {
         return;
     }
 
-    const filaActual = event.target.closest?.(
+    let filaActual = event.target.closest?.(
         'tr.fila-producto-capturado'
     );
+
+    if (!filaActual) {
+        const esCampoEditable = event.target.matches?.(
+            'input, select, textarea'
+        );
+
+        if (esCampoEditable) return;
+
+        filaActual = detalleBody.querySelector(
+            'tr.fila-capturada-activa'
+        );
+    }
 
     if (!filaActual) return;
 
@@ -2645,6 +2712,10 @@ document.addEventListener('DOMContentLoaded', function() {
     actualizarTotales();
     ponerFechaActual();
     prepararNavegacionFilas();
+    const filasIniciales = obtenerFilasCapturadas();
+    if (filasIniciales.length > 0) {
+        activarFilaCapturada(filasIniciales[0]);
+    }
     actualizarConteoBorradores();
 
     document.addEventListener(

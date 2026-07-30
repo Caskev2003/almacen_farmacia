@@ -2009,7 +2009,8 @@ require __DIR__
                 El gerente debe escribir su contraseña de
                 inicio de sesión para autorizar el envío.
                 Puede regresar a la captura sin perder los
-                productos que ya agregó.
+                productos que ya agregó en
+                <?= $esModuloTicket ? 'Tickets' : 'Resurtidos' ?>.
             </p>
 
             <div class="campo-password">
@@ -2043,7 +2044,8 @@ require __DIR__
                 id="cancelarPasswordGerente"
                 class="btn-cancelar"
             >
-                ← Regresar a la captura
+                ← Regresar a
+                <?= $esModuloTicket ? 'Tickets' : 'Resurtidos' ?>
             </button>
 
             <button

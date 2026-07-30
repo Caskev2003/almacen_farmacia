@@ -641,6 +641,29 @@ body {
     background: #f7fafc;
 }
 
+.data-table tbody tr.fila-salida-activa td {
+    background: #1d4ed8;
+    color: #ffffff;
+    border-bottom-color: #3b82f6;
+}
+
+.data-table tbody tr.fila-salida-activa td strong {
+    color: #ffffff;
+}
+
+.data-table tbody tr.fila-salida-activa .qty-input,
+.data-table tbody tr.fila-salida-activa .qty-step,
+.data-table tbody tr.fila-salida-activa .delete-btn {
+    background: #ffffff;
+    color: #111827;
+    border-color: #93c5fd;
+}
+
+.data-table tbody tr.fila-salida-activa:focus {
+    outline: 3px solid #60a5fa;
+    outline-offset: -3px;
+}
+
 .celda-descripcion {
     max-width: 320px;
 }
@@ -921,19 +944,41 @@ body {
     cursor: pointer;
 }
 
-.modal-excel-table tr.producto-principal:hover,
-.modal-excel-table tr.selected {
+.modal-excel-table tr.producto-principal:hover {
     background: #eff6ff;
 }
 
-.modal-excel-table tr.selected {
-    box-shadow: inset 4px 0 0 var(--sal-azul);
+.modal-excel-table tr.selected td {
+    background: #1d4ed8;
+    color: #ffffff;
+    border-bottom-color: #3b82f6;
+}
+
+.modal-excel-table tr.selected .product-code,
+.modal-excel-table tr.selected .product-stock {
+    color: #ffffff;
+}
+
+.modal-excel-table tr.selected .ubi-chip {
+    background: #ffffff;
+    color: #166534;
+    border-color: #bbf7d0;
 }
 
 .product-code {
     font-weight: 800;
     color: #0f4c81;
     white-space: nowrap;
+}
+
+.copyable-cell {
+    cursor: copy;
+    user-select: text;
+}
+
+.copyable-cell:hover {
+    text-decoration: underline;
+    text-decoration-style: dotted;
 }
 
 .product-stock {
@@ -1120,6 +1165,24 @@ body {
 
     .data-table tr.fila-incompleta {
         border-color: #fcd34d;
+    }
+
+    .data-table tr.fila-salida-activa {
+        background: #1d4ed8;
+        border-color: #60a5fa;
+    }
+
+    .data-table tr.fila-salida-activa td {
+        background: #1d4ed8;
+        color: #ffffff;
+    }
+
+    .data-table tr.fila-salida-activa td::before {
+        color: #bfdbfe;
+    }
+
+    .data-table tr.fila-salida-activa td[data-label="Cantidad"] {
+        background: #1e40af;
     }
 
     .data-table td {

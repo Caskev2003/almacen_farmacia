@@ -815,6 +815,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             🎯 <kbd>Ctrl</kbd> + <kbd>B</kbd> Abrir buscador &nbsp;|&nbsp;
             <kbd>↑</kbd> <kbd>↓</kbd> Navegar &nbsp;|&nbsp;
             <kbd>Enter</kbd> Seleccionar / Agregar &nbsp;|&nbsp;
+            <kbd>↑</kbd> <kbd>↓</kbd> Revisar filas capturadas &nbsp;|&nbsp;
             <kbd>Ctrl</kbd> + <kbd>Enter</kbd> Guardar salida
         </div>
     </div>
@@ -852,7 +853,12 @@ include __DIR__ . '/../app/views/layouts/header.php';
                             $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
                             $unidad = e($item['unidad_medida'] ?? '');
                         ?>
-                            <tr data-producto-id="<?= $productoId ?>" data-precio="<?= $precio ?>">
+                            <tr
+                                class="fila-producto-salida"
+                                tabindex="0"
+                                data-producto-id="<?= $productoId ?>"
+                                data-precio="<?= $precio ?>"
+                            >
                                 <td data-label="Cantidad">
                                     <div class="qty-cell">
                                         <button type="button" class="qty-step" onclick="pasoCantidadFila(this, -1)">−</button>
@@ -1090,8 +1096,20 @@ function cargarProductosEnModal(productosList) {
 
         return `
             <tr data-idx="${idx}" data-producto-id="${p.id}" class="producto-principal">
-                <td class="product-code" data-label="Código">${escapeHtml(p.codigo)}</td>
-                <td data-label="Descripción">${escapeHtml(p.descripcion)}</td>
+                <td
+                    class="product-code copyable-cell"
+                    data-label="Código"
+                    data-copy-type="codigo"
+                    data-copy-idx="${idx}"
+                    title="Clic para copiar el código"
+                >${escapeHtml(p.codigo)}</td>
+                <td
+                    class="copyable-cell"
+                    data-label="Descripción"
+                    data-copy-type="descripcion"
+                    data-copy-idx="${idx}"
+                    title="Clic para copiar la descripción"
+                >${escapeHtml(p.descripcion)}</td>
                 <td data-label="Unidad">${escapeHtml(p.unidad_medida)}</td>
                 <td class="product-stock" data-label="Stock">${p.existencia_total}</td>
                 <td data-label="Precio">$${p.precio_compra.toFixed(2)}</td>
@@ -1108,6 +1126,61 @@ function cargarProductosEnModal(productosList) {
             }
         });
     });
+
+    document.querySelectorAll(
+        '#modalTableBody .copyable-cell'
+    ).forEach(celda => {
+        celda.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const indice = Number(celda.dataset.copyIdx);
+            const tipo = celda.dataset.copyType;
+            const producto = modalProductosFiltrados[indice];
+
+            if (!producto) return;
+
+            copiarTexto(
+                tipo === 'codigo'
+                    ? producto.codigo
+                    : producto.descripcion,
+                tipo === 'codigo'
+                    ? 'Código'
+                    : 'Descripción'
+            );
+        });
+    });
+}
+
+async function copiarTexto(texto, etiqueta) {
+    const valor = String(texto ?? '');
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(valor);
+        } else {
+            const auxiliar = document.createElement('textarea');
+            auxiliar.value = valor;
+            auxiliar.setAttribute('readonly', '');
+            auxiliar.style.position = 'fixed';
+            auxiliar.style.opacity = '0';
+            document.body.appendChild(auxiliar);
+            auxiliar.select();
+
+            if (!document.execCommand('copy')) {
+                throw new Error('El navegador rechazó la copia.');
+            }
+
+            auxiliar.remove();
+        }
+
+        mostrarToast(`📋 ${etiqueta} copiada`);
+    } catch (error) {
+        mostrarToast(
+            `❌ No se pudo copiar ${etiqueta.toLowerCase()}`,
+            'error'
+        );
+    }
 }
 
 function filtrarProductosModal() {
@@ -1245,6 +1318,8 @@ function agregarFila(producto, cantidad, ubicacion, precio) {
     const tr = document.createElement('tr');
     tr.dataset.productoId = producto.id;
     tr.dataset.precio = precio;
+    tr.classList.add('fila-producto-salida');
+    tr.tabIndex = 0;
 
     if (pedido) {
         tr.dataset.solicitado = pedido.pendiente;
@@ -1276,9 +1351,121 @@ function agregarFila(producto, cantidad, ubicacion, precio) {
     `;
 
     detalleBody.appendChild(tr);
+    prepararNavegacionFilasSalida();
+    activarFilaSalida(tr);
     actualizarTotales();
 
     return tr;
+}
+
+function obtenerFilasSalida() {
+    return Array.from(
+        detalleBody.querySelectorAll(
+            'tr[data-producto-id]'
+        )
+    );
+}
+
+function activarFilaSalida(fila, enfocar = false, selector = '') {
+    obtenerFilasSalida().forEach(item => {
+        item.classList.toggle(
+            'fila-salida-activa',
+            item === fila
+        );
+    });
+
+    if (!fila || !enfocar) return;
+
+    const destino = selector
+        ? fila.querySelector(selector)
+        : fila;
+
+    destino?.focus();
+
+    if (destino instanceof HTMLInputElement) {
+        destino.select();
+    }
+}
+
+function prepararNavegacionFilasSalida() {
+    obtenerFilasSalida().forEach(fila => {
+        fila.classList.add('fila-producto-salida');
+        fila.tabIndex = 0;
+
+        if (fila.dataset.navegacionLista === '1') {
+            return;
+        }
+
+        fila.dataset.navegacionLista = '1';
+
+        fila.addEventListener('click', event => {
+            const esControl = event.target.closest(
+                'input, button, select, textarea'
+            );
+
+            activarFilaSalida(
+                fila,
+                !esControl
+            );
+        });
+
+        fila.addEventListener('focusin', () => {
+            activarFilaSalida(fila);
+        });
+    });
+}
+
+function navegarFilasSalida(event) {
+    if (event.key !== 'ArrowUp'
+        && event.key !== 'ArrowDown'
+    ) {
+        return;
+    }
+
+    if (modal?.classList.contains('active')) {
+        return;
+    }
+
+    let filaActual = event.target.closest?.(
+        'tr[data-producto-id]'
+    );
+
+    if (!filaActual) {
+        const esCampoEditable = event.target.matches?.(
+            'input, select, textarea'
+        );
+
+        if (esCampoEditable) return;
+
+        filaActual = detalleBody.querySelector(
+            'tr.fila-salida-activa'
+        );
+    }
+
+    if (!filaActual) return;
+
+    const filas = obtenerFilasSalida();
+    const indiceActual = filas.indexOf(filaActual);
+    const movimiento = event.key === 'ArrowDown'
+        ? 1
+        : -1;
+    const indiceNuevo = Math.max(
+        0,
+        Math.min(
+            filas.length - 1,
+            indiceActual + movimiento
+        )
+    );
+    const selector = event.target.classList?.contains(
+        'qty-input'
+    ) ? '.qty-input' : '';
+
+    event.preventDefault();
+    activarFilaSalida(
+        filas[indiceNuevo],
+        true,
+        selector
+    );
 }
 
 function agregarProducto() {
@@ -1400,6 +1587,11 @@ function eliminarFila(btn) {
         detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" class="fila-vacia-td">📭 No hay productos. Toca 🔍 Buscar o presiona Ctrl+B</td></tr>`;
     }
 
+    prepararNavegacionFilasSalida();
+    const filasInicialesSalida = obtenerFilasSalida();
+    if (filasInicialesSalida.length > 0) {
+        activarFilaSalida(filasInicialesSalida[0]);
+    }
     actualizarTotales();
     mostrarToast('🗑️ Producto eliminado', 'info');
 }
@@ -1407,6 +1599,7 @@ function eliminarFila(btn) {
 function limpiarTodo() {
     if (confirm('¿Eliminar todos los productos?')) {
         detalleBody.innerHTML = `<tr id="filaVacia"><td colspan="8" class="fila-vacia-td">📭 No hay productos. Toca 🔍 Buscar o presiona Ctrl+B</td></tr>`;
+        prepararNavegacionFilasSalida();
         actualizarTotales();
         mostrarToast('🧹 Lista limpiada', 'info');
     }
@@ -1714,7 +1907,13 @@ document.addEventListener('DOMContentLoaded', () => {
         precargarResurtido();
     }
 
+    prepararNavegacionFilasSalida();
     actualizarTotales();
+
+    document.addEventListener(
+        'keydown',
+        navegarFilasSalida
+    );
 
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {

@@ -277,30 +277,44 @@ class Producto
             }
         }
 
+        /*
+         * El filtro "Agotados" necesita consultar también existencias en
+         * cero. Antes esta parte exigía existencia > 0 y el HAVING también,
+         * por lo que ese filtro nunca podía devolver resultados.
+         */
+        $esFiltroAgotado = $estadoStock === 'agotado';
+
         if ($isAdmin) {
             $sql .= " AND EXISTS (
                         SELECT 1
                         FROM producto_existencias pe2
                         WHERE pe2.producto_id = p.id
                         AND pe2.sucursal IS NOT NULL
-                        AND TRIM(pe2.sucursal) != ''
-                        AND COALESCE(pe2.existencia, 0) > 0
-                        AND pe2.ubicacion IS NOT NULL
-                        AND TRIM(pe2.ubicacion) != ''
-                        AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                    )";
+                        AND TRIM(pe2.sucursal) != ''";
+
+            if (!$esFiltroAgotado) {
+                $sql .= " AND COALESCE(pe2.existencia, 0) > 0
+                          AND pe2.ubicacion IS NOT NULL
+                          AND TRIM(pe2.ubicacion) != ''
+                          AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+            }
+
+            $sql .= ")";
         } else {
             $sql .= " AND EXISTS (
                         SELECT 1
                         FROM producto_existencias pe2
                         WHERE pe2.producto_id = p.id
-                        AND UPPER(COALESCE(pe2.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal_existencia)
-                        AND COALESCE(pe2.existencia, 0) > 0
-                        AND pe2.ubicacion IS NOT NULL
-                        AND TRIM(pe2.ubicacion) != ''
-                        AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')
-                    )";
+                        AND UPPER(COALESCE(pe2.sucursal, '')) COLLATE utf8mb4_general_ci = UPPER(:sucursal_existencia)";
 
+            if (!$esFiltroAgotado) {
+                $sql .= " AND COALESCE(pe2.existencia, 0) > 0
+                          AND pe2.ubicacion IS NOT NULL
+                          AND TRIM(pe2.ubicacion) != ''
+                          AND UPPER(TRIM(pe2.ubicacion)) COLLATE utf8mb4_general_ci NOT IN ('SIN UBICACION', 'SIN UBICACIÓN')";
+            }
+
+            $sql .= ")";
             $params[':sucursal_existencia'] = $sucursal;
         }
 
@@ -319,7 +333,7 @@ class Producto
                     p.estado,
                     c.nombre,
                     pr.nombre
-                  HAVING existencia_total > 0
+                  HAVING existencia_total " . ($esFiltroAgotado ? '<= 0' : '> 0') . "
                   ORDER BY p.descripcion ASC";
 
         $stmt = $this->conn->prepare($sql);

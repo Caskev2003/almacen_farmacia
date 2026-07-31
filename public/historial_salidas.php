@@ -214,6 +214,23 @@ include __DIR__ . '/../app/views/layouts/header.php';
     font-weight: 800;
     color: #0f172a;
 }
+
+.control-interno-text {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    color: #075985;
+    background: #e0f2fe;
+    border: 1px solid #7dd3fc;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.control-interno-vacio {
+    color: #94a3b8;
+}
 </style>
 
 <div class="module-header">
@@ -255,7 +272,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 type="text"
                 name="buscar"
                 value="<?= e($buscar) ?>"
-                placeholder="Folio, documento, usuario, producto..."
+                placeholder="Folio de salida, control interno, ticket, usuario o producto..."
             >
         </div>
 
@@ -313,6 +330,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <thead>
                 <tr>
                     <th>Folio</th>
+                    <th>Control interno</th>
                     <th>Fecha</th>
                     <th>Movimiento</th>
                     <th>Documento</th>
@@ -328,7 +346,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <tbody>
                 <?php if (empty($salidas)): ?>
                     <tr>
-                        <td colspan="10" class="empty-table">
+                        <td colspan="11" class="empty-table">
                             No hay salidas registradas.
                         </td>
                     </tr>
@@ -356,6 +374,16 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                         </span>
                                     <?php endif; ?>
                                 </div>
+                            </td>
+
+                            <td>
+                                <?php if (!empty($salida['folio_control_interno'])): ?>
+                                    <span class="control-interno-text">
+                                        <?= e($salida['folio_control_interno']) ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="control-interno-vacio">—</span>
+                                <?php endif; ?>
                             </td>
 
                             <td>
@@ -452,7 +480,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         </tr>
 
                         <tr id="<?= e($detalleId) ?>" class="detalle-row" style="display:none;">
-                            <td colspan="10">
+                            <td colspan="11">
                                 <div class="detalle-box">
                                     <h4>Detalle de productos</h4>
 

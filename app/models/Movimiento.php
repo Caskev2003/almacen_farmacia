@@ -1505,15 +1505,86 @@ class Movimiento
         return $detallesPorSalida;
     }
     
+    /**
+     * Devuelve el folio de control interno relacionado con una salida.
+     *
+     * La relación directa por salida_id cubre las solicitudes finalizadas.
+     * El segundo criterio recupera salidas parciales e históricas usando el
+     * folio que quedó guardado en las observaciones del movimiento.
+     */
+    private function sqlFolioControlSalida(
+        string $aliasMovimiento = 'm'
+    ): string {
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $aliasMovimiento)) {
+            throw new InvalidArgumentException(
+                'Alias de movimiento no válido.'
+            );
+        }
+
+        return "(
+            SELECT r_control.folio
+            FROM resurtidos AS r_control
+            WHERE (
+                r_control.salida_id = {$aliasMovimiento}.id
+                OR (
+                    r_control.almacen_id = {$aliasMovimiento}.almacen_id
+                    AND UPPER(TRIM(r_control.tipo_solicitud))
+                        = UPPER(TRIM(COALESCE({$aliasMovimiento}.tipo_operacion, '')))
+                    AND (
+                        (
+                            UPPER(TRIM(r_control.tipo_solicitud)) = 'TICKET'
+                            AND COALESCE(r_control.folio_documento, '') <> ''
+                            AND UPPER(TRIM(
+                                SUBSTRING_INDEX(
+                                    SUBSTRING_INDEX(
+                                        COALESCE({$aliasMovimiento}.observaciones, ''),
+                                        'Folio ticket:',
+                                        -1
+                                    ),
+                                    '|',
+                                    1
+                                )
+                            )) = UPPER(TRIM(r_control.folio_documento))
+                        )
+                        OR (
+                            UPPER(TRIM(r_control.tipo_solicitud)) = 'RESURTIDO'
+                            AND UPPER(TRIM(
+                                SUBSTRING_INDEX(
+                                    SUBSTRING_INDEX(
+                                        COALESCE({$aliasMovimiento}.observaciones, ''),
+                                        'Folio resurtido:',
+                                        -1
+                                    ),
+                                    '|',
+                                    1
+                                )
+                            )) = UPPER(TRIM(r_control.folio))
+                        )
+                    )
+                )
+            )
+            ORDER BY
+                CASE
+                    WHEN r_control.salida_id = {$aliasMovimiento}.id THEN 0
+                    ELSE 1
+                END,
+                r_control.id DESC
+            LIMIT 1
+        )";
+    }
+
     public function historialSalidas(
         string $buscar = '',
         int $almacenId = 0,
         string $fechaInicio = '',
         string $fechaFinal = ''
     ): array {
+        $folioControlSql = $this->sqlFolioControlSalida('m');
+
         $sql = "SELECT
                     m.id,
                     m.folio,
+                    {$folioControlSql} AS folio_control_interno,
                     m.fecha,
                     m.referencia,
                     m.tipo_operacion,
@@ -1526,9 +1597,9 @@ class Movimiento
                     a.nombre AS almacen_nombre,
                     u.nombre AS usuario_nombre,
 
-                    COUNT(md.id) AS total_productos,
-                    COALESCE(SUM(md.cantidad), 0) AS total_unidades,
-                    COALESCE(SUM(md.cantidad * md.precio_unitario), 0) AS total
+                    COALESCE(detalle.total_productos, 0) AS total_productos,
+                    COALESCE(detalle.total_unidades, 0) AS total_unidades,
+                    COALESCE(detalle.total, 0) AS total
 
                 FROM movimientos m
 
@@ -1538,8 +1609,16 @@ class Movimiento
                 INNER JOIN usuarios u
                     ON m.usuario_id = u.id
 
-                LEFT JOIN movimiento_detalle md
-                    ON m.id = md.movimiento_id
+                LEFT JOIN (
+                    SELECT
+                        movimiento_id,
+                        COUNT(id) AS total_productos,
+                        COALESCE(SUM(cantidad), 0) AS total_unidades,
+                        COALESCE(SUM(cantidad * precio_unitario), 0) AS total
+                    FROM movimiento_detalle
+                    GROUP BY movimiento_id
+                ) AS detalle
+                    ON detalle.movimiento_id = m.id
 
                 WHERE m.tipo_movimiento = 'SALIDA'";
 
@@ -1547,11 +1626,13 @@ class Movimiento
 
         if ($buscar !== '') {
             $sql .= " AND (
-                        m.folio LIKE :buscar
-                        OR m.referencia LIKE :buscar
-                        OR m.tipo_operacion LIKE :buscar
-                        OR a.nombre LIKE :buscar
-                        OR u.nombre LIKE :buscar
+                        m.folio LIKE :buscar_folio
+                        OR m.referencia LIKE :buscar_referencia
+                        OR m.tipo_operacion LIKE :buscar_tipo
+                        OR m.observaciones LIKE :buscar_observaciones
+                        OR a.nombre LIKE :buscar_almacen
+                        OR u.nombre LIKE :buscar_usuario
+                        OR {$folioControlSql} LIKE :buscar_control
                         OR EXISTS (
                             SELECT 1
                             FROM movimiento_detalle md2
@@ -1559,14 +1640,25 @@ class Movimiento
                                 ON md2.producto_id = p2.id
                             WHERE md2.movimiento_id = m.id
                             AND (
-                                p2.codigo LIKE :buscar
-                                OR p2.codigo_barras LIKE :buscar
-                                OR p2.descripcion LIKE :buscar
+                                p2.codigo LIKE :buscar_codigo
+                                OR p2.codigo_barras LIKE :buscar_barras
+                                OR p2.descripcion LIKE :buscar_descripcion
                             )
                         )
                     )";
 
-            $params[':buscar'] = '%' . $buscar . '%';
+            $valorBuscar = '%' . $buscar . '%';
+
+            $params[':buscar_folio'] = $valorBuscar;
+            $params[':buscar_referencia'] = $valorBuscar;
+            $params[':buscar_tipo'] = $valorBuscar;
+            $params[':buscar_observaciones'] = $valorBuscar;
+            $params[':buscar_almacen'] = $valorBuscar;
+            $params[':buscar_usuario'] = $valorBuscar;
+            $params[':buscar_control'] = $valorBuscar;
+            $params[':buscar_codigo'] = $valorBuscar;
+            $params[':buscar_barras'] = $valorBuscar;
+            $params[':buscar_descripcion'] = $valorBuscar;
         }
 
         if ($almacenId > 0) {
@@ -1584,22 +1676,7 @@ class Movimiento
             $params[':fecha_final'] = $fechaFinal . ' 23:59:59';
         }
 
-        $sql .= " GROUP BY
-                    m.id,
-                    m.folio,
-                    m.fecha,
-                    m.referencia,
-                    m.tipo_operacion,
-                    m.observaciones,
-
-                    m.cancelado,
-                    m.fecha_cancelacion,
-                    m.motivo_cancelacion,
-
-                    a.nombre,
-                    u.nombre
-
-                  ORDER BY m.id DESC";
+        $sql .= " ORDER BY m.id DESC";
 
         $stmt = $this->conn->prepare($sql);
         $stmt->execute($params);
@@ -1639,21 +1716,35 @@ class Movimiento
 
     if ($buscar !== '') {
         $sql .= " AND (
-                    m.folio LIKE :buscar
-                    OR m.referencia LIKE :buscar
-                    OR m.observaciones LIKE :buscar
-                    OR a.nombre LIKE :buscar
-                    OR pr.nombre LIKE :buscar
-                    OR u.nombre LIKE :buscar
+                    m.folio LIKE :buscar_folio
+                    OR m.referencia LIKE :buscar_referencia
+                    OR m.observaciones LIKE :buscar_observaciones
+                    OR a.nombre LIKE :buscar_almacen
+                    OR pr.nombre LIKE :buscar_proveedor
+                    OR u.nombre LIKE :buscar_usuario
                     OR EXISTS (
                         SELECT 1
                         FROM movimiento_detalle md2
                         INNER JOIN productos p2 ON md2.producto_id = p2.id
                         WHERE md2.movimiento_id = m.id
-                        AND (p2.codigo LIKE :buscar OR p2.codigo_barras LIKE :buscar OR p2.descripcion LIKE :buscar)
+                        AND (
+                            p2.codigo LIKE :buscar_codigo
+                            OR p2.codigo_barras LIKE :buscar_barras
+                            OR p2.descripcion LIKE :buscar_descripcion
+                        )
                     )
                 )";
-        $params[':buscar'] = '%' . $buscar . '%';
+        $valorBuscar = '%' . $buscar . '%';
+
+        $params[':buscar_folio'] = $valorBuscar;
+        $params[':buscar_referencia'] = $valorBuscar;
+        $params[':buscar_observaciones'] = $valorBuscar;
+        $params[':buscar_almacen'] = $valorBuscar;
+        $params[':buscar_proveedor'] = $valorBuscar;
+        $params[':buscar_usuario'] = $valorBuscar;
+        $params[':buscar_codigo'] = $valorBuscar;
+        $params[':buscar_barras'] = $valorBuscar;
+        $params[':buscar_descripcion'] = $valorBuscar;
     }
 
     if ($almacenId > 0) {

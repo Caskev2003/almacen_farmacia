@@ -60,10 +60,33 @@ $salidas = $controller->historialSalidas(
 $totalSalidas = count($salidas);
 $totalProductos = 0;
 $totalUnidades = 0;
+$detallesSalidas = [];
 
 foreach ($salidas as $salida) {
     $totalProductos += (int)($salida['total_productos'] ?? 0);
     $totalUnidades += (int)($salida['total_unidades'] ?? 0);
+}
+
+/*
+ * Carga todos los detalles con una sola consulta. Antes se ejecutaban
+ * varias consultas por cada salida dentro de la tabla; con cientos de
+ * registros el servidor agotaba el tiempo y dejaba el cuerpo vacío.
+ */
+if (!empty($salidas)) {
+    try {
+        $detallesSalidas = $controller->obtenerDetallesSalidas(
+            array_column($salidas, 'id')
+        );
+    } catch (Throwable $e) {
+        error_log(
+            'Error al cargar detalles del historial de salidas: '
+            . $e->getMessage()
+        );
+
+        $detallesSalidas = [];
+        $mensaje = 'Las salidas se cargaron, pero no fue posible consultar sus detalles.';
+        $tipoMensaje = 'error';
+    }
 }
 
 $moduleCss = 'historial_entradas';
@@ -314,7 +337,9 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php foreach ($salidas as $salida): ?>
                         <?php
                             $detalleId = 'detalleSalida' . (int)$salida['id'];
-                            $detalle = $controller->obtenerSalida((int)$salida['id']);
+                            $detalleProductos = $detallesSalidas[
+                                (int)$salida['id']
+                            ] ?? [];
                             $estaCancelada = (int)($salida['cancelado'] ?? 0) === 1;
                         ?>
 
@@ -459,8 +484,8 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                         </thead>
 
                                         <tbody>
-                                            <?php if (!empty($detalle['detalles'])): ?>
-                                                <?php foreach ($detalle['detalles'] as $item): ?>
+                                            <?php if (!empty($detalleProductos)): ?>
+                                                <?php foreach ($detalleProductos as $item): ?>
                                                     <?php
                                                         $cantidad = (int)($item['cantidad'] ?? 0);
                                                         $precio = (float)($item['precio_unitario'] ?? 0);

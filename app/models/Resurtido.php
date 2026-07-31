@@ -1325,6 +1325,252 @@ class Resurtido
     }
 
     // ==================================================
+    // RECONSTRUIR EL SURTIDO ACUMULADO DE UNA SOLICITUD
+    // ==================================================
+
+    /**
+     * Corrige solicitudes parciales creadas con versiones anteriores del
+     * sistema. Esas versiones podían guardar la salida, pero dejar en cero
+     * resurtido_detalles.cantidad_surtida. Para no volver a cargar productos
+     * ya entregados, se suman las salidas no canceladas vinculadas por el
+     * folio de la solicitud y se conserva siempre el mayor acumulado.
+     */
+    public function sincronizarCantidadesSurtidasDesdeSalidas(
+        int $resurtidoId
+    ): array {
+        if ($resurtidoId <= 0) {
+            throw new InvalidArgumentException(
+                'La solicitud que se desea sincronizar no es válida.'
+            );
+        }
+
+        $this->db->beginTransaction();
+
+        try {
+            $stmtSolicitud = $this->db->prepare("
+                SELECT
+                    id,
+                    almacen_id,
+                    tipo_solicitud,
+                    folio,
+                    folio_documento,
+                    estado,
+                    salida_id
+                FROM resurtidos
+                WHERE id = :id
+                LIMIT 1
+                FOR UPDATE
+            ");
+
+            $stmtSolicitud->execute([
+                ':id' => $resurtidoId
+            ]);
+
+            $solicitud = $stmtSolicitud->fetch();
+
+            if (!$solicitud) {
+                throw new RuntimeException(
+                    'No se encontró la solicitud que se desea sincronizar.'
+                );
+            }
+
+            $estadoActual = strtoupper(
+                trim((string) ($solicitud['estado'] ?? ''))
+            );
+
+            $salidaId = (int) ($solicitud['salida_id'] ?? 0);
+
+            if (
+                !in_array($estadoActual, ['EN_PROCESO', 'PARCIAL'], true)
+                || $salidaId <= 0
+            ) {
+                $this->db->commit();
+
+                return [
+                    'actualizado' => false,
+                    'estado' => $estadoActual,
+                    'productos_actualizados' => 0
+                ];
+            }
+
+            $tipoSolicitud = strtoupper(
+                trim((string) ($solicitud['tipo_solicitud'] ?? 'RESURTIDO'))
+            );
+
+            if (!in_array($tipoSolicitud, self::TIPOS_SOLICITUD, true)) {
+                $tipoSolicitud = 'RESURTIDO';
+            }
+
+            $folioOperacion = $tipoSolicitud === 'TICKET'
+                ? trim((string) ($solicitud['folio_documento'] ?? ''))
+                : trim((string) ($solicitud['folio'] ?? ''));
+
+            $condicionFolio = '';
+            $parametrosSalidas = [
+                ':almacen_id' => (int) $solicitud['almacen_id'],
+                ':salida_id' => $salidaId
+            ];
+
+            if ($folioOperacion !== '') {
+                $marcaFolio = strtoupper(
+                    'FOLIO '
+                    . ($tipoSolicitud === 'TICKET' ? 'TICKET' : 'RESURTIDO')
+                    . ': '
+                    . $folioOperacion
+                );
+
+                $condicionFolio = "
+                    OR (
+                        UPPER(TRIM(COALESCE(m.tipo_operacion, '')))
+                            = :tipo_operacion
+                        AND (
+                            UPPER(TRIM(COALESCE(m.observaciones, '')))
+                                = :marca_folio_exacta
+                            OR LOCATE(
+                                :marca_folio_prefijo,
+                                UPPER(TRIM(COALESCE(m.observaciones, '')))
+                            ) = 1
+                        )
+                    )
+                ";
+
+                $parametrosSalidas[':tipo_operacion'] = $tipoSolicitud;
+                $parametrosSalidas[':marca_folio_exacta'] = $marcaFolio;
+                $parametrosSalidas[':marca_folio_prefijo'] =
+                    $marcaFolio . ' |';
+            }
+
+            $sqlSalidas = "
+                SELECT
+                    md.producto_id,
+                    SUM(md.cantidad) AS cantidad_surtida
+                FROM movimientos AS m
+                INNER JOIN movimiento_detalle AS md
+                    ON md.movimiento_id = m.id
+                WHERE
+                    m.tipo_movimiento = 'SALIDA'
+                    AND COALESCE(m.cancelado, 0) = 0
+                    AND m.almacen_id = :almacen_id
+                    AND (
+                        m.id = :salida_id
+                        {$condicionFolio}
+                    )
+                GROUP BY md.producto_id
+            ";
+
+            $stmtSalidas = $this->db->prepare($sqlSalidas);
+            $stmtSalidas->execute($parametrosSalidas);
+
+            $cantidadesHistoricas = [];
+
+            foreach ($stmtSalidas->fetchAll() as $salidaProducto) {
+                $productoId = (int) ($salidaProducto['producto_id'] ?? 0);
+
+                if ($productoId > 0) {
+                    $cantidadesHistoricas[$productoId] = (float) (
+                        $salidaProducto['cantidad_surtida'] ?? 0
+                    );
+                }
+            }
+
+            $stmtDetalles = $this->db->prepare("
+                SELECT
+                    producto_id,
+                    cantidad_solicitada,
+                    cantidad_surtida
+                FROM resurtido_detalles
+                WHERE resurtido_id = :resurtido_id
+                FOR UPDATE
+            ");
+
+            $stmtDetalles->execute([
+                ':resurtido_id' => $resurtidoId
+            ]);
+
+            $stmtActualizar = $this->db->prepare("
+                UPDATE resurtido_detalles
+                SET cantidad_surtida = :cantidad_surtida
+                WHERE
+                    resurtido_id = :resurtido_id
+                    AND producto_id = :producto_id
+            ");
+
+            $productosActualizados = 0;
+
+            foreach ($stmtDetalles->fetchAll() as $detalle) {
+                $productoId = (int) ($detalle['producto_id'] ?? 0);
+                $cantidadSolicitada = (float) (
+                    $detalle['cantidad_solicitada'] ?? 0
+                );
+                $cantidadActual = (float) (
+                    $detalle['cantidad_surtida'] ?? 0
+                );
+                $cantidadHistorica = (float) (
+                    $cantidadesHistoricas[$productoId] ?? 0
+                );
+
+                $cantidadCorregida = min(
+                    $cantidadSolicitada,
+                    max($cantidadActual, $cantidadHistorica)
+                );
+
+                if ($cantidadCorregida <= $cantidadActual) {
+                    continue;
+                }
+
+                $stmtActualizar->execute([
+                    ':cantidad_surtida' => $cantidadCorregida,
+                    ':resurtido_id' => $resurtidoId,
+                    ':producto_id' => $productoId
+                ]);
+
+                $productosActualizados++;
+            }
+
+            $estadoFinal = $this->calcularEstadoFinal($resurtidoId);
+
+            if ($estadoFinal !== $estadoActual) {
+                $stmtEstado = $this->db->prepare("
+                    UPDATE resurtidos
+                    SET
+                        estado = :estado,
+                        actualizado_en = NOW()
+                    WHERE id = :id
+                ");
+
+                $stmtEstado->execute([
+                    ':estado' => $estadoFinal,
+                    ':id' => $resurtidoId
+                ]);
+            } elseif ($productosActualizados > 0) {
+                $stmtMarcaActualizacion = $this->db->prepare("
+                    UPDATE resurtidos
+                    SET actualizado_en = NOW()
+                    WHERE id = :id
+                ");
+
+                $stmtMarcaActualizacion->execute([
+                    ':id' => $resurtidoId
+                ]);
+            }
+
+            $this->db->commit();
+
+            return [
+                'actualizado' => $productosActualizados > 0,
+                'estado' => $estadoFinal,
+                'productos_actualizados' => $productosActualizados
+            ];
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+
+            throw $e;
+        }
+    }
+
+    // ==================================================
     // FINALIZAR Y VINCULAR CON SALIDA
     // ==================================================
 

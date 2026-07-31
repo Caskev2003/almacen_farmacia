@@ -271,6 +271,27 @@ if ($resurtidoId > 0 && !$modoEdicion) {
         $resurtidoController = new ResurtidoController();
         $resurtido = $resurtidoController->obtenerPorId($resurtidoId);
 
+        if ($resurtido) {
+            $estadoAntesDeSincronizar = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
+
+            if (
+                in_array(
+                    $estadoAntesDeSincronizar,
+                    ['EN_PROCESO', 'PARCIAL'],
+                    true
+                )
+                && !empty($resurtido['salida_id'])
+            ) {
+                $resurtidoController
+                    ->sincronizarCantidadesSurtidas($resurtidoId);
+
+                $resurtido = $resurtidoController
+                    ->obtenerPorId($resurtidoId);
+            }
+        }
+
         if (!$resurtido) {
             $resurtido = null;
             $resurtidoAviso = 'No se encontró la solicitud de resurtido indicada.';

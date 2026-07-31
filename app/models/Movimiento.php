@@ -1407,6 +1407,90 @@ class Movimiento
 
         return $movimiento;
     }
+
+    /**
+     * Obtiene en una sola consulta los productos de varias salidas.
+     * Evita ejecutar obtenerSalidaPorId() cientos de veces al cargar
+     * el historial completo.
+     *
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    public function obtenerDetallesSalidas(
+        array $movimientoIds
+    ): array {
+        $movimientoIds = array_values(
+            array_unique(
+                array_filter(
+                    array_map('intval', $movimientoIds),
+                    static fn (int $id): bool => $id > 0
+                )
+            )
+        );
+
+        if (empty($movimientoIds)) {
+            return [];
+        }
+
+        $placeholders = [];
+        $parametros = [];
+
+        foreach ($movimientoIds as $indice => $movimientoId) {
+            $placeholder = ':movimiento_' . $indice;
+            $placeholders[] = $placeholder;
+            $parametros[$placeholder] = $movimientoId;
+        }
+
+        $sql = "SELECT
+                    md.movimiento_id,
+                    md.producto_id,
+                    md.cantidad,
+                    md.costo_unitario,
+                    md.precio_unitario,
+                    md.ubicacion,
+                    p.codigo,
+                    p.descripcion,
+                    p.unidad_medida
+                FROM movimiento_detalle AS md
+                INNER JOIN productos AS p
+                    ON p.id = md.producto_id
+                WHERE md.movimiento_id IN ("
+                    . implode(', ', $placeholders)
+                    . ")
+                ORDER BY md.movimiento_id DESC, md.id ASC";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($parametros);
+
+        $detallesPorSalida = [];
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $detalle) {
+            $movimientoId = (int) (
+                $detalle['movimiento_id'] ?? 0
+            );
+
+            if ($movimientoId <= 0) {
+                continue;
+            }
+
+            $detalle['movimiento_id'] = $movimientoId;
+            $detalle['producto_id'] = (int) (
+                $detalle['producto_id'] ?? 0
+            );
+            $detalle['cantidad'] = (int) (
+                $detalle['cantidad'] ?? 0
+            );
+            $detalle['costo_unitario'] = (float) (
+                $detalle['costo_unitario'] ?? 0
+            );
+            $detalle['precio_unitario'] = (float) (
+                $detalle['precio_unitario'] ?? 0
+            );
+
+            $detallesPorSalida[$movimientoId][] = $detalle;
+        }
+
+        return $detallesPorSalida;
+    }
     
     public function historialSalidas(
         string $buscar = '',

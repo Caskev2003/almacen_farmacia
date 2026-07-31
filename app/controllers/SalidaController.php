@@ -267,6 +267,14 @@ class SalidaController
         return $this->movimientoModel->obtenerSalidaPorId($movimientoId);
     }
 
+    public function obtenerDetallesSalidas(
+        array $movimientoIds
+    ): array {
+        return $this
+            ->movimientoModel
+            ->obtenerDetallesSalidas($movimientoIds);
+    }
+
     public function historialSalidas(
         string $buscar = '',
         int $almacenId = 0,

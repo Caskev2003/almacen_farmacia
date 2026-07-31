@@ -537,6 +537,19 @@ class ResurtidoController
             ->obtenerPorId($resurtidoId);
     }
 
+    /**
+     * Repara el acumulado de una solicitud parcial usando las salidas que ya
+     * fueron registradas. Esto evita volver a surtir productos completos de
+     * tickets o resurtidos creados con una versión anterior del sistema.
+     */
+    public function sincronizarCantidadesSurtidas(
+        int $resurtidoId
+    ): array {
+        return $this
+            ->resurtidoModel
+            ->sincronizarCantidadesSurtidasDesdeSalidas($resurtidoId);
+    }
+
     // ==================================================
     // OBTENER SOLICITUDES DE UN GERENTE
     // ==================================================
@@ -777,6 +790,28 @@ class ResurtidoController
         $estadoActual = strtoupper(
             trim((string) ($resurtido['estado'] ?? ''))
         );
+
+        if (
+            in_array($estadoActual, ['EN_PROCESO', 'PARCIAL'], true)
+            && !empty($resurtido['salida_id'])
+        ) {
+            $this->resurtidoModel
+                ->sincronizarCantidadesSurtidasDesdeSalidas($resurtidoId);
+
+            $resurtido = $this
+                ->resurtidoModel
+                ->obtenerPorId($resurtidoId);
+
+            if (!$resurtido) {
+                throw new RuntimeException(
+                    'No fue posible volver a consultar la solicitud parcial.'
+                );
+            }
+
+            $estadoActual = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
+        }
 
         if ($estadoActual === 'CANCELADO') {
             throw new RuntimeException(

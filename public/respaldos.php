@@ -98,11 +98,14 @@ if (
     } elseif (!$esWindows) {
         /*
          * En Ubuntu el mismo script sirve para cron y para el botón manual.
-         * sudoers permite únicamente este ejecutable sin aceptar argumentos.
+         * El instalador concede a www-data acceso exclusivo al script, a las
+         * credenciales de respaldo y a la carpeta de destino. No se utiliza
+         * sudo para evitar incompatibilidades con sudo-rs en Ubuntu reciente.
          */
+        @set_time_limit(180);
+
         $comando =
-            'sudo -n '
-            . escapeshellarg($scriptRespaldoLinux)
+            escapeshellarg($scriptRespaldoLinux)
             . ' 2>&1';
         $salida = [];
         $codigo = 0;
@@ -166,7 +169,7 @@ if (
             'modulo' => 'Respaldos',
             'accion' => 'RESPALDO_FALLIDO',
             'descripcion' =>
-                'El script de respaldo de Ubuntu devolvió un error.',
+                'El script directo de respaldo de Ubuntu devolvió un error.',
             'metadata' => [
                 'codigo_salida' => $codigo,
                 'detalle' => $detalle,

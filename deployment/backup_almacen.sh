@@ -2,7 +2,10 @@
 
 set -Eeuo pipefail
 
-umask 027
+# El directorio de respaldos tiene el bit setgid y grupo www-data. Esta
+# máscara permite que cron (root) y el botón web (www-data) compartan el
+# archivo de bloqueo sin dar acceso a otros usuarios del servidor.
+umask 007
 
 readonly BASE_DATOS="almacen_farmacia"
 readonly DIRECTORIO_RESPALDOS="/backups/almacen_farmacia"
@@ -16,17 +19,33 @@ readonly TEMPORAL="${DIRECTORIO_RESPALDOS}/.${NOMBRE}.tmp"
 readonly LOG="/var/log/backup_almacen.log"
 readonly ESTADO_OK="${DIRECTORIO_RESPALDOS}/.ultimo_exito"
 readonly ESTADO_ERROR="${DIRECTORIO_RESPALDOS}/.ultimo_error"
+readonly BLOQUEO="${DIRECTORIO_RESPALDOS}/.backup_almacen.lock"
 
 mkdir -p "$DIRECTORIO_RESPALDOS"
 touch "$LOG"
 
-exec 9>/run/lock/backup_almacen.lock
+exec 9>"$BLOQUEO"
 
-if ! flock -n 9; then
-    printf '%s | OMITIDO | Ya existe otro respaldo en ejecución.\n' \
+if ! flock -w 120 9; then
+    printf '%s | ERROR | Otro respaldo continúa en ejecución.\n' \
         "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
-    exit 0
+    printf '%s\n' \
+        'Otro respaldo continúa en ejecución. Intente nuevamente.' >&2
+    exit 75
 fi
+
+normalizar_archivo() {
+    local archivo="$1"
+    local modo="${2:-0640}"
+
+    if [[ "$EUID" -eq 0 ]]; then
+        chown root:www-data "$archivo"
+    else
+        chgrp www-data "$archivo" 2>/dev/null || true
+    fi
+
+    chmod "$modo" "$archivo"
+}
 
 limpiar_temporal() {
     rm -f "$TEMPORAL"
@@ -46,8 +65,7 @@ guardar_error() {
         "$(date '+%Y-%m-%d %H:%M:%S')" \
         "$mensaje" > "$ESTADO_ERROR"
 
-    chown root:www-data "$ESTADO_ERROR" 2>/dev/null || true
-    chmod 0640 "$ESTADO_ERROR" 2>/dev/null || true
+    normalizar_archivo "$ESTADO_ERROR" 0660 2>/dev/null || true
 
     trap - ERR EXIT
     exit "$codigo"
@@ -129,16 +147,14 @@ fi
     "$TEMPORAL"
 
 mv "$TEMPORAL" "$DESTINO"
-chown root:www-data "$DESTINO"
-chmod 0640 "$DESTINO"
+normalizar_archivo "$DESTINO"
 
 printf '%s|%s|%s\n' \
     "$(date '+%Y-%m-%d %H:%M:%S')" \
     "$NOMBRE" \
     "$(stat -c '%s' "$DESTINO")" > "$ESTADO_OK"
 
-chown root:www-data "$ESTADO_OK"
-chmod 0640 "$ESTADO_OK"
+normalizar_archivo "$ESTADO_OK" 0660
 rm -f "$ESTADO_ERROR"
 
 printf '%s | OK | %s | %s bytes\n' \

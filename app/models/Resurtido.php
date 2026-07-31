@@ -490,7 +490,6 @@ class Resurtido
             }
 
             $folio = $this->generarFolio(
-                $resurtidoId,
                 $almacenId,
                 $tipoSolicitud
             );
@@ -1611,17 +1610,149 @@ class Resurtido
     // ==================================================
 
     private function generarFolio(
-        int $resurtidoId,
         int $almacenId,
         string $tipoSolicitud = 'RESURTIDO'
     ): string {
+        if ($almacenId <= 0) {
+            throw new InvalidArgumentException(
+                'El almacén del folio no es válido.'
+            );
+        }
+
+        $tipoSolicitud = $this->normalizarTipoSolicitud(
+            $tipoSolicitud
+        );
+
+        $prefijo = $tipoSolicitud === 'TICKET'
+            ? 'TKT'
+            : 'RES';
+
+        /*
+         * Esta fila se bloquea hasta que termina la transacción.
+         * El contador de RESURTIDO y el contador de TICKET son
+         * independientes, aun cuando ambos módulos utilizan la
+         * tabla resurtidos.
+         */
+        $sqlControl = "
+            SELECT ultimo_numero
+            FROM control_folios_solicitudes
+            WHERE
+                almacen_id = :almacen_id
+                AND tipo_solicitud = :tipo_solicitud
+            LIMIT 1
+            FOR UPDATE
+        ";
+
+        $stmtControl = $this->db->prepare($sqlControl);
+        $stmtControl->execute([
+            ':almacen_id' => $almacenId,
+            ':tipo_solicitud' => $tipoSolicitud
+        ]);
+
+        $ultimoNumero = $stmtControl->fetchColumn();
+
+        if ($ultimoNumero === false) {
+            /*
+             * Permite comenzar correctamente en almacenes nuevos y
+             * también recupera el consecutivo si todavía no existe
+             * la fila de control para alguno de los dos módulos.
+             */
+            $sqlUltimoFolio = "
+                SELECT COALESCE(
+                    MAX(
+                        CASE
+                            WHEN folio REGEXP :expresion_folio
+                            THEN CAST(
+                                SUBSTRING_INDEX(folio, '-', -1)
+                                AS UNSIGNED
+                            )
+                            ELSE 0
+                        END
+                    ),
+                    0
+                )
+                FROM resurtidos
+                WHERE
+                    almacen_id = :almacen_id
+                    AND tipo_solicitud = :tipo_solicitud
+            ";
+
+            $stmtUltimoFolio = $this->db->prepare(
+                $sqlUltimoFolio
+            );
+
+            $stmtUltimoFolio->execute([
+                ':expresion_folio' => '^'
+                    . $prefijo
+                    . '-[0-9]+-[0-9]+$',
+                ':almacen_id' => $almacenId,
+                ':tipo_solicitud' => $tipoSolicitud
+            ]);
+
+            $ultimoNumero = (int) (
+                $stmtUltimoFolio->fetchColumn() ?: 0
+            );
+
+            $sqlCrearControl = "
+                INSERT INTO control_folios_solicitudes (
+                    almacen_id,
+                    tipo_solicitud,
+                    ultimo_numero,
+                    creado_en,
+                    actualizado_en
+                ) VALUES (
+                    :almacen_id,
+                    :tipo_solicitud,
+                    :ultimo_numero,
+                    NOW(),
+                    NOW()
+                )
+            ";
+
+            $stmtCrearControl = $this->db->prepare(
+                $sqlCrearControl
+            );
+
+            $stmtCrearControl->execute([
+                ':almacen_id' => $almacenId,
+                ':tipo_solicitud' => $tipoSolicitud,
+                ':ultimo_numero' => $ultimoNumero
+            ]);
+        }
+
+        $nuevoNumero = (int) $ultimoNumero + 1;
+
+        $sqlActualizarControl = "
+            UPDATE control_folios_solicitudes
+            SET
+                ultimo_numero = :ultimo_numero,
+                actualizado_en = NOW()
+            WHERE
+                almacen_id = :almacen_id
+                AND tipo_solicitud = :tipo_solicitud
+        ";
+
+        $stmtActualizarControl = $this->db->prepare(
+            $sqlActualizarControl
+        );
+
+        $stmtActualizarControl->execute([
+            ':ultimo_numero' => $nuevoNumero,
+            ':almacen_id' => $almacenId,
+            ':tipo_solicitud' => $tipoSolicitud
+        ]);
+
+        if ($stmtActualizarControl->rowCount() !== 1) {
+            throw new RuntimeException(
+                'No fue posible actualizar el control de folios.'
+            );
+        }
+
         return sprintf(
             '%s-%d-%06d',
-            $tipoSolicitud === 'TICKET'
-                ? 'TKT'
-                : 'RES',
+            $prefijo,
             $almacenId,
-            $resurtidoId
+            $nuevoNumero
         );
     }
 

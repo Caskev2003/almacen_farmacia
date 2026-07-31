@@ -1178,6 +1178,157 @@ class Movimiento
 
     return $movimiento;
 }
+    private function obtenerSolicitudOrigenSalida(
+        array $movimiento
+    ): ?array {
+        $movimientoId = (int) (
+            $movimiento['id'] ?? 0
+        );
+
+        if ($movimientoId <= 0) {
+            return null;
+        }
+
+        $camposSolicitud = "
+            SELECT
+                r.id AS solicitud_origen_id,
+                r.folio AS solicitud_folio,
+                r.tipo_solicitud AS solicitud_tipo,
+                r.folio_documento AS solicitud_folio_documento,
+                r.verificador_id AS solicitud_verificador_id,
+                COALESCE(
+                    NULLIF(TRIM(r.verificador_nombre), ''),
+                    NULLIF(TRIM(vr.nombre), '')
+                ) AS solicitud_verificador_nombre,
+                u.nombre AS solicitud_gerente_nombre
+            FROM resurtidos AS r
+            LEFT JOIN verificadores_resurtido AS vr
+                ON vr.id = r.verificador_id
+            LEFT JOIN usuarios AS u
+                ON u.id = r.solicitante_id
+        ";
+
+        /*
+         * Es la relación principal para las salidas normales y
+         * para la última salida generada por una solicitud parcial.
+         */
+        $sqlPorSalida = $camposSolicitud . "
+            WHERE r.salida_id = :salida_id
+            ORDER BY r.id DESC
+            LIMIT 1
+        ";
+
+        $stmtPorSalida = $this->conn->prepare(
+            $sqlPorSalida
+        );
+
+        $stmtPorSalida->execute([
+            ':salida_id' => $movimientoId
+        ]);
+
+        $solicitud = $stmtPorSalida->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if ($solicitud) {
+            return $solicitud;
+        }
+
+        /*
+         * En salidas históricas o parciales la columna salida_id
+         * puede apuntar a una salida posterior. El folio guardado
+         * en Observaciones permite recuperar la solicitud original
+         * y conservar el nombre al reimprimir.
+         */
+        $tipoOperacion = strtoupper(
+            trim((string) (
+                $movimiento['tipo_operacion'] ?? ''
+            ))
+        );
+
+        if (!in_array(
+            $tipoOperacion,
+            ['RESURTIDO', 'TICKET'],
+            true
+        )) {
+            return null;
+        }
+
+        $observaciones = (string) (
+            $movimiento['observaciones'] ?? ''
+        );
+
+        $etiquetaFolio = $tipoOperacion === 'TICKET'
+            ? 'ticket'
+            : 'resurtido';
+
+        $patronFolio = '/(?:^|\|)\s*Folio\s+'
+            . preg_quote($etiquetaFolio, '/')
+            . '\s*:\s*([^|]+)/iu';
+
+        if (!preg_match(
+            $patronFolio,
+            $observaciones,
+            $coincidencia
+        )) {
+            return null;
+        }
+
+        $folioSolicitud = strtoupper(
+            trim((string) ($coincidencia[1] ?? ''))
+        );
+
+        $almacenId = (int) (
+            $movimiento['almacen_id'] ?? 0
+        );
+
+        if ($folioSolicitud === '' || $almacenId <= 0) {
+            return null;
+        }
+
+        if ($tipoOperacion === 'TICKET') {
+            $condicionFolio = "
+                AND (
+                    UPPER(TRIM(COALESCE(r.folio_documento, '')))
+                        = :folio_solicitud
+                    OR UPPER(TRIM(r.folio))
+                        = :folio_solicitud
+                )
+            ";
+        } else {
+            $condicionFolio = "
+                AND UPPER(TRIM(r.folio))
+                    = :folio_solicitud
+            ";
+        }
+
+        $sqlPorFolio = $camposSolicitud . "
+            WHERE
+                r.almacen_id = :almacen_id
+                AND UPPER(TRIM(r.tipo_solicitud))
+                    = :tipo_solicitud
+                {$condicionFolio}
+            ORDER BY r.id DESC
+            LIMIT 1
+        ";
+
+        $stmtPorFolio = $this->conn->prepare(
+            $sqlPorFolio
+        );
+
+        $stmtPorFolio->execute([
+            ':almacen_id' => $almacenId,
+            ':tipo_solicitud' => $tipoOperacion,
+            ':folio_solicitud' => $folioSolicitud
+        ]);
+
+        $solicitud = $stmtPorFolio->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        return $solicitud ?: null;
+    }
+
     public function obtenerSalidaPorId(int $movimientoId): ?array
     {
         $sql = "SELECT 
@@ -1210,6 +1361,27 @@ class Movimiento
 
         if (!$movimiento) {
             return null;
+        }
+
+        $solicitudOrigen =
+            $this->obtenerSolicitudOrigenSalida(
+                $movimiento
+            );
+
+        $movimiento['solicitud_origen_id'] = null;
+        $movimiento['solicitud_folio'] = null;
+        $movimiento['solicitud_tipo'] = null;
+        $movimiento['solicitud_folio_documento'] = null;
+        $movimiento['solicitud_verificador_id'] = null;
+        $movimiento['solicitud_verificador_nombre'] = null;
+        $movimiento['solicitud_gerente_nombre'] = null;
+
+        if ($solicitudOrigen !== null) {
+            foreach (
+                $solicitudOrigen as $campo => $valor
+            ) {
+                $movimiento[$campo] = $valor;
+            }
         }
 
         $sqlDetalle = "SELECT 

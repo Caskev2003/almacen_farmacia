@@ -65,6 +65,25 @@ $tipoOperacion = strtoupper(trim($salida['tipo_operacion'] ?? ''));
 $mostrarFirmas = true;
 $mostrarEntregado = false;
 $mostrarFirmaGerente = false;
+$mostrarDatosSolicitud = in_array(
+    $tipoOperacion,
+    ['RESURTIDO', 'TICKET'],
+    true
+);
+
+$nombreQuienSolicito = trim(
+    (string) (
+        $salida['solicitud_verificador_nombre']
+        ?? ''
+    )
+);
+
+$nombreGerenteAutorizo = trim(
+    (string) (
+        $salida['solicitud_gerente_nombre']
+        ?? ''
+    )
+);
 
 // Si es AJUSTE -> NO mostrar firmas
 if ($tipoOperacion === 'AJUSTE') {
@@ -428,6 +447,28 @@ function imprimirYLimpiar() {
                         <div class="label">Usuario:</div>
                         <div><?= e($aliasUsuario) ?></div>
                     </div>
+
+                    <?php if ($mostrarDatosSolicitud): ?>
+                        <div class="info-grid">
+                            <div class="label">Solicitó:</div>
+                            <div>
+                                <?= e(
+                                    $nombreQuienSolicito !== ''
+                                        ? $nombreQuienSolicito
+                                        : 'Sin identificar'
+                                ) ?>
+                            </div>
+
+                            <div class="label">Autorizó:</div>
+                            <div>
+                                <?= e(
+                                    $nombreGerenteAutorizo !== ''
+                                        ? $nombreGerenteAutorizo
+                                        : 'Sin información'
+                                ) ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
 
                     <div class="info-grid">
                         <div class="label">Observaciones:</div>

@@ -552,7 +552,12 @@ if ($modoResurtido) {
             $resurtido['folio_documento'] ?? null
         ),
         'almacen' => (string)($resurtido['almacen_nombre'] ?? ''),
-        'solicitante' => (string)($resurtido['solicitante_nombre'] ?? ''),
+        'verificador_solicitante' => (string) (
+            $resurtido['verificador_nombre'] ?? ''
+        ),
+        'gerente_autorizo' => (string) (
+            $resurtido['solicitante_nombre'] ?? ''
+        ),
         'fecha' => (string)($resurtido['fecha_solicitud'] ?? ''),
         'estado' => (string)($resurtido['estado'] ?? ''),
         'observaciones' => (string)($resurtido['observaciones'] ?? ''),
@@ -618,7 +623,24 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
         <div class="resurtido-banner-datos">
             <div><span>🏪 Destino</span><strong><?= e($resurtido['almacen_nombre'] ?? '-') ?></strong></div>
-            <div><span>👤 Solicitó</span><strong><?= e($resurtido['solicitante_nombre'] ?? '-') ?></strong></div>
+            <div>
+                <span>👤 Solicitó</span>
+                <strong>
+                    <?= e(
+                        ($resurtido['verificador_nombre'] ?? '')
+                        ?: 'Sin identificar'
+                    ) ?>
+                </strong>
+            </div>
+            <div>
+                <span>✅ Autorizó</span>
+                <strong>
+                    <?= e(
+                        ($resurtido['solicitante_nombre'] ?? '')
+                        ?: 'Sin información'
+                    ) ?>
+                </strong>
+            </div>
             <div><span>📅 Fecha</span><strong><?= e($resurtido['fecha_solicitud'] ?? '-') ?></strong></div>
             <div><span>📦 Productos</span><strong><?= (int)($resurtido['total_productos'] ?? 0) ?></strong></div>
             <div><span>📄 Folio de salida</span><strong><?= e($folio) ?></strong></div>

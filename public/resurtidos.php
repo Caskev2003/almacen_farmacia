@@ -568,10 +568,7 @@ if ($action !== '') {
                 );
             }
 
-            if (
-                !$esModuloTicket
-                && $rol === 'GERENTE'
-            ) {
+            if ($rol === 'GERENTE') {
                 if (
                     $verificadorId <= 0
                     || $passwordVerificador === ''
@@ -1216,32 +1213,33 @@ try {
         . $nombreSolicitud . '.';
 }
 
-if (!$esModuloTicket) {
-    try {
-        if ($rol === 'GERENTE') {
-            $verificadoresActivos =
-                $controller->obtenerVerificadoresActivos(
-                    $almacenId
-                );
-        }
-
-        if ($rol === 'ADMINISTRADOR') {
-            $verificadoresAdministracion =
-                $controller->obtenerVerificadores();
-
-            $almacenesVerificadores =
-                $controller->obtenerAlmacenesVerificadores();
-        }
-    } catch (Throwable $e) {
-        error_log(
-            'Error al cargar verificadores: '
-            . $e->getMessage()
-        );
-
-        $errorVerificadores =
-            'No fue posible cargar los verificadores. '
-            . 'Ejecute database/instalar_verificadores_resurtido.sql.';
+try {
+    if ($rol === 'GERENTE') {
+        $verificadoresActivos =
+            $controller->obtenerVerificadoresActivos(
+                $almacenId
+            );
     }
+
+    if (
+        !$esModuloTicket
+        && $rol === 'ADMINISTRADOR'
+    ) {
+        $verificadoresAdministracion =
+            $controller->obtenerVerificadores();
+
+        $almacenesVerificadores =
+            $controller->obtenerAlmacenesVerificadores();
+    }
+} catch (Throwable $e) {
+    error_log(
+        'Error al cargar verificadores: '
+        . $e->getMessage()
+    );
+
+    $errorVerificadores =
+        'No fue posible cargar los verificadores. '
+        . 'Ejecute database/instalar_verificadores_resurtido.sql.';
 }
 
 // El encabezado ya genera DOCTYPE, head y body.
@@ -1533,10 +1531,7 @@ require __DIR__
                 <?= $esModuloTicket ? 'ticket' : 'resurtido' ?>
             </h2>
 
-            <?php if (
-                !$esModuloTicket
-                && $rol === 'GERENTE'
-            ): ?>
+            <?php if ($rol === 'GERENTE'): ?>
 
                 <div class="identificacion-verificador">
                     <h3>Quién está solicitando</h3>
@@ -1697,8 +1692,7 @@ require __DIR__
                 id="btnGuardarResurtido"
                 class="btn-guardar"
                 <?php if (
-                    !$esModuloTicket
-                    && $rol === 'GERENTE'
+                    $rol === 'GERENTE'
                     && (
                         $errorVerificadores !== ''
                         || empty($verificadoresActivos)
@@ -1819,21 +1813,19 @@ require __DIR__
                                 ) ?>
                             </span>
 
-                            <?php if (!$esModuloTicket): ?>
-                                <span class="verificador-solicitud">
-                                    Solicitó:
-                                    <strong>
-                                        <?= htmlspecialchars(
-                                            (string) (
-                                                $resurtido['verificador_nombre']
-                                                ?: 'Sin identificar'
-                                            ),
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </strong>
-                                </span>
-                            <?php endif; ?>
+                            <span class="verificador-solicitud">
+                                Solicitó:
+                                <strong>
+                                    <?= htmlspecialchars(
+                                        (string) (
+                                            $resurtido['verificador_nombre']
+                                            ?: 'Sin identificar'
+                                        ),
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+                                </strong>
+                            </span>
 
                             <span
                                 class="estado estado-<?=
@@ -2344,8 +2336,7 @@ require __DIR__
 
         window.setTimeout(function () {
             if (
-                !esModuloTicket
-                && rolActual === 'GERENTE'
+                rolActual === 'GERENTE'
                 && !verificadorIdInput?.value
             ) {
                 verificadorIdInput?.focus();
@@ -2831,10 +2822,7 @@ require __DIR__
             return;
         }
 
-        if (
-            !esModuloTicket
-            && rolActual === 'GERENTE'
-        ) {
+        if (rolActual === 'GERENTE') {
             if (
                 Number(verificadorIdInput?.value ?? 0) <= 0
             ) {
@@ -3282,31 +3270,21 @@ require __DIR__
                     )}
                 </p>
 
-                ${!esModuloTicket ? `
-                    <p>
-                        <strong>Verificador que solicitó:</strong>
-                        ${escaparHtml(
-                            resurtido.verificador_nombre
-                            || 'Sin identificar'
-                        )}
-                    </p>
+                <p>
+                    <strong>Verificador que solicitó:</strong>
+                    ${escaparHtml(
+                        resurtido.verificador_nombre
+                        || 'Sin identificar'
+                    )}
+                </p>
 
-                    <p>
-                        <strong>Gerente que autorizó:</strong>
-                        ${escaparHtml(
-                            resurtido.solicitante_nombre
-                            || 'Sin información'
-                        )}
-                    </p>
-                ` : `
-                    <p>
-                        <strong>Solicitante:</strong>
-                        ${escaparHtml(
-                            resurtido.solicitante_nombre
-                            || 'Sin información'
-                        )}
-                    </p>
-                `}
+                <p>
+                    <strong>Gerente que autorizó:</strong>
+                    ${escaparHtml(
+                        resurtido.solicitante_nombre
+                        || 'Sin información'
+                    )}
+                </p>
 
                 <p>
                     <strong>Almacén:</strong>
@@ -3577,19 +3555,17 @@ require __DIR__
                     `
                     : '';
 
-                const verificadorSolicitud = !esModuloTicket
-                    ? `
-                        <span class="verificador-solicitud">
-                            Solicitó:
-                            <strong>
-                                ${escaparHtml(
-                                    solicitud.verificador_nombre
-                                    || 'Sin identificar'
-                                )}
-                            </strong>
-                        </span>
-                    `
-                    : '';
+                const verificadorSolicitud = `
+                    <span class="verificador-solicitud">
+                        Solicitó:
+                        <strong>
+                            ${escaparHtml(
+                                solicitud.verificador_nombre
+                                || 'Sin identificar'
+                            )}
+                        </strong>
+                    </span>
+                `;
 
                 const puedeSurtir =
                     puedeSurtirSolicitudes

@@ -12,6 +12,7 @@ class ResurtidoController
     private PDO $db;
     private Resurtido $resurtidoModel;
     private VerificadorResurtido $verificadorModel;
+    private array $sincronizacionesEjecutadas = [];
 
     public function __construct(?PDO $db = null)
     {
@@ -550,6 +551,32 @@ class ResurtidoController
             ->sincronizarCantidadesSurtidasDesdeSalidas($resurtidoId);
     }
 
+    private function sincronizarSolicitudesActivasUnaVez(
+        ?int $almacenId,
+        string $tipoSolicitud,
+        ?int $solicitanteId = null
+    ): void {
+        $tipoSolicitud = strtoupper(trim($tipoSolicitud));
+
+        $clave = implode(':', [
+            $tipoSolicitud,
+            (string) ($almacenId ?? 0),
+            (string) ($solicitanteId ?? 0)
+        ]);
+
+        if (isset($this->sincronizacionesEjecutadas[$clave])) {
+            return;
+        }
+
+        $this->sincronizacionesEjecutadas[$clave] = true;
+
+        $this->resurtidoModel->sincronizarSolicitudesActivas(
+            $almacenId,
+            $tipoSolicitud,
+            $solicitanteId
+        );
+    }
+
     // ==================================================
     // OBTENER SOLICITUDES DE UN GERENTE
     // ==================================================
@@ -567,6 +594,12 @@ class ResurtidoController
 
         $limite = $this->normalizarLimite(
             $limite
+        );
+
+        $this->sincronizarSolicitudesActivasUnaVez(
+            null,
+            $tipoSolicitud,
+            $solicitanteId
         );
 
         return $this
@@ -598,6 +631,11 @@ class ResurtidoController
             $limite
         );
 
+        $this->sincronizarSolicitudesActivasUnaVez(
+            $almacenId,
+            $tipoSolicitud
+        );
+
         return $this
             ->resurtidoModel
             ->obtenerTodos(
@@ -622,6 +660,11 @@ class ResurtidoController
             $almacenId = null;
         }
 
+        $this->sincronizarSolicitudesActivasUnaVez(
+            $almacenId,
+            $tipoSolicitud
+        );
+
         return $this
             ->resurtidoModel
             ->obtenerPendientes(
@@ -644,6 +687,11 @@ class ResurtidoController
         ) {
             $almacenId = null;
         }
+
+        $this->sincronizarSolicitudesActivasUnaVez(
+            $almacenId,
+            $tipoSolicitud
+        );
 
         return $this
             ->resurtidoModel
@@ -793,7 +841,6 @@ class ResurtidoController
 
         if (
             in_array($estadoActual, ['EN_PROCESO', 'PARCIAL'], true)
-            && !empty($resurtido['salida_id'])
         ) {
             $this->resurtidoModel
                 ->sincronizarCantidadesSurtidasDesdeSalidas($resurtidoId);

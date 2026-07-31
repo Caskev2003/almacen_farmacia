@@ -290,6 +290,7 @@ button:focus-visible {
 .btn-ver,
 .btn-surtir,
 .btn-concluir,
+.btn-cancelar-solicitud,
 .btn-eliminar,
 .btn-cancelar {
     border: none;
@@ -308,6 +309,7 @@ button:focus-visible {
 .btn-ver:active,
 .btn-surtir:active,
 .btn-concluir:active,
+.btn-cancelar-solicitud:active,
 .btn-eliminar:active,
 .btn-cancelar:active {
     transform: scale(0.98);
@@ -370,6 +372,21 @@ button:focus-visible {
 }
 
 .btn-concluir:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.btn-cancelar-solicitud {
+    background: #fff1f2;
+    color: #be123c;
+    border: 1.5px solid #fda4af;
+}
+
+.btn-cancelar-solicitud:hover {
+    background: #ffe4e6;
+}
+
+.btn-cancelar-solicitud:disabled {
     opacity: 0.65;
     cursor: not-allowed;
 }

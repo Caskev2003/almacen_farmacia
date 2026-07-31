@@ -282,7 +282,6 @@ if ($resurtidoId > 0 && !$modoEdicion) {
                     ['EN_PROCESO', 'PARCIAL'],
                     true
                 )
-                && !empty($resurtido['salida_id'])
             ) {
                 $resurtidoController
                     ->sincronizarCantidadesSurtidas($resurtidoId);
@@ -370,7 +369,23 @@ $movimientoGuardadoId = 0;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
 
+    $errorSolicitudBloqueada = '';
     $errorCantidadPendiente = '';
+
+    /*
+     * Si al conciliar se descubrió que la solicitud ya estaba completa, el
+     * formulario no debe convertirse silenciosamente en una salida normal.
+     * Eso era lo que permitía descontar dos o más veces el mismo ticket.
+     */
+    if (
+        $editarPostId <= 0
+        && $resurtidoId > 0
+        && !$modoResurtido
+    ) {
+        $errorSolicitudBloqueada = $resurtidoAviso !== ''
+            ? $resurtidoAviso
+            : 'Esta solicitud ya no tiene cantidades pendientes por surtir.';
+    }
 
     if (
         $modoResurtido
@@ -384,7 +399,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
     }
 
-    if ($errorCantidadPendiente !== '') {
+    if ($errorSolicitudBloqueada !== '') {
+        $result = [
+            'success' => false,
+            'message' => $errorSolicitudBloqueada
+        ];
+    } elseif ($errorCantidadPendiente !== '') {
         $result = [
             'success' => false,
             'message' => $errorCantidadPendiente
@@ -429,9 +449,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     . $e->getMessage()
                 );
 
-                $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el '
-                    . $nombreSolicitudOrigen . ' como surtido: '
-                    . $e->getMessage();
+                /*
+                 * La salida ya quedó registrada y contiene el folio original
+                 * en Observaciones. Antes de mostrar un error, se reconstruye
+                 * el vínculo desde esa salida para no dejar la solicitud en
+                 * EN_PROCESO ni inducir al usuario a guardarla otra vez.
+                 */
+                try {
+                    $conciliacion = $resurtidoController
+                        ->sincronizarCantidadesSurtidas($resurtidoId);
+
+                    $estadoConciliado = strtoupper(
+                        trim((string) ($conciliacion['estado'] ?? ''))
+                    );
+
+                    if (
+                        in_array(
+                            $estadoConciliado,
+                            ['PARCIAL', 'SURTIDO'],
+                            true
+                        )
+                        && !empty($conciliacion['salida_id'])
+                    ) {
+                        $errorVinculo = '';
+                    } else {
+                        $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el '
+                            . $nombreSolicitudOrigen . ' como surtido: '
+                            . $e->getMessage();
+                    }
+                } catch (Throwable $errorConciliacion) {
+                    error_log(
+                        'Error al conciliar la salida ya guardada con '
+                        . $nombreSolicitudOrigen . ': '
+                        . $errorConciliacion->getMessage()
+                    );
+
+                    $errorVinculo = 'La salida se guardó correctamente, pero no fue posible marcar el '
+                        . $nombreSolicitudOrigen . ' como surtido: '
+                        . $e->getMessage();
+                }
             }
         }
 

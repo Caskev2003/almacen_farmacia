@@ -930,6 +930,141 @@ if ($action !== '') {
     }
 
     // --------------------------------------------------
+    // CANCELAR TICKET Y DESCARTAR SOLO LO PENDIENTE
+    // --------------------------------------------------
+
+    if ($action === 'cancelar_solicitud') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            responderJson(
+                false,
+                'Método no permitido.',
+                [],
+                405
+            );
+        }
+
+        if (
+            !$esModuloTicket
+            || !in_array(
+                $rol,
+                ['ENCARGADO', 'ADMINISTRADOR'],
+                true
+            )
+        ) {
+            responderJson(
+                false,
+                'No tiene permisos para cancelar tickets.',
+                [],
+                403
+            );
+        }
+
+        $datos = leerJson();
+        validarTokenResurtidos($datos);
+
+        $resurtidoId = (int) ($datos['id'] ?? 0);
+
+        if ($resurtidoId <= 0) {
+            responderJson(
+                false,
+                'El ticket indicado no es válido.',
+                [],
+                422
+            );
+        }
+
+        try {
+            $resurtido = $controller->obtenerPorId($resurtidoId);
+
+            if (!$resurtido) {
+                responderJson(
+                    false,
+                    'No se encontró el ticket.',
+                    [],
+                    404
+                );
+            }
+
+            verificarTipoSolicitudModulo(
+                $resurtido,
+                $tipoSolicitudModulo
+            );
+
+            verificarAccesoResurtido(
+                $resurtido,
+                $rol,
+                $usuarioId,
+                $almacenId
+            );
+
+            $estadoAntes = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
+
+            if (in_array($estadoAntes, ['EN_PROCESO', 'PARCIAL'], true)) {
+                $controller->sincronizarCantidadesSurtidas($resurtidoId);
+                $resurtido = $controller->obtenerPorId($resurtidoId);
+            }
+
+            $estadoActual = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
+
+            if ($estadoActual === 'SURTIDO') {
+                responderJson(
+                    false,
+                    'El ticket ya tiene completa su salida. Si una salida fue incorrecta, cancélela desde Historial de Salidas para devolver el inventario.',
+                    [],
+                    409
+                );
+            }
+
+            if (!in_array(
+                $estadoActual,
+                ['PENDIENTE', 'EN_PROCESO', 'PARCIAL'],
+                true
+            )) {
+                responderJson(
+                    false,
+                    'El estado actual del ticket no permite cancelarlo.',
+                    [],
+                    422
+                );
+            }
+
+            $controller->cambiarEstado(
+                $resurtidoId,
+                'CANCELADO',
+                $usuarioId
+            );
+
+            $mensaje = $estadoActual === 'PARCIAL'
+                ? 'Se canceló lo que quedaba pendiente del ticket. Las salidas ya realizadas se conservan.'
+                : 'El ticket se canceló y ya no aparecerá como pendiente.';
+
+            responderJson(
+                true,
+                $mensaje,
+                [
+                    'resurtido' =>
+                        $controller->obtenerPorId($resurtidoId)
+                ]
+            );
+        } catch (Throwable $e) {
+            error_log(
+                'Error al cancelar ticket: ' . $e->getMessage()
+            );
+
+            responderJson(
+                false,
+                $e->getMessage(),
+                [],
+                500
+            );
+        }
+    }
+
+    // --------------------------------------------------
     // ACTUALIZAR LISTA SIN RECARGAR LA PÁGINA
     // --------------------------------------------------
 
@@ -1775,6 +1910,19 @@ require __DIR__
                             true
                         )
                         && $estado === 'PARCIAL';
+
+                    $puedeCancelarTicket =
+                        $esModuloTicket
+                        && in_array(
+                            $rol,
+                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            true
+                        )
+                        && in_array(
+                            $estado,
+                            ['PENDIENTE', 'EN_PROCESO', 'PARCIAL'],
+                            true
+                        );
                     ?>
 
                     <article class="resurtido-item">
@@ -1887,6 +2035,20 @@ require __DIR__
                                     ?>"
                                 >
                                     Concluir
+                                </button>
+
+                            <?php endif; ?>
+
+                            <?php if ($puedeCancelarTicket): ?>
+
+                                <button
+                                    type="button"
+                                    class="btn-cancelar-solicitud"
+                                    data-cancelar-resurtido="<?=
+                                        (int) $resurtido['id']
+                                    ?>"
+                                >
+                                    Cancelar ticket
                                 </button>
 
                             <?php endif; ?>
@@ -3382,6 +3544,33 @@ require __DIR__
 
     enlazarBotonesConcluirSolicitud();
 
+    function enlazarBotonesCancelarSolicitud() {
+        document
+            .querySelectorAll('[data-cancelar-resurtido]')
+            .forEach(function (boton) {
+                if (boton.dataset.eventoCancelarActivo === '1') {
+                    return;
+                }
+
+                boton.dataset.eventoCancelarActivo = '1';
+
+                boton.addEventListener(
+                    'click',
+                    function () {
+                        cancelarSolicitud(
+                            Number(
+                                this.dataset
+                                    .cancelarResurtido
+                            ),
+                            this
+                        );
+                    }
+                );
+            });
+    }
+
+    enlazarBotonesCancelarSolicitud();
+
     async function iniciarSurtido(id, boton) {
         if (!id) {
             return;
@@ -3492,6 +3681,60 @@ require __DIR__
         } catch (error) {
             alert(error.message);
 
+            boton.disabled = false;
+            boton.textContent = textoOriginal;
+        }
+    }
+
+    async function cancelarSolicitud(id, boton) {
+        if (!id) {
+            return;
+        }
+
+        if (
+            !confirm(
+                '¿Cancelar este ticket?\n\n'
+                + 'Si ya existe una salida parcial, esa salida se conserva '
+                + 'y únicamente se cancela lo que faltaba.'
+            )
+        ) {
+            return;
+        }
+
+        const textoOriginal = boton.textContent;
+
+        boton.disabled = true;
+        boton.textContent = 'Cancelando...';
+
+        try {
+            const respuesta = await fetch(
+                endpointModulo + '?action=cancelar_solicitud',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: id,
+                        csrf_token: csrfToken
+                    })
+                }
+            );
+
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.ok) {
+                throw new Error(
+                    resultado.mensaje
+                    || 'No fue posible cancelar el ticket.'
+                );
+            }
+
+            alert(resultado.mensaje);
+            huellaSolicitudes = '';
+            await consultarActualizacionesSolicitudes();
+        } catch (error) {
+            alert(error.message);
             boton.disabled = false;
             boton.textContent = textoOriginal;
         }
@@ -3611,6 +3854,25 @@ require __DIR__
                         `
                         : '';
 
+                const botonCancelar =
+                    esModuloTicket
+                    && puedeSurtirSolicitudes
+                    && [
+                        'PENDIENTE',
+                        'EN_PROCESO',
+                        'PARCIAL'
+                    ].includes(estado)
+                        ? `
+                            <button
+                                type="button"
+                                class="btn-cancelar-solicitud"
+                                data-cancelar-resurtido="${id}"
+                            >
+                                Cancelar ticket
+                            </button>
+                        `
+                        : '';
+
                 return `
                     <article
                         class="resurtido-item"
@@ -3655,6 +3917,7 @@ require __DIR__
 
                             ${botonSurtir}
                             ${botonConcluir}
+                            ${botonCancelar}
                         </div>
                     </article>
                 `;
@@ -3663,6 +3926,7 @@ require __DIR__
         enlazarBotonesVerSolicitud();
         enlazarBotonesSurtirSolicitud();
         enlazarBotonesConcluirSolicitud();
+        enlazarBotonesCancelarSolicitud();
     }
 
     function mostrarAvisoNuevaSolicitud(

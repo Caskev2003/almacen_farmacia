@@ -1290,9 +1290,9 @@ class Movimiento
             $condicionFolio = "
                 AND (
                     UPPER(TRIM(COALESCE(r.folio_documento, '')))
-                        = :folio_solicitud
+                        = :folio_documento
                     OR UPPER(TRIM(r.folio))
-                        = :folio_solicitud
+                        = :folio_interno
                 )
             ";
         } else {
@@ -1316,11 +1316,24 @@ class Movimiento
             $sqlPorFolio
         );
 
-        $stmtPorFolio->execute([
+        $parametrosPorFolio = [
             ':almacen_id' => $almacenId,
-            ':tipo_solicitud' => $tipoOperacion,
-            ':folio_solicitud' => $folioSolicitud
-        ]);
+            ':tipo_solicitud' => $tipoOperacion
+        ];
+
+        if ($tipoOperacion === 'TICKET') {
+            /*
+             * PDO usa preparaciones nativas. Cada marcador debe tener un
+             * nombre único; reutilizar el mismo provocaba HY093 y rompía la
+             * impresión y reimpresión de las salidas de ticket.
+             */
+            $parametrosPorFolio[':folio_documento'] = $folioSolicitud;
+            $parametrosPorFolio[':folio_interno'] = $folioSolicitud;
+        } else {
+            $parametrosPorFolio[':folio_solicitud'] = $folioSolicitud;
+        }
+
+        $stmtPorFolio->execute($parametrosPorFolio);
 
         $solicitud = $stmtPorFolio->fetch(
             PDO::FETCH_ASSOC

@@ -1380,19 +1380,6 @@ class Resurtido
 
             $salidaId = (int) ($solicitud['salida_id'] ?? 0);
 
-            if (
-                !in_array($estadoActual, ['EN_PROCESO', 'PARCIAL'], true)
-                || $salidaId <= 0
-            ) {
-                $this->db->commit();
-
-                return [
-                    'actualizado' => false,
-                    'estado' => $estadoActual,
-                    'productos_actualizados' => 0
-                ];
-            }
-
             $tipoSolicitud = strtoupper(
                 trim((string) ($solicitud['tipo_solicitud'] ?? 'RESURTIDO'))
             );
@@ -1404,6 +1391,26 @@ class Resurtido
             $folioOperacion = $tipoSolicitud === 'TICKET'
                 ? trim((string) ($solicitud['folio_documento'] ?? ''))
                 : trim((string) ($solicitud['folio'] ?? ''));
+
+            /*
+             * Una salida puede haberse guardado correctamente y fallar el
+             * paso posterior que llena resurtidos.salida_id. El folio que se
+             * conserva en movimientos.observaciones permite recuperar esa
+             * relación incluso cuando salida_id todavía es NULL.
+             */
+            if (
+                !in_array($estadoActual, ['EN_PROCESO', 'PARCIAL'], true)
+                || ($salidaId <= 0 && $folioOperacion === '')
+            ) {
+                $this->db->commit();
+
+                return [
+                    'actualizado' => false,
+                    'estado' => $estadoActual,
+                    'productos_actualizados' => 0,
+                    'salida_id' => $salidaId > 0 ? $salidaId : null
+                ];
+            }
 
             $condicionFolio = '';
             $parametrosSalidas = [
@@ -1443,7 +1450,8 @@ class Resurtido
             $sqlSalidas = "
                 SELECT
                     md.producto_id,
-                    SUM(md.cantidad) AS cantidad_surtida
+                    SUM(md.cantidad) AS cantidad_surtida,
+                    MAX(m.id) AS ultima_salida_id
                 FROM movimientos AS m
                 INNER JOIN movimiento_detalle AS md
                     ON md.movimiento_id = m.id
@@ -1462,9 +1470,15 @@ class Resurtido
             $stmtSalidas->execute($parametrosSalidas);
 
             $cantidadesHistoricas = [];
+            $ultimaSalidaId = $salidaId;
 
             foreach ($stmtSalidas->fetchAll() as $salidaProducto) {
                 $productoId = (int) ($salidaProducto['producto_id'] ?? 0);
+
+                $ultimaSalidaId = max(
+                    $ultimaSalidaId,
+                    (int) ($salidaProducto['ultima_salida_id'] ?? 0)
+                );
 
                 if ($productoId > 0) {
                     $cantidadesHistoricas[$productoId] = (float) (
@@ -1529,27 +1543,29 @@ class Resurtido
 
             $estadoFinal = $this->calcularEstadoFinal($resurtidoId);
 
-            if ($estadoFinal !== $estadoActual) {
+            $salidaActualizada =
+                $ultimaSalidaId > 0
+                && $ultimaSalidaId !== $salidaId;
+
+            if (
+                $estadoFinal !== $estadoActual
+                || $productosActualizados > 0
+                || $salidaActualizada
+            ) {
                 $stmtEstado = $this->db->prepare("
                     UPDATE resurtidos
                     SET
                         estado = :estado,
+                        salida_id = :salida_id,
                         actualizado_en = NOW()
                     WHERE id = :id
                 ");
 
                 $stmtEstado->execute([
                     ':estado' => $estadoFinal,
-                    ':id' => $resurtidoId
-                ]);
-            } elseif ($productosActualizados > 0) {
-                $stmtMarcaActualizacion = $this->db->prepare("
-                    UPDATE resurtidos
-                    SET actualizado_en = NOW()
-                    WHERE id = :id
-                ");
-
-                $stmtMarcaActualizacion->execute([
+                    ':salida_id' => $ultimaSalidaId > 0
+                        ? $ultimaSalidaId
+                        : null,
                     ':id' => $resurtidoId
                 ]);
             }
@@ -1557,9 +1573,15 @@ class Resurtido
             $this->db->commit();
 
             return [
-                'actualizado' => $productosActualizados > 0,
+                'actualizado' =>
+                    $productosActualizados > 0
+                    || $estadoFinal !== $estadoActual
+                    || $salidaActualizada,
                 'estado' => $estadoFinal,
-                'productos_actualizados' => $productosActualizados
+                'productos_actualizados' => $productosActualizados,
+                'salida_id' => $ultimaSalidaId > 0
+                    ? $ultimaSalidaId
+                    : null
             ];
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
@@ -1568,6 +1590,76 @@ class Resurtido
 
             throw $e;
         }
+    }
+
+    /**
+     * Revisa únicamente solicitudes activas. Se usa al refrescar las listas
+     * para sacar de pendientes las solicitudes cuya salida ya existe.
+     */
+    public function sincronizarSolicitudesActivas(
+        ?int $almacenId = null,
+        string $tipoSolicitud = 'RESURTIDO',
+        ?int $solicitanteId = null,
+        int $limite = 150
+    ): int {
+        $tipoSolicitud = $this->normalizarTipoSolicitud($tipoSolicitud);
+        $limite = max(1, min($limite, 300));
+
+        $condiciones = [
+            "estado IN ('EN_PROCESO', 'PARCIAL')",
+            'tipo_solicitud = :tipo_solicitud'
+        ];
+
+        $parametros = [
+            ':tipo_solicitud' => $tipoSolicitud
+        ];
+
+        if ($almacenId !== null && $almacenId > 0) {
+            $condiciones[] = 'almacen_id = :almacen_id';
+            $parametros[':almacen_id'] = $almacenId;
+        }
+
+        if ($solicitanteId !== null && $solicitanteId > 0) {
+            $condiciones[] = 'solicitante_id = :solicitante_id';
+            $parametros[':solicitante_id'] = $solicitanteId;
+        }
+
+        $sql = "
+            SELECT id
+            FROM resurtidos
+            WHERE " . implode(' AND ', $condiciones) . "
+            ORDER BY actualizado_en ASC, id ASC
+            LIMIT {$limite}
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($parametros);
+
+        $actualizadas = 0;
+
+        foreach ($stmt->fetchAll() as $fila) {
+            $id = (int) ($fila['id'] ?? 0);
+
+            if ($id <= 0) {
+                continue;
+            }
+
+            try {
+                $resultado =
+                    $this->sincronizarCantidadesSurtidasDesdeSalidas($id);
+
+                if (!empty($resultado['actualizado'])) {
+                    $actualizadas++;
+                }
+            } catch (Throwable $e) {
+                error_log(
+                    'No fue posible conciliar la solicitud #'
+                    . $id . ': ' . $e->getMessage()
+                );
+            }
+        }
+
+        return $actualizadas;
     }
 
     // ==================================================

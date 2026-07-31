@@ -277,7 +277,9 @@ if ($resurtidoId > 0 && !$modoEdicion) {
             $resurtidoAvisoTipo = 'danger';
             $resurtidoBloqueado = true;
         } else {
-            $estadoResurtido = strtoupper((string)($resurtido['estado'] ?? ''));
+            $estadoResurtido = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
 
             if ($estadoResurtido === 'CANCELADO') {
                 $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' está cancelada y no puede surtirse.';
@@ -292,6 +294,16 @@ if ($resurtidoId > 0 && !$modoEdicion) {
                 && $estadoResurtido !== 'PARCIAL'
             ) {
                 $resurtidoAviso = 'La solicitud ' . ($resurtido['folio'] ?? '') . ' ya está vinculada a una salida anterior.';
+                $resurtidoAvisoTipo = 'danger';
+                $resurtidoBloqueado = true;
+            } elseif (
+                !in_array(
+                    $estadoResurtido,
+                    ['PENDIENTE', 'EN_PROCESO', 'PARCIAL'],
+                    true
+                )
+            ) {
+                $resurtidoAviso = 'El estado de la solicitud ' . ($resurtido['folio'] ?? '') . ' no permite continuar el surtido.';
                 $resurtidoAvisoTipo = 'danger';
                 $resurtidoBloqueado = true;
             }
@@ -521,6 +533,12 @@ if ($modoResurtido) {
         $solicitada = (float)($detalle['cantidad_solicitada'] ?? 0);
         $surtida = (float)($detalle['cantidad_surtida'] ?? 0);
         $pendiente = max(0, (int)round($solicitada - $surtida));
+
+        // Al continuar una solicitud parcial no se vuelven a cargar las
+        // piezas que ya salieron; únicamente se muestran las pendientes.
+        if ($pendiente <= 0) {
+            continue;
+        }
 
         $existeEnCatalogo = isset($productosPorId[$productoId]);
 

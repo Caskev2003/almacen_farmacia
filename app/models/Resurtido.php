@@ -1374,24 +1374,45 @@ class Resurtido
                 );
             }
 
-            if ($resurtido['estado'] === 'CANCELADO') {
+            $estadoActual = strtoupper(
+                trim((string) ($resurtido['estado'] ?? ''))
+            );
+
+            if ($estadoActual === 'CANCELADO') {
                 throw new RuntimeException(
                     'El resurtido fue cancelado.'
                 );
             }
 
-            if ($resurtido['estado'] === 'SURTIDO') {
+            if ($estadoActual === 'SURTIDO') {
                 throw new RuntimeException(
                     'El resurtido ya fue surtido.'
                 );
             }
 
+            /*
+             * En estado PARCIAL salida_id apunta a la última salida creada.
+             * Se permite una nueva salida para acumular solamente lo que
+             * falta; al finalizar, salida_id se actualizará a la más reciente.
+             */
             if (
                 !empty($resurtido['salida_id'])
-                && $resurtido['estado'] !== 'PARCIAL'
+                && $estadoActual !== 'PARCIAL'
             ) {
                 throw new RuntimeException(
                     'El resurtido ya está vinculado con otra salida.'
+                );
+            }
+
+            if (
+                !in_array(
+                    $estadoActual,
+                    ['PENDIENTE', 'EN_PROCESO', 'PARCIAL'],
+                    true
+                )
+            ) {
+                throw new RuntimeException(
+                    'El estado actual no permite registrar otra salida.'
                 );
             }
 

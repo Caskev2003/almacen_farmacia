@@ -774,27 +774,31 @@ class ResurtidoController
             );
         }
 
-        if (
-            ($resurtido['estado'] ?? '')
-            === 'CANCELADO'
-        ) {
+        $estadoActual = strtoupper(
+            trim((string) ($resurtido['estado'] ?? ''))
+        );
+
+        if ($estadoActual === 'CANCELADO') {
             throw new RuntimeException(
                 'La solicitud fue cancelada y no puede surtirse.'
             );
         }
 
-        if (
-            ($resurtido['estado'] ?? '')
-            === 'SURTIDO'
-        ) {
+        if ($estadoActual === 'SURTIDO') {
             throw new RuntimeException(
                 'La solicitud ya fue surtida.'
             );
         }
 
+        /*
+         * Una solicitud PARCIAL ya tiene una salida vinculada, pero esa
+         * salida corresponde únicamente a lo surtido anteriormente. No se
+         * debe bloquear: al continuar se generará otra salida con las piezas
+         * que todavía están pendientes.
+         */
         if (
             !empty($resurtido['salida_id'])
-            && ($resurtido['estado'] ?? '') !== 'PARCIAL'
+            && $estadoActual !== 'PARCIAL'
         ) {
             throw new RuntimeException(
                 'Esta solicitud ya se encuentra vinculada con una salida.'
@@ -802,9 +806,18 @@ class ResurtidoController
         }
 
         if (
-            ($resurtido['estado'] ?? '')
-            === 'PENDIENTE'
+            !in_array(
+                $estadoActual,
+                ['PENDIENTE', 'EN_PROCESO', 'PARCIAL'],
+                true
+            )
         ) {
+            throw new RuntimeException(
+                'El estado actual de la solicitud no permite continuar el surtido.'
+            );
+        }
+
+        if ($estadoActual === 'PENDIENTE') {
             $this
                 ->resurtidoModel
                 ->iniciarSurtido(

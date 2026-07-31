@@ -1868,7 +1868,11 @@ require __DIR__
                                 >
                                     <?= $estado === 'PENDIENTE'
                                         ? 'Surtir'
-                                        : 'Continuar' ?>
+                                        : (
+                                            $estado === 'PARCIAL'
+                                                ? 'Continuar pendientes'
+                                                : 'Continuar'
+                                        ) ?>
                                 </button>
 
                             <?php endif; ?>
@@ -3584,7 +3588,11 @@ require __DIR__
                         >
                             ${estado === 'PENDIENTE'
                                 ? 'Surtir'
-                                : 'Continuar'}
+                                : (
+                                    estado === 'PARCIAL'
+                                        ? 'Continuar pendientes'
+                                        : 'Continuar'
+                                )}
                         </button>
                     `
                     : '';

@@ -35,7 +35,7 @@ class Resurtido
     }
 
     // ==================================================
-    // BUSCAR PRODUCTOS POR LOS ÚLTIMOS CUATRO DÍGITOS
+    // BUSCAR PRODUCTOS POR LOS ÚLTIMOS 4 A 8 DÍGITOS
     // ==================================================
 
     public function buscarPorUltimosDigitos(
@@ -44,11 +44,13 @@ class Resurtido
     ): array {
         $ultimosDigitos = trim($ultimosDigitos);
 
-        if (!preg_match('/^\d{4}$/', $ultimosDigitos)) {
+        if (!preg_match('/^\d{4,8}$/', $ultimosDigitos)) {
             throw new InvalidArgumentException(
-                'Debe ingresar exactamente los últimos 4 dígitos.'
+                'Debe ingresar entre 4 y 8 de los últimos dígitos.'
             );
         }
+
+        $cantidadDigitos = strlen($ultimosDigitos);
 
         if ($almacenId <= 0) {
             throw new InvalidArgumentException(
@@ -69,6 +71,8 @@ class Resurtido
         $params = [
             ':codigo' => $ultimosDigitos,
             ':codigo_barras' => $ultimosDigitos,
+            ':longitud_codigo' => $cantidadDigitos,
+            ':longitud_codigo_barras' => $cantidadDigitos,
             ':almacen_reservado_busqueda' =>
                 $almacenId,
             ':almacen_devolucion_busqueda' =>
@@ -212,12 +216,15 @@ class Resurtido
             WHERE p.estado = 1
 
             AND (
-                RIGHT(TRIM(p.codigo), 4) = :codigo
+                RIGHT(
+                    TRIM(p.codigo),
+                    :longitud_codigo
+                ) = :codigo
                 OR RIGHT(
                     TRIM(
                         COALESCE(p.codigo_barras, '')
                     ),
-                    4
+                    :longitud_codigo_barras
                 ) = :codigo_barras
             )
 

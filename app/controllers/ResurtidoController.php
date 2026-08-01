@@ -28,7 +28,7 @@ class ResurtidoController
     }
 
     // ==================================================
-    // BUSCAR PRODUCTOS POR LOS ÚLTIMOS CUATRO DÍGITOS
+    // BUSCAR PRODUCTOS POR LOS ÚLTIMOS 4 A 8 DÍGITOS
     // ==================================================
 
     public function buscarPorUltimosDigitos(
@@ -43,10 +43,10 @@ class ResurtidoController
 
         if (
             !is_string($codigo)
-            || strlen($codigo) !== 4
+            || !preg_match('/^\d{4,8}$/', $codigo)
         ) {
             throw new InvalidArgumentException(
-                'Ingrese exactamente los últimos 4 dígitos del código.'
+                'Ingrese entre 4 y 8 de los últimos dígitos del código.'
             );
         }
 

@@ -424,10 +424,10 @@ if ($action !== '') {
             (string) ($_GET['codigo'] ?? '')
         );
 
-        if (!preg_match('/^\d{4}$/', $codigo)) {
+        if (!preg_match('/^\d{4,8}$/', $codigo)) {
             responderJson(
                 false,
-                'Ingrese exactamente los últimos 4 dígitos del código.',
+                'Ingrese entre 4 y 8 de los últimos dígitos del código.',
                 [],
                 422
             );
@@ -448,7 +448,8 @@ if ($action !== '') {
                     . $codigo . '; se encontraron '
                     . count($productos) . ' resultado(s).',
                 'metadata' => [
-                    'ultimos_cuatro_digitos' => $codigo,
+                    'ultimos_digitos' => $codigo,
+                    'cantidad_digitos' => strlen($codigo),
                     'resultados' => count($productos),
                     'almacen_id' => $almacenId,
                 ],
@@ -1774,7 +1775,7 @@ require __DIR__
             <div class="campo-busqueda">
 
                 <label for="codigoProducto">
-                    Últimos 4 dígitos del código
+                    Últimos 4 a 8 dígitos del código
                 </label>
 
                 <div class="busqueda-fila">
@@ -1783,9 +1784,10 @@ require __DIR__
                         type="tel"
                         id="codigoProducto"
                         inputmode="numeric"
-                        maxlength="4"
+                        minlength="4"
+                        maxlength="8"
                         autocomplete="off"
-                        placeholder="Ejemplo: 3538"
+                        placeholder="Ejemplo: 35386666"
                     >
 
                     <button
@@ -2527,7 +2529,7 @@ require __DIR__
         function () {
             this.value = this.value
                 .replace(/\D/g, '')
-                .slice(0, 4);
+                .slice(0, 8);
         }
     );
 
@@ -2548,9 +2550,9 @@ require __DIR__
 
         const codigo = codigoInput.value.trim();
 
-        if (!/^\d{4}$/.test(codigo)) {
+        if (!/^\d{4,8}$/.test(codigo)) {
             alert(
-                'Ingrese exactamente los últimos 4 dígitos.'
+                'Ingrese entre 4 y 8 de los últimos dígitos.'
             );
 
             codigoInput.focus();

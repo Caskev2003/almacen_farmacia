@@ -28,6 +28,11 @@ $proveedores = $controller->proveedores();
 
 $productos = $controller->index($filtros);
 $resumen = $controller->resumen($productos);
+$valorInventario = $esAdmin
+    ? $controller->valorInventario(
+        (int) $filtros['almacen_id']
+    )
+    : null;
 
 $moduleCss = 'existencias';
 
@@ -78,6 +83,21 @@ include __DIR__ . '/../app/views/layouts/header.php';
             <span>Sin almacén</span>
             <strong><?= number_format((int)$resumen['sinAlmacen']) ?></strong>
         </div>
+
+        <?php if ($esAdmin): ?>
+
+            <div class="existencia-card valor">
+                <span>
+                    <?= (int) $filtros['almacen_id'] > 0
+                        ? 'Valor total del almacén'
+                        : 'Valor total de todos los almacenes' ?>
+                </span>
+                <strong>
+                    $<?= number_format((float) $valorInventario, 2) ?>
+                </strong>
+            </div>
+
+        <?php endif; ?>
 
     </div>
 
@@ -317,8 +337,11 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Ubicación</th>
                         <th>Existencia</th>
                         <th>Estado</th>
-                        <th>Precio</th>
-                        <th>Valor</th>
+
+                        <?php if ($esAdmin): ?>
+                            <th>Precio</th>
+                            <th>Valor</th>
+                        <?php endif; ?>
                     </tr>
                 </thead>
 
@@ -336,9 +359,13 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     ?? 0
                                 );
 
-                                $precio = (float)($producto['precio_compra'] ?? 0);
+                                $precio = $esAdmin
+                                    ? (float)($producto['precio_compra'] ?? 0)
+                                    : 0.0;
 
-                                $valor = $existencia * $precio;
+                                $valor = $esAdmin
+                                    ? $existencia * $precio
+                                    : 0.0;
 
                                 $estadoTexto = strtoupper(
                                     trim((string)($producto['estado_stock'] ?? 'STOCK NORMAL'))
@@ -396,13 +423,17 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     </span>
                                 </td>
 
-                                <td class="text-right">
-                                    $<?= number_format($precio, 2) ?>
-                                </td>
+                                <?php if ($esAdmin): ?>
 
-                                <td class="text-right">
-                                    $<?= number_format($valor, 2) ?>
-                                </td>
+                                    <td class="text-right">
+                                        $<?= number_format($precio, 2) ?>
+                                    </td>
+
+                                    <td class="text-right">
+                                        $<?= number_format($valor, 2) ?>
+                                    </td>
+
+                                <?php endif; ?>
 
                             </tr>
 
@@ -411,7 +442,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php else: ?>
 
                         <tr>
-                            <td colspan="12" class="empty-table">
+                            <td colspan="<?= $esAdmin ? 12 : 10 ?>" class="empty-table">
                                 No se encontraron productos con los filtros seleccionados.
                             </td>
                         </tr>

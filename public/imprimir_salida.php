@@ -19,10 +19,28 @@ if (!$salida) {
     die('Salida no encontrada.');
 }
 
-$total = 0.0;
+$usuarioActual = currentUser();
+$rolActual = strtoupper(
+    trim((string) ($usuarioActual['rol'] ?? ''))
+);
 
-foreach ($salida['detalles'] as $detalle) {
-    $total += ((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']);
+if ($rolActual === 'JEFE_ALMACEN') {
+    $almacenUsuario = (int) (
+        $usuarioActual['almacen_id'] ?? 0
+    );
+    $tipoSolicitud = strtoupper(
+        trim((string) ($salida['solicitud_tipo'] ?? ''))
+    );
+
+    if (
+        empty($salida['solicitud_origen_id'])
+        || !in_array($tipoSolicitud, ['RESURTIDO', 'TICKET'], true)
+        || $almacenUsuario <= 0
+        || (int) ($salida['almacen_id'] ?? 0) !== $almacenUsuario
+    ) {
+        http_response_code(403);
+        exit('Esta cuenta solamente puede imprimir salidas de Resurtidos y Tickets de su almacén.');
+    }
 }
 
 $referenciaCompleta = trim($salida['referencia'] ?? '');
@@ -390,7 +408,10 @@ function imprimirYLimpiar() {
 <div class="no-print">
     <button class="btn btn-primary" onclick="imprimirYLimpiar()">Imprimir</button>
     <a class="btn btn-secondary" href="javascript:history.back()">Regresar</a>
-    <a class="btn btn-primary" href="salidas.php">Nueva salida</a>
+
+    <?php if ($rolActual !== 'JEFE_ALMACEN'): ?>
+        <a class="btn btn-primary" href="salidas.php">Nueva salida</a>
+    <?php endif; ?>
 </div>
 
 <div class="sheet">
@@ -398,7 +419,7 @@ function imprimirYLimpiar() {
     <table>
         <thead>
             <tr>
-                <th colspan="6" class="encabezado-th">
+                <th colspan="4" class="encabezado-th">
                     <div class="header">
                         <div class="logo-box">
                             <img src="assets/img/logo.jpeg" alt="Logo G&D">
@@ -484,8 +505,6 @@ function imprimirYLimpiar() {
                 <th style="width: 90px;">Clave</th>
                 <th>Descripción</th>
                 <th style="width: 75px;">Ubicación</th>
-                <th style="width: 65px;">Precio U.</th>
-                <th style="width: 75px;">Importe</th>
             </tr>
         </thead>
 
@@ -496,22 +515,8 @@ function imprimirYLimpiar() {
                     <td><?= e($detalle['codigo']) ?></td>
                     <td><?= e($detalle['descripcion']) ?></td>
                     <td><?= e($detalle['ubicacion']) ?></td>
-                    <td class="text-right">
-                        <?= number_format((float)$detalle['precio_unitario'], 2) ?>
-                    </td>
-                    <td class="text-right">
-                        <?= number_format(
-                            ((float)$detalle['precio_unitario'] * (int)$detalle['cantidad']),
-                            2
-                        ) ?>
-                    </td>
                 </tr>
             <?php endforeach; ?>
-
-            <tr class="total-row">
-                <td colspan="5" class="text-right">Total</td>
-                <td class="text-right"><?= number_format($total, 2) ?></td>
-            </tr>
         </tbody>
     </table>
 

@@ -265,6 +265,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                 <select name="rol" required>
     <option value="CONSULTA">CONSULTA</option>
     <option value="ENCARGADO">ENCARGADO</option>
+    <option value="JEFE_ALMACEN">JEFE DE ALMACÉN (SOLO RESURTIDOS Y TICKETS)</option>
     <option value="GERENTE">GERENTE</option>
     <option value="ADMINISTRADOR">ADMINISTRADOR</option>
 </select>
@@ -409,6 +410,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <select name="rol" id="edit_rol" required>
                         <option value="CONSULTA">CONSULTA</option>
                         <option value="ENCARGADO">ENCARGADO</option>
+                        <option value="JEFE_ALMACEN">JEFE DE ALMACÉN (SOLO RESURTIDOS Y TICKETS)</option>
                         <option value="ADMINISTRADOR">ADMINISTRADOR</option>
                         <option value="GERENTE">GERENTE</option>
                     </select>

@@ -18,6 +18,7 @@ $almacenId = (int) (
 $esAdmin = $rolUsuario === 'ADMINISTRADOR';
 $esGerente = $rolUsuario === 'GERENTE';
 $esEncargado = $rolUsuario === 'ENCARGADO';
+$esJefeAlmacen = $rolUsuario === 'JEFE_ALMACEN';
 $esConsulta = $rolUsuario === 'CONSULTA';
 
 // ======================================================
@@ -36,20 +37,24 @@ $puedeVerAgotados = in_array(
 );
 
 $puedeVerInventarios =
-    $esAdmin
-    || $esGerente
-    || $esEncargado
-    || $esConsulta
-    || $almacenId === 1
-    || $almacenId === 2
-    || $almacenId === 3;
+    !$esJefeAlmacen
+    && (
+        $esAdmin
+        || $esGerente
+        || $esEncargado
+        || $esConsulta
+        || $almacenId === 1
+        || $almacenId === 2
+        || $almacenId === 3
+    );
 
 $puedeVerResurtidos = in_array(
     $rolUsuario,
     [
         'ADMINISTRADOR',
         'GERENTE',
-        'ENCARGADO'
+        'ENCARGADO',
+        'JEFE_ALMACEN'
     ],
     true
 );
@@ -60,7 +65,8 @@ $puedeVerResurtidos = in_array(
  */
 $puedeRecibirResurtidos =
     $esAdmin
-    || $esEncargado;
+    || $esEncargado
+    || $esJefeAlmacen;
 
 $esGerenteCiudadHidalgo =
     $esGerente
@@ -74,12 +80,12 @@ $puedeVerTickets =
     $esAdmin
     || (
         $almacenId === 1
-        && ($esGerente || $esEncargado)
+        && ($esGerente || $esEncargado || $esJefeAlmacen)
     );
 
 $puedeRecibirTickets =
     $esAdmin
-    || ($esEncargado && $almacenId === 1);
+    || (($esEncargado || $esJefeAlmacen) && $almacenId === 1);
 
 $puedeVerDevoluciones =
     $esAdmin
@@ -349,11 +355,15 @@ $puedeVerDevoluciones =
 
     <nav class="navbar">
 
-        <a href="dashboard.php">
-            Inicio
-        </a>
+        <?php if (!$esJefeAlmacen): ?>
 
-        <?php if (!$esGerente && !$esConsulta): ?>
+            <a href="dashboard.php">
+                Inicio
+            </a>
+
+        <?php endif; ?>
+
+        <?php if (!$esGerente && !$esConsulta && !$esJefeAlmacen): ?>
 
             <a href="productos.php">
                 Productos
@@ -369,9 +379,13 @@ $puedeVerDevoluciones =
 
         <?php endif; ?>
 
-        <a href="existencias.php">
-            Existencias
-        </a>
+        <?php if (!$esJefeAlmacen): ?>
+
+            <a href="existencias.php">
+                Existencias
+            </a>
+
+        <?php endif; ?>
 
         <?php if ($puedeVerAgotados): ?>
 
@@ -441,7 +455,7 @@ $puedeVerDevoluciones =
 
         <?php endif; ?>
 
-        <?php if (!$esGerente && !$esConsulta): ?>
+        <?php if (!$esGerente && !$esConsulta && !$esJefeAlmacen): ?>
 
             <a href="kardex.php">
                 Kardex

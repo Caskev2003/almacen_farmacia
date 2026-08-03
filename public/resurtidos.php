@@ -55,7 +55,8 @@ $puedeCrearSolicitud = $esModuloTicket
 $rolesPermitidos = [
     'ADMINISTRADOR',
     'GERENTE',
-    'ENCARGADO'
+    'ENCARGADO',
+    'JEFE_ALMACEN'
 ];
 
 if (!in_array($rol, $rolesPermitidos, true)) {
@@ -68,7 +69,11 @@ if (
     && $rol !== 'ADMINISTRADOR'
     && !(
         $almacenId === 1
-        && in_array($rol, ['GERENTE', 'ENCARGADO'], true)
+        && in_array(
+            $rol,
+            ['GERENTE', 'ENCARGADO', 'JEFE_ALMACEN'],
+            true
+        )
     )
 ) {
     http_response_code(403);
@@ -225,7 +230,7 @@ function verificarAccesoResurtido(
     }
 
     if (
-        $rol === 'ENCARGADO'
+        in_array($rol, ['ENCARGADO', 'JEFE_ALMACEN'], true)
         && (
             $almacenId <= 0
             || (int) $resurtido['almacen_id'] !== $almacenId
@@ -255,7 +260,7 @@ function obtenerSolicitudesVisibles(
         );
     }
 
-    if ($rol === 'ENCARGADO') {
+    if (in_array($rol, ['ENCARGADO', 'JEFE_ALMACEN'], true)) {
         return $controller->obtenerTodos(
             $almacenId > 0 ? $almacenId : null,
             150,
@@ -730,7 +735,7 @@ if ($action !== '') {
         if (
             !in_array(
                 $rol,
-                ['ENCARGADO', 'ADMINISTRADOR'],
+                ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                 true
             )
         ) {
@@ -831,7 +836,7 @@ if ($action !== '') {
         if (
             !in_array(
                 $rol,
-                ['ENCARGADO', 'ADMINISTRADOR'],
+                ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                 true
             )
         ) {
@@ -948,7 +953,7 @@ if ($action !== '') {
             !$esModuloTicket
             || !in_array(
                 $rol,
-                ['ENCARGADO', 'ADMINISTRADOR'],
+                ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                 true
             )
         ) {
@@ -1131,7 +1136,7 @@ if ($action !== '') {
         if (
             !in_array(
                 $rol,
-                ['ENCARGADO', 'ADMINISTRADOR'],
+                ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                 true
             )
         ) {
@@ -1195,7 +1200,7 @@ if ($action !== '') {
         if (
             !in_array(
                 $rol,
-                ['ENCARGADO', 'ADMINISTRADOR'],
+                ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                 true
             )
         ) {
@@ -1892,7 +1897,7 @@ require __DIR__
                     $puedeSurtir =
                         in_array(
                             $rol,
-                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                             true
                         )
                         && in_array(
@@ -1908,7 +1913,7 @@ require __DIR__
                     $puedeConcluir =
                         in_array(
                             $rol,
-                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                             true
                         )
                         && $estado === 'PARCIAL';
@@ -1917,7 +1922,7 @@ require __DIR__
                         $esModuloTicket
                         && in_array(
                             $rol,
-                            ['ENCARGADO', 'ADMINISTRADOR'],
+                            ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR'],
                             true
                         )
                         && in_array(
@@ -2245,7 +2250,7 @@ require __DIR__
             'listaSolicitudesActuales'
         );
     const puedeSurtirSolicitudes =
-        ['ENCARGADO', 'ADMINISTRADOR']
+        ['ENCARGADO', 'JEFE_ALMACEN', 'ADMINISTRADOR']
             .includes(rolActual);
     let consultaActualizacionesEnCurso = false;
 

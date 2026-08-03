@@ -86,6 +86,10 @@ class ExistenciaController
         $params = [];
         $esAdmin = $this->esAdministrador();
 
+        $campoPrecio = $esAdmin
+            ? 'p.precio_compra'
+            : 'NULL AS precio_compra';
+
         $almacenId = (int)($filtros['almacen_id'] ?? 0);
 
         if (!$esAdmin) {
@@ -181,7 +185,7 @@ class ExistenciaController
                     pr.nombre AS proveedor,
                     p.laboratorio,
                     p.unidad_medida,
-                    p.precio_compra,
+                    {$campoPrecio},
 
                     COALESCE(stock.sucursal, 'SIN ALMACEN') AS sucursal,
                     COALESCE(stock.sucursales, 'SIN ALMACEN') AS sucursales,
@@ -289,6 +293,44 @@ class ExistenciaController
         $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function valorInventario(int $almacenId = 0): float
+    {
+        if (!$this->esAdministrador()) {
+            return 0.0;
+        }
+
+        $params = [];
+
+        $sql = "SELECT
+                    COALESCE(
+                        SUM(
+                            COALESCE(pe.existencia, 0)
+                            * COALESCE(p.precio_compra, 0)
+                        ),
+                        0
+                    ) AS valor_inventario
+                FROM producto_existencias AS pe
+                INNER JOIN productos AS p
+                    ON p.id = pe.producto_id
+                WHERE p.estado = 1
+                  AND pe.sucursal IS NOT NULL
+                  AND TRIM(pe.sucursal) != ''";
+
+        if ($almacenId > 0) {
+            $this->aplicarFiltroSucursal(
+                $sql,
+                $params,
+                $almacenId,
+                'pe'
+            );
+        }
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute($params);
+
+        return (float) $stmt->fetchColumn();
     }
 
     public function resumen(array $productos): array

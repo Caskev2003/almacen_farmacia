@@ -55,13 +55,28 @@ class UsuarioController
         $usuario = trim($data['usuario'] ?? '');
         $correo = trim($data['correo'] ?? '');
         $password = trim($data['password'] ?? '');
-        $rol = trim($data['rol'] ?? 'CONSULTA');
+        $rol = strtoupper(trim($data['rol'] ?? 'CONSULTA'));
         $almacenId = $data['almacen_id'] ?? null;
+
+        $rolesPermitidos = [
+            'ADMINISTRADOR',
+            'ENCARGADO',
+            'CONSULTA',
+            'GERENTE',
+            'JEFE_ALMACEN',
+        ];
 
         if ($nombre === '' || $usuario === '' || $correo === '' || $password === '') {
             return [
                 'success' => false,
                 'message' => 'Nombre, usuario, correo y contraseña son obligatorios.'
+            ];
+        }
+
+        if (!in_array($rol, $rolesPermitidos, true)) {
+            return [
+                'success' => false,
+                'message' => 'El rol seleccionado no es válido.'
             ];
         }
 
@@ -218,13 +233,28 @@ class UsuarioController
     $nombre = trim($data['nombre'] ?? '');
     $usuario = trim($data['usuario'] ?? '');
     $correo = trim($data['correo'] ?? '');
-    $rol = trim($data['rol'] ?? 'CONSULTA');
+    $rol = strtoupper(trim($data['rol'] ?? 'CONSULTA'));
     $almacenId = $data['almacen_id'] ?? null;
+
+    $rolesPermitidos = [
+        'ADMINISTRADOR',
+        'ENCARGADO',
+        'CONSULTA',
+        'GERENTE',
+        'JEFE_ALMACEN',
+    ];
 
     if ($id <= 0 || $nombre === '' || $usuario === '' || $correo === '') {
         return [
             'success' => false,
             'message' => 'Datos incompletos para editar el usuario.'
+        ];
+    }
+
+    if (!in_array($rol, $rolesPermitidos, true)) {
+        return [
+            'success' => false,
+            'message' => 'El rol seleccionado no es válido.'
         ];
     }
 

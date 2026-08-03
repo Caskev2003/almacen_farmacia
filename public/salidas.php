@@ -12,6 +12,28 @@ date_default_timezone_set('America/Mexico_City');
 $user = currentUser();
 $controller = new SalidaController();
 
+$rolAccesoSalida = strtoupper(
+    trim((string) ($user['rol'] ?? ''))
+);
+
+if ($rolAccesoSalida === 'JEFE_ALMACEN') {
+    $solicitudAccesoId = (int) (
+        $_POST['resurtido_id']
+        ?? $_GET['resurtido_id']
+        ?? 0
+    );
+    $edicionAccesoId = (int) (
+        $_POST['editar_id']
+        ?? $_GET['editar']
+        ?? 0
+    );
+
+    if ($solicitudAccesoId <= 0 || $edicionAccesoId > 0) {
+        http_response_code(403);
+        exit('Esta cuenta solamente puede generar salidas desde Resurtidos o Tickets.');
+    }
+}
+
 $message = '';
 $messageType = 'danger';
 
@@ -270,6 +292,19 @@ if ($resurtidoId > 0 && !$modoEdicion) {
     try {
         $resurtidoController = new ResurtidoController();
         $resurtido = $resurtidoController->obtenerPorId($resurtidoId);
+
+        if (
+            $rolAccesoSalida === 'JEFE_ALMACEN'
+            && $resurtido
+            && (
+                (int) ($user['almacen_id'] ?? 0) <= 0
+                || (int) ($resurtido['almacen_id'] ?? 0)
+                    !== (int) ($user['almacen_id'] ?? 0)
+            )
+        ) {
+            http_response_code(403);
+            exit('La solicitud no pertenece al almacén asignado a esta cuenta.');
+        }
 
         if ($resurtido) {
             $estadoAntesDeSincronizar = strtoupper(

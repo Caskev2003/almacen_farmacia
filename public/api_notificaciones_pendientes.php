@@ -78,13 +78,16 @@ $almacenId = (int) ($user['almacen_id'] ?? 0);
 
 $puedeRecibirResurtidos = in_array(
     $rol,
-    ['ADMINISTRADOR', 'ENCARGADO'],
+    ['ADMINISTRADOR', 'ENCARGADO', 'JEFE_ALMACEN'],
     true
 );
 
 $puedeRecibirTickets =
     $rol === 'ADMINISTRADOR'
-    || ($rol === 'ENCARGADO' && $almacenId === 1);
+    || (
+        in_array($rol, ['ENCARGADO', 'JEFE_ALMACEN'], true)
+        && $almacenId === 1
+    );
 
 if (!$puedeRecibirResurtidos && !$puedeRecibirTickets) {
     responderNotificaciones(
@@ -95,7 +98,10 @@ if (!$puedeRecibirResurtidos && !$puedeRecibirTickets) {
     );
 }
 
-if ($rol === 'ENCARGADO' && $almacenId <= 0) {
+if (
+    in_array($rol, ['ENCARGADO', 'JEFE_ALMACEN'], true)
+    && $almacenId <= 0
+) {
     responderNotificaciones(
         false,
         [],

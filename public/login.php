@@ -4,7 +4,7 @@ require_once __DIR__ . '/../app/controllers/AuthController.php';
 require_once __DIR__ . '/../app/helpers/auth.php';
 
 if (isLoggedIn()) {
-    header("Location: dashboard.php");
+    header('Location: ' . paginaInicialUsuario());
     exit;
 }
 
@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $result = $authController->login($login, $password);
 
     if ($result['success']) {
-        header("Location: dashboard.php");
+        header('Location: ' . paginaInicialUsuario());
         exit;
     } else {
         $error = $result['message'];

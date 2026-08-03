@@ -411,6 +411,67 @@ function isLoggedIn(): bool
     return isset($_SESSION['user']);
 }
 
+function esJefeAlmacenLimitado(?array $usuario = null): bool
+{
+    $usuario = $usuario ?? currentUser();
+
+    return strtoupper(
+        trim((string) ($usuario['rol'] ?? ''))
+    ) === 'JEFE_ALMACEN';
+}
+
+function verificarAccesoJefeAlmacen(): void
+{
+    if (!esJefeAlmacenLimitado()) {
+        return;
+    }
+
+    /*
+     * El perfil móvil solo tiene dos módulos visibles. Salidas e impresión
+     * son rutas auxiliares indispensables para surtir esas solicitudes; no
+     * aparecen en su menú y cada archivo valida el registro solicitado.
+     */
+    $archivo = basename(
+        (string) ($_SERVER['SCRIPT_NAME'] ?? '')
+    );
+
+    $archivosPermitidos = [
+        'resurtidos.php',
+        'tickets.php',
+        'salidas.php',
+        'imprimir_salida.php',
+        'api_notificaciones_pendientes.php',
+        'session_keepalive.php',
+        'logout.php',
+    ];
+
+    if (in_array($archivo, $archivosPermitidos, true)) {
+        return;
+    }
+
+    auditLog([
+        'modulo' => auditModuleForScript($archivo),
+        'accion' => 'ACCESO_DENEGADO',
+        'descripcion' => 'La cuenta móvil del jefe de almacén intentó abrir un módulo no autorizado.',
+        'metadata' => [
+            'archivo' => $archivo,
+            'rol_usuario' => 'JEFE_ALMACEN',
+        ],
+    ]);
+
+    http_response_code(403);
+    echo '<h2>Acceso denegado</h2>';
+    echo '<p>Esta cuenta solo puede utilizar Resurtidos y Tickets.</p>';
+    exit;
+}
+
+function paginaInicialUsuario(?array $usuario = null): string
+{
+    return esJefeAlmacenLimitado($usuario)
+        ? 'resurtidos.php'
+        : 'dashboard.php';
+}
+
 function requireLogin(): void
 {
     if (!isLoggedIn()) {
@@ -420,6 +481,8 @@ function requireLogin(): void
 
     $_SESSION['ultimo_acceso'] = time();
     renovarCookieSesion();
+
+    verificarAccesoJefeAlmacen();
 
     auditTrackCurrentRequest();
 }

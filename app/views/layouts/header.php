@@ -238,6 +238,12 @@ $puedeVerDevoluciones =
             border-left: 7px solid #16a34a;
         }
 
+        .alerta-movil-toast.alerta-recordatorio {
+            border-color: #f59e0b;
+            border-left: 7px solid #d97706;
+            background: #fffbeb;
+        }
+
         .alerta-movil-icono {
             font-size: 25px;
         }
@@ -536,7 +542,8 @@ $puedeVerDevoluciones =
                 <?= $puedeRecibirTickets ? 'true' : 'false' ?>,
             endpoint: 'api_notificaciones_pendientes.php',
             serviceWorker: 'sw-notificaciones.js',
-            intervalo: 5000
+            intervalo: 5000,
+            recordatorio: 180000
         };
     </script>
 

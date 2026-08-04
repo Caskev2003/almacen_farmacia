@@ -3353,6 +3353,15 @@ require __DIR__
             resurtido.total_cantidad_surtida || 0
         );
 
+        const tieneAjusteCantidad = productos.some(
+            function (producto) {
+                return Math.abs(
+                    Number(producto.cantidad_surtida || 0)
+                    - Number(producto.cantidad_solicitada || 0)
+                ) > 0.0001;
+            }
+        );
+
         const estadoVisible =
             estadoReal === 'SURTIDO'
             && totalSurtido < totalSolicitado
@@ -3367,6 +3376,25 @@ require __DIR__
         } else {
             productosHtml = productos
                 .map(function (producto) {
+                    const cantidadSolicitada = Number(
+                        producto.cantidad_solicitada || 0
+                    );
+                    const cantidadSurtida = Number(
+                        producto.cantidad_surtida || 0
+                    );
+                    const diferencia =
+                        cantidadSurtida - cantidadSolicitada;
+                    const diferenciaTexto = diferencia > 0
+                        ? '+' + formatearCantidad(diferencia)
+                        : formatearCantidad(diferencia);
+                    const claseDiferencia = diferencia > 0
+                        ? 'diferencia-mayor'
+                        : (
+                            diferencia < 0
+                                ? 'diferencia-menor'
+                                : 'diferencia-exacta'
+                        );
+
                     return `
                         <div class="producto-agregado">
                             <div class="producto-datos">
@@ -3392,17 +3420,28 @@ require __DIR__
                                 </span>
                             </div>
 
-                            <div class="producto-cantidad">
-                                <label>
-                                    Solicitado
-                                </label>
+                            <div class="producto-cantidades-detalle">
+                                <div>
+                                    <label>Solicitado</label>
+                                    <strong>
+                                        ${formatearCantidad(
+                                            cantidadSolicitada
+                                        )}
+                                    </strong>
+                                </div>
 
-                                <strong>
-                                    ${formatearCantidad(
-                                        producto
-                                            .cantidad_solicitada
-                                    )}
-                                </strong>
+                                <div>
+                                    <label>Surtido</label>
+                                    <strong>
+                                        ${formatearCantidad(
+                                            cantidadSurtida
+                                        )}
+                                    </strong>
+                                </div>
+
+                                <span class="diferencia-cantidad ${claseDiferencia}">
+                                    Diferencia: ${diferenciaTexto}
+                                </span>
                             </div>
                         </div>
                     `;
@@ -3476,12 +3515,39 @@ require __DIR__
                 </p>
 
                 <p>
-                    <strong>Observaciones:</strong>
+                    <strong>Observaciones de la solicitud:</strong>
                     ${escaparHtml(
                         resurtido.observaciones
                         || 'Sin observaciones'
                     )}
                 </p>
+
+                ${resurtido.salida_id ? `
+                    <div class="observacion-salida-detalle ${
+                        tieneAjusteCantidad
+                            ? 'observacion-ajuste-destacada'
+                            : ''
+                    }">
+                        <strong>
+                            ${tieneAjusteCantidad
+                                ? 'Motivo del ajuste registrado en la salida:'
+                                : 'Observaciones de la salida:'}
+                        </strong>
+                        <span>
+                            ${escaparHtml(
+                                resurtido.observaciones_salida
+                                || 'Sin motivo registrado'
+                            )}
+                        </span>
+                        ${resurtido.salida_folio ? `
+                            <small>
+                                Salida: ${escaparHtml(
+                                    resurtido.salida_folio
+                                )}
+                            </small>
+                        ` : ''}
+                    </div>
+                ` : ''}
 
                 <h3>Productos solicitados</h3>
 

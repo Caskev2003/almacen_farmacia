@@ -235,6 +235,77 @@ if (!function_exists('salidasValidarCantidadesPendientes')) {
     }
 }
 
+if (!function_exists('salidasObtenerAjustesCantidad')) {
+    /**
+     * Compara lo que queda pendiente con lo capturado en esta salida.
+     * Se utiliza para exigir un motivo cuando el ENCARGADO entrega una
+     * cantidad mayor o menor a la solicitada.
+     */
+    function salidasObtenerAjustesCantidad(
+        array $postData,
+        array $detallesResurtido
+    ): array {
+        $capturadas = [];
+
+        foreach (
+            salidasCantidadesSurtidas(
+                $postData,
+                $detallesResurtido
+            ) as $producto
+        ) {
+            $capturadas[(int) ($producto['producto_id'] ?? 0)] =
+                (float) ($producto['cantidad_surtida'] ?? 0);
+        }
+
+        $ajustes = [];
+
+        foreach ($detallesResurtido as $detalle) {
+            $productoId = (int) (
+                $detalle['producto_id'] ?? 0
+            );
+
+            if ($productoId <= 0) {
+                continue;
+            }
+
+            $solicitada = (float) (
+                $detalle['cantidad_solicitada'] ?? 0
+            );
+
+            $surtidaAnterior = (float) (
+                $detalle['cantidad_surtida'] ?? 0
+            );
+
+            $pendiente = max(
+                0,
+                $solicitada - $surtidaAnterior
+            );
+
+            $entregada = (float) (
+                $capturadas[$productoId] ?? 0
+            );
+
+            $diferencia = $entregada - $pendiente;
+
+            if (abs($diferencia) < 0.0001) {
+                continue;
+            }
+
+            $ajustes[] = [
+                'producto_id' => $productoId,
+                'codigo' => (string) (
+                    $detalle['codigo'] ?? ('#' . $productoId)
+                ),
+                'cantidad_pendiente' => $pendiente,
+                'cantidad_entregada' => $entregada,
+                'diferencia' => $diferencia
+            ];
+        }
+
+        return $ajustes;
+    }
+}
+
 /* =========================================================
    MODO EDICION
 ========================================================= */
@@ -420,6 +491,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $errorSolicitudBloqueada = '';
     $errorCantidadPendiente = '';
+    $errorObservacionAjuste = '';
 
     /*
      * Si al conciliar se descubrió que la solicitud ya estaba completa, el
@@ -449,6 +521,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
     }
 
+    if (
+        $puedeAjustarCantidadResurtido
+        && $editarPostId <= 0
+        && $resurtido !== null
+        && !empty(
+            salidasObtenerAjustesCantidad(
+                $_POST,
+                $resurtido['productos'] ?? []
+            )
+        )
+        && trim((string) ($_POST['observaciones'] ?? '')) === ''
+    ) {
+        $errorObservacionAjuste =
+            'Debe escribir en Observaciones el motivo por el que se '
+            . 'entregan más o menos piezas de las solicitadas.';
+    }
+
     if ($errorSolicitudBloqueada !== '') {
         $result = [
             'success' => false,
@@ -458,6 +547,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = [
             'success' => false,
             'message' => $errorCantidadPendiente
+        ];
+    } elseif ($errorObservacionAjuste !== '') {
+        $result = [
+            'success' => false,
+            'message' => $errorObservacionAjuste
         ];
     } elseif ($editarPostId > 0) {
         $result = $controller->actualizar($editarPostId, $_POST, (int)$user['id']);
@@ -898,8 +992,23 @@ include __DIR__ . '/../app/views/layouts/header.php';
             </div>
 
             <div class="form-field form-field-wide">
-                <label>📝 Observaciones</label>
-                <textarea name="observaciones" placeholder="Información adicional..."><?= e($observacionesValor) ?></textarea>
+                <label id="observacionesSalidaLabel">
+                    📝 Observaciones
+                </label>
+                <textarea
+                    name="observaciones"
+                    id="observacionesSalida"
+                    placeholder="Información adicional..."
+                ><?= e($observacionesValor) ?></textarea>
+                <?php if ($puedeAjustarCantidadResurtido): ?>
+                    <small
+                        id="observacionesAjusteAyuda"
+                        style="display:none;color:#b45309;font-weight:700;margin-top:6px;"
+                    >
+                        Obligatoria: explique por qué se entregan más o menos
+                        piezas de las solicitadas.
+                    </small>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -1201,6 +1310,15 @@ const cantidadInput = document.getElementById('cantidadInput');
 const precioInput = document.getElementById('precioInput');
 const ubicacionInput = document.getElementById('ubicacionInput');
 const detalleBody = document.getElementById('detalleBody');
+const observacionesSalidaInput = document.getElementById(
+    'observacionesSalida'
+);
+const observacionesSalidaLabel = document.getElementById(
+    'observacionesSalidaLabel'
+);
+const observacionesAjusteAyuda = document.getElementById(
+    'observacionesAjusteAyuda'
+);
 
 // ===== UBICACIONES =====
 function generarTodasLasUbicaciones() {
@@ -1487,6 +1605,50 @@ function cantidadEnSalida(productoId) {
         }
     });
     return total;
+}
+
+function obtenerAjustesCantidadResurtido() {
+    if (!puedeAjustarCantidadResurtido || !modoResurtido) {
+        return [];
+    }
+
+    return resurtidoData.productos
+        .map(item => {
+            const entregada = cantidadEnSalida(
+                item.producto_id
+            );
+            const diferencia = entregada - Number(
+                item.pendiente || 0
+            );
+
+            return {
+                codigo: item.codigo,
+                pendiente: Number(item.pendiente || 0),
+                entregada,
+                diferencia
+            };
+        })
+        .filter(item => Math.abs(item.diferencia) > 0.0001);
+}
+
+function actualizarRequisitoObservacionAjuste() {
+    if (!observacionesSalidaInput) return;
+
+    const requiereMotivo =
+        obtenerAjustesCantidadResurtido().length > 0;
+
+    observacionesSalidaInput.required = requiereMotivo;
+
+    if (observacionesSalidaLabel) {
+        observacionesSalidaLabel.textContent = requiereMotivo
+            ? '📝 Motivo del ajuste de cantidad *'
+            : '📝 Observaciones';
+    }
+
+    if (observacionesAjusteAyuda) {
+        observacionesAjusteAyuda.style.display =
+            requiereMotivo ? 'block' : 'none';
+    }
 }
 
 // ===== AGREGAR FILAS =====
@@ -1817,6 +1979,7 @@ function actualizarTotales() {
     document.getElementById('productosCount').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
 
     renderizarPedidoResurtido();
+    actualizarRequisitoObservacionAjuste();
 }
 
 // ===== PANEL DEL PEDIDO =====
@@ -2071,6 +2234,28 @@ function guardarSalida() {
     }
 
     if (modoResurtido) {
+        const ajustesCantidad =
+            obtenerAjustesCantidadResurtido();
+
+        if (
+            ajustesCantidad.length > 0
+            && !String(
+                observacionesSalidaInput?.value || ''
+            ).trim()
+        ) {
+            mostrarToast(
+                '❌ Escriba en Observaciones por qué entrega más o menos piezas.',
+                'error'
+            );
+
+            observacionesSalidaInput?.focus();
+            observacionesSalidaInput?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+            return;
+        }
+
         const incompletos = resurtidoData.productos.filter(item => {
             return cantidadEnSalida(item.producto_id) < item.pendiente;
         }).length;

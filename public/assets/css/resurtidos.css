@@ -896,6 +896,78 @@ button:focus-visible {
     grid-template-columns: 1fr auto;
 }
 
+.producto-cantidades-detalle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(82px, auto));
+    gap: 8px 14px;
+    align-items: center;
+    text-align: right;
+}
+
+.producto-cantidades-detalle > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.producto-cantidades-detalle label {
+    color: var(--res-texto-suave);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.diferencia-cantidad {
+    grid-column: 1 / -1;
+    justify-self: end;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.diferencia-mayor {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.diferencia-menor {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.diferencia-exacta {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.observacion-salida-detalle {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 14px;
+    padding: 13px 15px;
+    border: 1px solid #bfdbfe;
+    border-left: 5px solid var(--res-azul);
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1e3a5f;
+}
+
+.observacion-salida-detalle span {
+    line-height: 1.45;
+}
+
+.observacion-salida-detalle small {
+    color: var(--res-texto-suave);
+}
+
+.observacion-ajuste-destacada {
+    border-color: #fbbf24;
+    border-left-color: var(--res-ambar);
+    background: #fffbeb;
+    color: #78350f;
+}
+
 /* =========================================================
    TABLET  (<= 1024px)
    ========================================================= */
@@ -1080,6 +1152,16 @@ button:focus-visible {
 
     .lista-productos-modal .producto-agregado {
         grid-template-columns: 1fr;
+    }
+
+    .producto-cantidades-detalle {
+        width: 100%;
+        grid-template-columns: 1fr 1fr;
+        text-align: left;
+    }
+
+    .diferencia-cantidad {
+        justify-self: start;
     }
 }
 

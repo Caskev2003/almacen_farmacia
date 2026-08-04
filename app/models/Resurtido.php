@@ -666,6 +666,9 @@ class Resurtido
                 u.nombre AS solicitante_nombre,
                 ue.nombre AS encargado_nombre,
                 a.nombre AS almacen_nombre,
+                ms.folio AS salida_folio,
+                ms.fecha AS salida_fecha,
+                ms.observaciones AS observaciones_salida,
 
                 COUNT(rd.id) AS total_productos,
 
@@ -689,6 +692,10 @@ class Resurtido
 
             LEFT JOIN almacenes AS a
                 ON a.id = r.almacen_id
+
+            LEFT JOIN movimientos AS ms
+                ON ms.id = r.salida_id
+                AND COALESCE(ms.cancelado, 0) = 0
 
             LEFT JOIN resurtido_detalles AS rd
                 ON rd.resurtido_id = r.id
@@ -714,7 +721,10 @@ class Resurtido
                 r.actualizado_en,
                 u.nombre,
                 ue.nombre,
-                a.nombre
+                a.nombre,
+                ms.folio,
+                ms.fecha,
+                ms.observaciones
 
             LIMIT 1
         ";
@@ -769,6 +779,28 @@ class Resurtido
             (float) (
                 $resurtido['total_cantidad_surtida']
             );
+
+        $observacionSalida = trim(
+            (string) (
+                $resurtido['observaciones_salida'] ?? ''
+            )
+        );
+
+        /*
+         * movimientos.observaciones inicia con una marca técnica como:
+         * "Folio resurtido: RES-1-000024 | ...". En el modal únicamente
+         * se muestra el motivo escrito por el encargado.
+         */
+        $observacionSalida = preg_replace(
+            '/^Folio\s+(?:ticket|resurtido|nota[_\s]remision)'
+            . ':\s*[^|]+(?:\|\s*)?/iu',
+            '',
+            $observacionSalida
+        ) ?? $observacionSalida;
+
+        $resurtido['observaciones_salida'] = trim(
+            $observacionSalida
+        );
 
         $resurtido['productos'] =
             $this->obtenerDetalles($resurtidoId);

@@ -51,9 +51,15 @@
         `almacen_alerta_avisada_${usuarioId}_`;
     const prefijoPendientes =
         `almacen_pendientes_${usuarioId}_`;
+    const claveUltimoRecordatorio =
+        `almacen_ultimo_recordatorio_${usuarioId}`;
     const intervalo = Math.max(
         3000,
         Number(configuracion.intervalo || 5000)
+    );
+    const intervaloRecordatorio = Math.max(
+        60000,
+        Number(configuracion.recordatorio || 180000)
     );
     const tituloOriginal = document.title;
     const estados = {};
@@ -64,6 +70,13 @@
     let consultaEnCurso = false;
     let temporizador = null;
     let toastActual = null;
+    let ultimoRecordatorio = Number(
+        localStorage.getItem(claveUltimoRecordatorio) || 0
+    );
+
+    if (!Number.isFinite(ultimoRecordatorio)) {
+        ultimoRecordatorio = 0;
+    }
 
     tipos.forEach((tipo) => {
         let idsGuardados = null;
@@ -97,6 +110,25 @@
             claveActivacion,
             alertasActivas ? '1' : '0'
         );
+    }
+
+    function guardarUltimoRecordatorio(valor) {
+        ultimoRecordatorio = Math.max(0, Number(valor) || 0);
+
+        try {
+            if (ultimoRecordatorio > 0) {
+                localStorage.setItem(
+                    claveUltimoRecordatorio,
+                    String(ultimoRecordatorio)
+                );
+            } else {
+                localStorage.removeItem(
+                    claveUltimoRecordatorio
+                );
+            }
+        } catch (error) {
+            /* El recordatorio continúa durante la página actual. */
+        }
     }
 
     function actualizarBoton() {
@@ -449,7 +481,7 @@
         );
 
         if (nuevas.length === 0) {
-            return;
+            return false;
         }
 
         const plural = nuevas.length === 1
@@ -480,6 +512,8 @@
                 .map((solicitud) => solicitud.id)
                 .join('-')}`
         );
+
+        return true;
     }
 
     function actualizarContador(tipo, cantidad, aumento) {
@@ -547,6 +581,92 @@
         }
     }
 
+    function obtenerTotalPendientes() {
+        return tipos.reduce(
+            (acumulado, tipo) =>
+                acumulado
+                + (estados[tipo.clave]?.cantidad || 0),
+            0
+        );
+    }
+
+    function describirPendientes() {
+        const partes = tipos
+            .map((tipo) => ({
+                ...tipo,
+                cantidad:
+                    estados[tipo.clave]?.cantidad || 0
+            }))
+            .filter((tipo) => tipo.cantidad > 0)
+            .map((tipo) => {
+                const nombre = tipo.cantidad === 1
+                    ? tipo.nombre
+                    : tipo.nombrePlural;
+
+                return `${tipo.cantidad} ${nombre}`;
+            });
+
+        return partes.length > 0
+            ? `Siguen pendientes: ${partes.join(' y ')}.`
+            : 'No hay solicitudes pendientes.';
+    }
+
+    async function revisarRecordatorio(huboAvisoNuevo) {
+        const total = obtenerTotalPendientes();
+
+        if (total <= 0) {
+            guardarUltimoRecordatorio(0);
+            return;
+        }
+
+        const ahora = Date.now();
+
+        if (huboAvisoNuevo || ultimoRecordatorio <= 0) {
+            guardarUltimoRecordatorio(ahora);
+            return;
+        }
+
+        if (
+            ahora - ultimoRecordatorio
+            < intervaloRecordatorio
+        ) {
+            return;
+        }
+
+        if (!alertasActivas) {
+            return;
+        }
+
+        /*
+         * Se registra antes de reproducir para impedir dos timbres
+         * simultáneos si coinciden el sondeo y un cambio de página.
+         */
+        guardarUltimoRecordatorio(ahora);
+
+        await reproducirSonido();
+        vibrar();
+
+        const tipoDestino = tipos.find(
+            (tipo) =>
+                (estados[tipo.clave]?.cantidad || 0) > 0
+        );
+        const mensaje = describirPendientes();
+        const destino = tipoDestino?.destino || '';
+
+        mostrarToast(
+            'Recordatorio de solicitudes',
+            `${mensaje} Deben surtirse.`,
+            destino,
+            'recordatorio'
+        );
+        mostrarNotificacionSistema(
+            'Solicitudes pendientes por surtir',
+            mensaje,
+            destino,
+            'almacen-recordatorio-pendientes'
+        );
+    }
+
     async function procesarTipo(tipo, datos) {
         const estado = estados[tipo.clave];
         const solicitudes = Array.isArray(
@@ -573,7 +693,7 @@
             estado.cantidad = cantidad;
             guardarPendientes(tipo, idsActuales);
             actualizarContador(tipo, cantidad, false);
-            return;
+            return false;
         }
 
         const nuevas = solicitudes.filter(
@@ -592,8 +712,10 @@
         actualizarContador(tipo, cantidad, aumento);
 
         if (nuevas.length > 0) {
-            await avisarNuevas(tipo, nuevas);
+            return await avisarNuevas(tipo, nuevas);
         }
+
+        return false;
     }
 
     async function consultarPendientes() {
@@ -628,14 +750,20 @@
                 return;
             }
 
+            let huboAvisoNuevo = false;
+
             for (const tipo of tipos) {
-                await procesarTipo(
+                const avisoRealizado = await procesarTipo(
                     tipo,
                     resultado.datos?.[tipo.clave] || {}
                 );
+
+                huboAvisoNuevo =
+                    huboAvisoNuevo || avisoRealizado;
             }
 
             actualizarTituloYBadge();
+            await revisarRecordatorio(huboAvisoNuevo);
         } catch (error) {
             console.warn(
                 'No fue posible actualizar las notificaciones.'
@@ -687,6 +815,10 @@
         await solicitarPermisoSistema();
         await reproducirSonido(true);
         vibrar(true);
+
+        if (obtenerTotalPendientes() > 0) {
+            guardarUltimoRecordatorio(Date.now());
+        }
 
         const mensaje = window.isSecureContext
             ? 'La computadora sonará fuerte; en celular también vibrará al recibir solicitudes nuevas.'

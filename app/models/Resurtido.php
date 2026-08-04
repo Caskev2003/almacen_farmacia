@@ -1530,9 +1530,14 @@ class Resurtido
                     $cantidadesHistoricas[$productoId] ?? 0
                 );
 
-                $cantidadCorregida = min(
-                    $cantidadSolicitada,
-                    max($cantidadActual, $cantidadHistorica)
+                /*
+                 * La salida conserva la cantidad real entregada. Puede ser
+                 * superior a lo solicitado cuando el ENCARGADO ajustó el
+                 * resurtido por empaque o caja completa.
+                 */
+                $cantidadCorregida = max(
+                    $cantidadActual,
+                    $cantidadHistorica
                 );
 
                 if ($cantidadCorregida <= $cantidadActual) {
@@ -1677,7 +1682,8 @@ class Resurtido
         int $resurtidoId,
         int $salidaId,
         int $encargadoId,
-        array $cantidadesSurtidas
+        array $cantidadesSurtidas,
+        bool $permitirAjusteCantidad = false
     ): array {
         if (
             $resurtidoId <= 0
@@ -1695,6 +1701,7 @@ class Resurtido
             $sqlBloqueo = "
                 SELECT
                     id,
+                    tipo_solicitud,
                     estado,
                     salida_id
                 FROM resurtidos
@@ -1722,6 +1729,14 @@ class Resurtido
             $estadoActual = strtoupper(
                 trim((string) ($resurtido['estado'] ?? ''))
             );
+
+            $ajusteCantidadAutorizado =
+                $permitirAjusteCantidad
+                && strtoupper(
+                    trim((string) (
+                        $resurtido['tipo_solicitud'] ?? ''
+                    ))
+                ) === 'RESURTIDO';
 
             if ($estadoActual === 'CANCELADO') {
                 throw new RuntimeException(
@@ -1849,17 +1864,18 @@ class Resurtido
                     $cantidadSolicitada - $cantidadAcumulada
                 );
 
-                if ($cantidadSurtida > $cantidadPendiente) {
+                if (
+                    !$ajusteCantidadAutorizado
+                    && $cantidadSurtida > $cantidadPendiente
+                ) {
                     throw new RuntimeException(
                         'La cantidad surtida supera la cantidad pendiente '
                         . 'del producto.'
                     );
                 }
 
-                $nuevaCantidadAcumulada = min(
-                    $cantidadSolicitada,
-                    $cantidadAcumulada + $cantidadSurtida
-                );
+                $nuevaCantidadAcumulada =
+                    $cantidadAcumulada + $cantidadSurtida;
 
                 $stmtActualizarDetalle->execute([
                     ':cantidad_surtida' =>

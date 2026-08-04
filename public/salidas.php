@@ -156,7 +156,8 @@ if (!function_exists('salidasValidarCantidadesPendientes')) {
      */
     function salidasValidarCantidadesPendientes(
         array $postData,
-        array $detallesResurtido
+        array $detallesResurtido,
+        bool $permitirAjusteCantidad = false
     ): string {
         $pendientes = [];
 
@@ -207,7 +208,10 @@ if (!function_exists('salidasValidarCantidadesPendientes')) {
                 $pendientes[$productoId]['cantidad']
             );
 
-            if ($cantidad > $pendiente) {
+            if (
+                !$permitirAjusteCantidad
+                && $cantidad > $pendiente
+            ) {
                 return 'La cantidad del producto '
                     . $pendientes[$productoId]['codigo']
                     . ' supera lo que queda pendiente ('
@@ -395,6 +399,16 @@ $folioSolicitudOrigen = $esSolicitudTicket
     )
     : (string) ($resurtido['folio'] ?? '');
 
+/*
+ * Únicamente el ENCARGADO puede ajustar hacia arriba o hacia abajo lo pedido,
+ * y solo cuando la solicitud es un RESURTIDO. Tickets, administradores y el
+ * perfil móvil limitado conservan como máximo la cantidad pendiente.
+ */
+$puedeAjustarCantidadResurtido =
+    $modoResurtido
+    && !$esSolicitudTicket
+    && $rolAccesoSalida === 'ENCARGADO';
+
 /* =========================================================
    PROCESAR FORMULARIO
 ========================================================= */
@@ -430,7 +444,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errorCantidadPendiente =
             salidasValidarCantidadesPendientes(
                 $_POST,
-                $resurtido['productos'] ?? []
+                $resurtido['productos'] ?? [],
+                $puedeAjustarCantidadResurtido
             );
     }
 
@@ -474,7 +489,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $resurtidoId,
                         $movimientoId,
                         (int)$user['id'],
-                        $cantidadesSurtidas
+                        $cantidadesSurtidas,
+                        $puedeAjustarCantidadResurtido
                     );
                 }
             } catch (Throwable $e) {
@@ -779,6 +795,14 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <?php if (!empty($resurtido['observaciones'])): ?>
             <div class="resurtido-banner-nota">
                 📝 <?= e($resurtido['observaciones']) ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($puedeAjustarCantidadResurtido): ?>
+            <div class="resurtido-banner-nota">
+                📦 Como ENCARGADO puedes entregar una cantidad mayor o menor
+                a la solicitada. El sistema seguirá respetando la existencia
+                disponible del producto.
             </div>
         <?php endif; ?>
     </div>
@@ -1147,6 +1171,8 @@ const productos = <?php
 
 const resurtidoData = <?= $resurtidoJs !== null ? json_encode($resurtidoJs, JSON_UNESCAPED_UNICODE) : 'null' ?>;
 const modoResurtido = resurtidoData !== null;
+const puedeAjustarCantidadResurtido =
+    <?= $puedeAjustarCantidadResurtido ? 'true' : 'false' ?>;
 const esSolicitudTicketJs =
     modoResurtido
     && resurtidoData.tipo_solicitud === 'TICKET';
@@ -1411,7 +1437,11 @@ function cambiarCantidad(valor) {
         )
         : null;
 
-    if (pedido && nuevo > pedido.pendiente) {
+    if (
+        pedido
+        && !puedeAjustarCantidadResurtido
+        && nuevo > pedido.pendiente
+    ) {
         nuevo = pedido.pendiente;
         mostrarToast(
             `⚠️ Máximo pendiente: ${pedido.pendiente}`,
@@ -1470,6 +1500,7 @@ function agregarFila(producto, cantidad, ubicacion, precio) {
     const tr = document.createElement('tr');
     tr.dataset.productoId = producto.id;
     tr.dataset.precio = precio;
+    tr.dataset.stock = producto.existencia_total;
     tr.classList.add('fila-producto-salida');
     tr.tabIndex = 0;
 
@@ -1483,7 +1514,7 @@ function agregarFila(producto, cantidad, ubicacion, precio) {
         <td data-label="Cantidad">
             <div class="qty-cell">
                 <button type="button" class="qty-step" onclick="pasoCantidadFila(this, -1)">−</button>
-                <input type="number" class="qty-input" value="${cantidad}" min="1" ${pedido ? `max="${pedido.pendiente}"` : ''} step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
+                <input type="number" class="qty-input" value="${cantidad}" min="1" max="${pedido && !puedeAjustarCantidadResurtido ? Math.min(pedido.pendiente, producto.existencia_total) : producto.existencia_total}" step="1" inputmode="numeric" oninput="actualizarCantidadFila(this)">
                 <button type="button" class="qty-step" onclick="pasoCantidadFila(this, 1)">+</button>
             </div>
             ${pedido ? `<span class="pedido-chip">Pedido: ${pedido.pendiente}</span>` : ''}
@@ -1655,6 +1686,7 @@ function agregarProducto() {
 
     if (
         pedido
+        && !puedeAjustarCantidadResurtido
         && cantidad > pedido.pendiente
     ) {
         mostrarToast(
@@ -1701,8 +1733,23 @@ function actualizarCantidadFila(input) {
     if (isNaN(cantidad) || cantidad < 1) cantidad = 1;
 
     const solicitado = parseInt(tr.dataset.solicitado || '0');
+    const stock = parseInt(tr.dataset.stock || '0');
 
-    if (solicitado > 0 && cantidad > solicitado) {
+    if (stock > 0 && cantidad > stock) {
+        cantidad = stock;
+        input.value = cantidad;
+
+        mostrarToast(
+            `⚠️ Máximo disponible: ${stock}`,
+            'warning'
+        );
+    }
+
+    if (
+        solicitado > 0
+        && !puedeAjustarCantidadResurtido
+        && cantidad > solicitado
+    ) {
         cantidad = solicitado;
         input.value = cantidad;
 

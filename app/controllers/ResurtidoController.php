@@ -956,7 +956,8 @@ class ResurtidoController
         int $resurtidoId,
         int $salidaId,
         int $encargadoId,
-        array $cantidadesSurtidas
+        array $cantidadesSurtidas,
+        bool $permitirAjusteCantidad = false
     ): array {
         if ($resurtidoId <= 0) {
             throw new InvalidArgumentException(
@@ -1042,11 +1043,18 @@ class ResurtidoController
             ->resurtidoModel
             ->obtenerPorId($resurtidoId);
 
+        $ajusteCantidadAutorizado =
+            $permitirAjusteCantidad
+            && strtoupper(
+                trim((string) ($_SESSION['user']['rol'] ?? ''))
+            ) === 'ENCARGADO';
+
         $resultado = $this->resurtidoModel->finalizarConSalida(
             $resurtidoId,
             $salidaId,
             $encargadoId,
-            $cantidadesValidadas
+            $cantidadesValidadas,
+            $ajusteCantidadAutorizado
         );
 
         $resurtidoNuevo = $this
@@ -1079,6 +1087,8 @@ class ResurtidoController
             'nuevos' => $resurtidoNuevo ?? $resultado,
             'metadata' => [
                 'cantidades_surtidas' => $cantidadesValidadas,
+                'ajuste_cantidad_autorizado' =>
+                    $ajusteCantidadAutorizado,
             ],
         ]);
 

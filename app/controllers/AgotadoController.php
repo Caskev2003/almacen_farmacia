@@ -578,7 +578,8 @@ class AgotadoController
                                   FROM productos
                                   WHERE id = :producto_id
                                   AND estado = 1
-                                  LIMIT 1";
+                                  LIMIT 1
+                                  FOR UPDATE";
 
             $stmtProductoExiste = $this->conn->prepare($sqlProductoExiste);
             $stmtProductoExiste->execute([
@@ -591,47 +592,43 @@ class AgotadoController
                 throw new Exception('Producto no encontrado.');
             }
 
-            $sqlExiste = "SELECT COUNT(*)
-                          FROM producto_existencias
-                          WHERE producto_id = :producto_id";
+            $sqlExistencias = "SELECT id, existencia
+                               FROM producto_existencias
+                               WHERE producto_id = :producto_id
+                               FOR UPDATE";
 
-            $stmtExiste = $this->conn->prepare($sqlExiste);
-            $stmtExiste->execute([
+            $stmtExistencias = $this->conn->prepare($sqlExistencias);
+            $stmtExistencias->execute([
                 ':producto_id' => $productoId
             ]);
 
-            $existe = (int)$stmtExiste->fetchColumn();
+            $existencias = $stmtExistencias->fetchAll(PDO::FETCH_ASSOC);
+            $existenciaTotal = 0;
 
-            if ($existe > 0) {
-                $sqlBaja = "UPDATE producto_existencias
-                            SET existencia = 0,
-                                ubicacion = 'SIN UBICACION',
-                                sucursal = NULL,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE producto_id = :producto_id";
-
-                $stmtBaja = $this->conn->prepare($sqlBaja);
-                $stmtBaja->execute([
-                    ':producto_id' => $productoId
-                ]);
-            } else {
-                $sqlInsertBaja = "INSERT INTO producto_existencias (
-                                    producto_id,
-                                    sucursal,
-                                    ubicacion,
-                                    existencia
-                                  ) VALUES (
-                                    :producto_id,
-                                    NULL,
-                                    'SIN UBICACION',
-                                    0
-                                  )";
-
-                $stmtInsertBaja = $this->conn->prepare($sqlInsertBaja);
-                $stmtInsertBaja->execute([
-                    ':producto_id' => $productoId
-                ]);
+            foreach ($existencias as $filaExistencia) {
+                $existenciaTotal += (int)($filaExistencia['existencia'] ?? 0);
             }
+
+            if ($existenciaTotal > 0) {
+                throw new Exception(
+                    'El producto todavía tiene ' . $existenciaTotal
+                    . ' pieza(s). Solo se puede dar de baja cuando la existencia es cero.'
+                );
+            }
+
+            /*
+             * sucursal es NOT NULL en producto_existencias. Para representar
+             * correctamente un producto "Sin almacén" no debemos escribir NULL:
+             * quitamos únicamente sus renglones de existencia (que ya están en
+             * cero) y conservamos el producto activo en el catálogo.
+             */
+            $sqlBaja = "DELETE FROM producto_existencias
+                        WHERE producto_id = :producto_id";
+
+            $stmtBaja = $this->conn->prepare($sqlBaja);
+            $stmtBaja->execute([
+                ':producto_id' => $productoId
+            ]);
 
             $sqlProducto = "UPDATE productos
                             SET ubicacion = 'SIN UBICACION'

@@ -103,6 +103,52 @@ $nombreGerenteAutorizo = trim(
     )
 );
 
+/*
+ * La salida guarda datos técnicos como "Folio ticket: ...", mientras que
+ * la observación escrita en la tableta pertenece a la solicitud de origen.
+ * Se muestran ambas para que la impresión y cualquier reimpresión histórica
+ * conserven las indicaciones enviadas por el verificador.
+ */
+$observacionesMovimiento = trim(
+    (string) ($salida['observaciones'] ?? '')
+);
+
+$observacionesSolicitud = trim(
+    (string) (
+        $salida['solicitud_observaciones']
+        ?? ''
+    )
+);
+
+$partesObservaciones = [];
+
+if ($observacionesMovimiento !== '') {
+    $partesObservaciones[] = $observacionesMovimiento;
+}
+
+if (
+    $observacionesSolicitud !== ''
+    && (
+        $observacionesMovimiento === ''
+        || stripos(
+            $observacionesMovimiento,
+            $observacionesSolicitud
+        ) === false
+    )
+) {
+    $partesObservaciones[] =
+        'Solicitud: ' . $observacionesSolicitud;
+}
+
+$observacionesImpresion = implode(
+    ' | ',
+    $partesObservaciones
+);
+
+if ($observacionesImpresion === '') {
+    $observacionesImpresion = 'Sin observaciones';
+}
+
 // Si es AJUSTE -> NO mostrar firmas
 if ($tipoOperacion === 'AJUSTE') {
     $mostrarFirmas = false;
@@ -493,7 +539,7 @@ function imprimirYLimpiar() {
 
                     <div class="info-grid">
                         <div class="label">Observaciones:</div>
-                        <div class="observaciones-box"><?= e($salida['observaciones'] ?? '') ?></div>
+                        <div class="observaciones-box"><?= e($observacionesImpresion) ?></div>
                     </div>
 
                     <div class="line"></div>

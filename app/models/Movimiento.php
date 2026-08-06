@@ -1195,6 +1195,7 @@ class Movimiento
                 r.folio AS solicitud_folio,
                 r.tipo_solicitud AS solicitud_tipo,
                 r.folio_documento AS solicitud_folio_documento,
+                r.observaciones AS solicitud_observaciones,
                 r.verificador_id AS solicitud_verificador_id,
                 COALESCE(
                     NULLIF(TRIM(r.verificador_nombre), ''),
@@ -1385,6 +1386,7 @@ class Movimiento
         $movimiento['solicitud_folio'] = null;
         $movimiento['solicitud_tipo'] = null;
         $movimiento['solicitud_folio_documento'] = null;
+        $movimiento['solicitud_observaciones'] = null;
         $movimiento['solicitud_verificador_id'] = null;
         $movimiento['solicitud_verificador_nombre'] = null;
         $movimiento['solicitud_gerente_nombre'] = null;

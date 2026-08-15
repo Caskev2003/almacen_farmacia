@@ -1,11 +1,13 @@
 <?php
 
 require_once __DIR__ . '/../models/Movimiento.php';
+require_once __DIR__ . '/../models/SalidaBorrador.php';
 require_once __DIR__ . '/../helpers/audit.php';
 
 class SalidaController
 {
     private Movimiento $movimientoModel;
+    private SalidaBorrador $borradorModel;
 
     public function __construct()
     {
@@ -14,6 +16,7 @@ class SalidaController
         }
 
         $this->movimientoModel = new Movimiento();
+        $this->borradorModel = new SalidaBorrador();
     }
 
     private function obtenerAlmacenSesion(): int
@@ -352,7 +355,7 @@ public function cancelarSalida(int $movimientoId, int $usuarioId, string $motivo
 
     return $resultado;
 }
-public function actualizar(int $movimientoId, array $postData, int $usuarioId): array
+    public function actualizar(int $movimientoId, array $postData, int $usuarioId): array
 {
     $salidaAnterior =
         $this->movimientoModel->obtenerSalidaPorId(
@@ -478,4 +481,150 @@ public function actualizar(int $movimientoId, array $postData, int $usuarioId): 
 
     return $resultado;
 }
+
+    public function guardarBorrador(
+        array $postData,
+        int $usuarioId
+    ): array {
+        $usuario = $_SESSION['user'] ?? [];
+        $rol = strtoupper(
+            trim((string) ($usuario['rol'] ?? ''))
+        );
+        $almacenSesionId = (int) (
+            $usuario['almacen_id'] ?? 0
+        );
+        $almacenId = $rol === 'ADMINISTRADOR'
+            ? (int) ($postData['almacen_id'] ?? 0)
+            : $almacenSesionId;
+        $borradorId = (int) (
+            $postData['borrador_id'] ?? 0
+        );
+        $resurtidoId = (int) (
+            $postData['resurtido_id'] ?? 0
+        );
+        $tipoSolicitud = strtoupper(trim((string) (
+            $postData['tipo_solicitud'] ?? 'SALIDA'
+        )));
+        $datos = $postData['datos'] ?? [];
+
+        if (!is_array($datos)) {
+            throw new InvalidArgumentException(
+                'Los datos del borrador no son válidos.'
+            );
+        }
+
+        if ($rol === 'JEFE_ALMACEN' && $resurtidoId <= 0) {
+            throw new RuntimeException(
+                'Esta cuenta solamente puede guardar borradores de Resurtidos o Tickets.'
+            );
+        }
+
+        $resultado = $this->borradorModel->guardar(
+            $usuarioId,
+            $almacenId,
+            (string) ($postData['nombre'] ?? ''),
+            $datos,
+            $resurtidoId > 0 ? $resurtidoId : null,
+            $tipoSolicitud,
+            $borradorId > 0 ? $borradorId : null
+        );
+
+        auditLog([
+            'modulo' => 'Salidas',
+            'accion' => !empty($resultado['actualizado'])
+                ? 'ACTUALIZAR_BORRADOR_SALIDA'
+                : 'CREAR_BORRADOR_SALIDA',
+            'entidad' => 'salida_borrador',
+            'registro_id' => $resultado['id'] ?? null,
+            'descripcion' => (
+                !empty($resultado['actualizado'])
+                    ? 'Actualizó'
+                    : 'Guardó'
+            ) . ' el borrador de salida "'
+                . ($resultado['nombre'] ?? 'Sin nombre')
+                . '".',
+            'nuevos' => [
+                'nombre' => $resultado['nombre'] ?? '',
+                'almacen_id' => $almacenId,
+                'resurtido_id' => $resultado['resurtido_id'] ?? null,
+                'tipo_solicitud' => $resultado['tipo_solicitud'] ?? 'SALIDA',
+                'total_productos' => (
+                    $resultado['total_productos'] ?? 0
+                ),
+            ],
+        ]);
+
+        return $resultado;
+    }
+
+    public function listarBorradores(int $usuarioId): array
+    {
+        return $this->borradorModel->listarPorUsuario($usuarioId);
+    }
+
+    public function obtenerBorrador(
+        int $borradorId,
+        int $usuarioId
+    ): ?array {
+        $borrador = $this->borradorModel->obtener(
+            $borradorId,
+            $usuarioId
+        );
+
+        if ($borrador) {
+            auditLog([
+                'modulo' => 'Salidas',
+                'accion' => 'CONTINUAR_BORRADOR_SALIDA',
+                'entidad' => 'salida_borrador',
+                'registro_id' => $borradorId,
+                'descripcion' => 'Abrió el borrador de salida "'
+                    . ($borrador['nombre'] ?? 'Sin nombre')
+                    . '" para continuar su captura.',
+            ]);
+        }
+
+        return $borrador;
+    }
+
+    public function eliminarBorrador(
+        int $borradorId,
+        int $usuarioId,
+        string $motivo = 'ELIMINADO'
+    ): bool {
+        $borrador = $this->borradorModel->obtener(
+            $borradorId,
+            $usuarioId
+        );
+
+        if (!$borrador) {
+            return false;
+        }
+
+        $eliminado = $this->borradorModel->eliminar(
+            $borradorId,
+            $usuarioId
+        );
+
+        if ($eliminado) {
+            $finalizado = strtoupper($motivo) === 'FINALIZADO';
+
+            auditLog([
+                'modulo' => 'Salidas',
+                'accion' => $finalizado
+                    ? 'FINALIZAR_BORRADOR_SALIDA'
+                    : 'ELIMINAR_BORRADOR_SALIDA',
+                'entidad' => 'salida_borrador',
+                'registro_id' => $borradorId,
+                'descripcion' => $finalizado
+                    ? 'Convirtió el borrador "'
+                        . ($borrador['nombre'] ?? 'Sin nombre')
+                        . '" en una salida definitiva.'
+                    : 'Eliminó el borrador de salida "'
+                        . ($borrador['nombre'] ?? 'Sin nombre')
+                        . '".',
+            ]);
+        }
+
+        return $eliminado;
+    }
 }

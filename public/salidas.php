@@ -16,6 +16,166 @@ $rolAccesoSalida = strtoupper(
     trim((string) ($user['rol'] ?? ''))
 );
 
+$csrfSalida = $_SESSION['csrf_salidas'] ?? '';
+if (!is_string($csrfSalida) || $csrfSalida === '') {
+    $csrfSalida = bin2hex(random_bytes(32));
+    $_SESSION['csrf_salidas'] = $csrfSalida;
+}
+
+$accionSalida = trim((string) ($_GET['action'] ?? ''));
+
+if ($accionSalida !== '') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+
+    try {
+        $usuarioId = (int) ($user['id'] ?? 0);
+
+        if ($accionSalida === 'listar_borradores') {
+            echo json_encode([
+                'success' => true,
+                'borradores' => $controller->listarBorradores($usuarioId),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($accionSalida === 'obtener_borrador') {
+            $borrador = $controller->obtenerBorrador(
+                (int) ($_GET['id'] ?? 0),
+                $usuarioId
+            );
+
+            if (!$borrador) {
+                http_response_code(404);
+                throw new RuntimeException('No se encontró el borrador.');
+            }
+
+            if (
+                $rolAccesoSalida === 'JEFE_ALMACEN'
+                && (
+                    empty($borrador['resurtido_id'])
+                    || (int) ($borrador['almacen_id'] ?? 0)
+                        !== (int) ($user['almacen_id'] ?? 0)
+                )
+            ) {
+                http_response_code(403);
+                throw new RuntimeException(
+                    'Este borrador no pertenece a una solicitud de su almacén.'
+                );
+            }
+
+            echo json_encode([
+                'success' => true,
+                'borrador' => $borrador,
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            throw new RuntimeException('Método no permitido.');
+        }
+
+        $datosJson = json_decode(
+            file_get_contents('php://input') ?: '{}',
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        if (
+            !is_array($datosJson)
+            || !hash_equals(
+                $csrfSalida,
+                (string) ($datosJson['csrf'] ?? '')
+            )
+        ) {
+            http_response_code(419);
+            throw new RuntimeException(
+                'La sesión de captura cambió. Recargue la página.'
+            );
+        }
+
+        if ($accionSalida === 'guardar_borrador') {
+            $solicitudBorradorId = (int) (
+                $datosJson['resurtido_id'] ?? 0
+            );
+
+            if ($solicitudBorradorId > 0) {
+                $controllerSolicitud = new ResurtidoController();
+                $solicitudBorrador = $controllerSolicitud
+                    ->obtenerPorId($solicitudBorradorId);
+
+                if (!$solicitudBorrador) {
+                    throw new RuntimeException(
+                        'La solicitud vinculada al borrador ya no existe.'
+                    );
+                }
+
+                $estadoSolicitud = strtoupper(trim((string) (
+                    $solicitudBorrador['estado'] ?? ''
+                )));
+
+                if (in_array($estadoSolicitud, ['CANCELADO', 'SURTIDO'], true)) {
+                    throw new RuntimeException(
+                        'La solicitud ya está cerrada y no admite nuevos borradores.'
+                    );
+                }
+
+                if (
+                    $rolAccesoSalida !== 'ADMINISTRADOR'
+                    && (int) ($solicitudBorrador['almacen_id'] ?? 0)
+                        !== (int) ($user['almacen_id'] ?? 0)
+                ) {
+                    http_response_code(403);
+                    throw new RuntimeException(
+                        'La solicitud no pertenece al almacén de esta cuenta.'
+                    );
+                }
+            }
+
+            $resultado = $controller->guardarBorrador(
+                $datosJson,
+                $usuarioId
+            );
+
+            echo json_encode([
+                'success' => true,
+                'borrador' => $resultado,
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if ($accionSalida === 'eliminar_borrador') {
+            $eliminado = $controller->eliminarBorrador(
+                (int) ($datosJson['id'] ?? 0),
+                $usuarioId
+            );
+
+            echo json_encode([
+                'success' => $eliminado,
+                'message' => $eliminado
+                    ? 'Borrador eliminado.'
+                    : 'No se encontró el borrador.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        http_response_code(404);
+        throw new RuntimeException('Acción no encontrada.');
+    } catch (Throwable $e) {
+        if (http_response_code() < 400) {
+            http_response_code(400);
+        }
+
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 if ($rolAccesoSalida === 'JEFE_ALMACEN') {
     $solicitudAccesoId = (int) (
         $_POST['resurtido_id']
@@ -312,6 +472,7 @@ if (!function_exists('salidasObtenerAjustesCantidad')) {
 
 $folioOperacionEditar = '';
 $observacionesLimpiasEditar = '';
+$borradorCargaId = (int) ($_GET['cargar_borrador'] ?? 0);
 $editarId = isset($_GET['editar']) ? (int)$_GET['editar'] : 0;
 $modoEdicion = $editarId > 0;
 $salidaEditar = null;
@@ -488,6 +649,7 @@ $movimientoGuardadoId = 0;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $editarPostId = (int)($_POST['editar_id'] ?? 0);
+    $borradorPostId = (int) ($_POST['borrador_id'] ?? 0);
 
     $errorSolicitudBloqueada = '';
     $errorCantidadPendiente = '';
@@ -562,6 +724,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($result['success']) {
         $movimientoId = (int)($result['movimiento_id'] ?? 0);
         $movimientoGuardadoId = $movimientoId;
+
+        if ($movimientoId > 0 && $borradorPostId > 0) {
+            try {
+                $controller->eliminarBorrador(
+                    $borradorPostId,
+                    (int) $user['id'],
+                    'FINALIZADO'
+                );
+            } catch (Throwable $e) {
+                error_log(
+                    'No se pudo cerrar el borrador de salida: '
+                    . $e->getMessage()
+                );
+            }
+        }
 
         $errorVinculo = '';
 
@@ -911,6 +1088,10 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <input type="hidden" name="resurtido_id" value="<?= (int)$resurtido['id'] ?>">
     <?php endif; ?>
 
+    <?php if (!$modoEdicion): ?>
+        <input type="hidden" name="borrador_id" id="borradorId" value="0">
+    <?php endif; ?>
+
     <!-- SECCIÓN 1: DATOS DEL DOCUMENTO -->
     <div class="doc-section">
         <div class="form-grid">
@@ -1015,6 +1196,40 @@ include __DIR__ . '/../app/views/layouts/header.php';
         <div class="folio-previous">
             <span>📋 Último folio registrado: <?= e($folioAnterior ?: 'Sin salidas anteriores') ?></span>
         </div>
+
+        <?php if (!$modoEdicion): ?>
+            <div class="draft-toolbar">
+                <div class="draft-name-field">
+                    <label for="nombreBorradorSalida">Nombre del borrador</label>
+                    <input
+                        type="text"
+                        id="nombreBorradorSalida"
+                        maxlength="150"
+                        placeholder="Ejemplo: Salida pendiente de revisar"
+                    >
+                </div>
+                <div class="draft-actions">
+                    <button
+                        type="button"
+                        class="btn-draft-save"
+                        id="guardarBorradorSalidaBtn"
+                    >
+                        💾 Guardar borrador
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-draft-list"
+                        id="abrirBorradoresSalidaBtn"
+                    >
+                        📂 Mis borradores
+                        <span id="conteoBorradoresSalida">0</span>
+                    </button>
+                </div>
+                <div class="draft-current" id="estadoBorradorSalida">
+                    La captura todavía no está guardada como borrador.
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 
     <?php if ($modoResurtido): ?>
@@ -1189,6 +1404,24 @@ include __DIR__ . '/../app/views/layouts/header.php';
 </form>
 </div>
 
+<?php if (!$modoEdicion): ?>
+<div class="modal-excel" id="modalBorradoresSalida">
+    <div class="modal-excel-content modal-drafts-content">
+        <div class="modal-excel-header">
+            <h3>📂 Borradores de salidas</h3>
+            <button
+                type="button"
+                class="modal-excel-close"
+                id="cerrarBorradoresSalidaBtn"
+            >✕</button>
+        </div>
+        <div class="draft-list" id="listaBorradoresSalida">
+            <div class="draft-empty">Cargando borradores...</div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- MODAL GRANDE ESTILO EXCEL -->
 <div class="modal-excel" id="modalExcel">
     <div class="modal-excel-content">
@@ -1295,6 +1528,10 @@ const folioSolicitudJs =
         )
         : (resurtidoData?.folio || '');
 const filasPrevias = <?= json_encode($filasPrevias, JSON_UNESCAPED_UNICODE) ?>;
+const csrfSalida = <?= json_encode($csrfSalida, JSON_UNESCAPED_UNICODE) ?>;
+const modoEdicionSalida = <?= $modoEdicion ? 'true' : 'false' ?>;
+const borradorCargaId = <?= (int) $borradorCargaId ?>;
+const solicitudPaginaId = <?= (int) $resurtidoId ?>;
 
 let productoSeleccionado = null;
 let modalProductosFiltrados = [];
@@ -1318,6 +1555,15 @@ const observacionesSalidaLabel = document.getElementById(
 );
 const observacionesAjusteAyuda = document.getElementById(
     'observacionesAjusteAyuda'
+);
+const modalBorradoresSalida = document.getElementById(
+    'modalBorradoresSalida'
+);
+const listaBorradoresSalida = document.getElementById(
+    'listaBorradoresSalida'
+);
+const nombreBorradorSalida = document.getElementById(
+    'nombreBorradorSalida'
 );
 
 // ===== UBICACIONES =====
@@ -2161,13 +2407,492 @@ function mostrarToast(mensaje, tipo = 'success') {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return String(str).replace(/[&<>"]/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
         if (m === '"') return '&quot;';
+        if (m === "'") return '&#039;';
         return m;
     });
+}
+
+// ===== BORRADORES DE SALIDAS =====
+function valorCampoSalida(selector) {
+    const campo = document.querySelector(selector);
+    return campo ? String(campo.value ?? '') : '';
+}
+
+function obtenerAlmacenCapturaSalida() {
+    const selector = document.querySelector(
+        'select[name="almacen_id"]'
+    );
+    const oculto = document.querySelector(
+        'input[type="hidden"][name="almacen_id"]'
+    );
+
+    return Number(selector?.value || oculto?.value || 0);
+}
+
+function obtenerProductosBorradorSalida() {
+    return obtenerFilasSalida().map(fila => ({
+        producto_id: Number(
+            fila.querySelector('input[name="producto_id[]"]')?.value || 0
+        ),
+        cantidad: Number(
+            fila.querySelector('input[name="cantidad[]"]')?.value || 0
+        ),
+        costo_unitario: Number(
+            fila.querySelector('input[name="costo_unitario[]"]')?.value || 0
+        ),
+        precio_unitario: Number(
+            fila.querySelector('input[name="precio_unitario[]"]')?.value || 0
+        ),
+        ubicacion: String(
+            fila.querySelector('input[name="ubicacion[]"]')?.value || ''
+        )
+    })).filter(item => item.producto_id > 0 && item.cantidad > 0);
+}
+
+function obtenerDatosBorradorSalida() {
+    const productoPendiente = productoSeleccionado
+        ? {
+            producto_id: Number(productoSeleccionado.id || 0),
+            cantidad: Math.max(1, Number(cantidadInput?.value || 1)),
+            precio_unitario: Math.max(0, Number(precioInput?.value || 0)),
+            ubicacion: String(ubicacionInput?.value || '').trim()
+        }
+        : null;
+
+    return {
+        folio: valorCampoSalida('input[name="folio"]'),
+        fecha: valorCampoSalida('input[name="fecha"]'),
+        tipo_salida: valorCampoSalida('select[name="tipo_salida"]'),
+        tipo_operacion: valorCampoSalida('select[name="tipo_operacion"]')
+            || valorCampoSalida('input[type="hidden"][name="tipo_operacion"]'),
+        folio_operacion: valorCampoSalida('input[name="folio_operacion"]'),
+        observaciones: valorCampoSalida('textarea[name="observaciones"]'),
+        almacen_id: obtenerAlmacenCapturaSalida(),
+        resurtido_id: modoResurtido
+            ? Number(resurtidoData?.id || 0)
+            : 0,
+        tipo_solicitud: modoResurtido
+            ? String(resurtidoData?.tipo_solicitud || 'RESURTIDO')
+            : 'SALIDA',
+        productos: obtenerProductosBorradorSalida(),
+        producto_pendiente: productoPendiente
+    };
+}
+
+async function solicitarJsonSalida(url, opciones = {}) {
+    const respuesta = await fetch(url, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        ...opciones
+    });
+    let resultado;
+
+    try {
+        resultado = await respuesta.json();
+    } catch (error) {
+        throw new Error(
+            'El servidor respondió de forma inesperada. Recargue la página.'
+        );
+    }
+
+    if (!respuesta.ok || !resultado.success) {
+        throw new Error(
+            resultado.message || 'No fue posible completar la operación.'
+        );
+    }
+
+    return resultado;
+}
+
+function actualizarEstadoBorradorSalida(texto) {
+    const estado = document.getElementById('estadoBorradorSalida');
+    if (estado) estado.textContent = texto;
+}
+
+function formatearFechaBorradorSalida(fecha) {
+    if (!fecha) return 'Sin fecha';
+    const valor = new Date(String(fecha).replace(' ', 'T'));
+    return Number.isNaN(valor.getTime())
+        ? String(fecha)
+        : valor.toLocaleString('es-MX');
+}
+
+async function obtenerListaBorradoresSalida() {
+    const resultado = await solicitarJsonSalida(
+        'salidas.php?action=listar_borradores'
+    );
+    return Array.isArray(resultado.borradores)
+        ? resultado.borradores
+        : [];
+}
+
+async function actualizarConteoBorradoresSalida() {
+    const contador = document.getElementById('conteoBorradoresSalida');
+    if (!contador || modoEdicionSalida) return;
+
+    try {
+        const borradores = await obtenerListaBorradoresSalida();
+        contador.textContent = String(borradores.length);
+    } catch (error) {
+        contador.textContent = '!';
+    }
+}
+
+async function guardarBorradorSalida() {
+    if (modoEdicionSalida) return;
+
+    const boton = document.getElementById('guardarBorradorSalidaBtn');
+    const borradorIdInput = document.getElementById('borradorId');
+    const datos = obtenerDatosBorradorSalida();
+
+    if (datos.almacen_id <= 0) {
+        mostrarToast('❌ Seleccione el almacén del borrador', 'error');
+        return;
+    }
+
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = '⏳ Guardando...';
+    }
+
+    try {
+        const resultado = await solicitarJsonSalida(
+            'salidas.php?action=guardar_borrador',
+            {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    csrf: csrfSalida,
+                    borrador_id: Number(borradorIdInput?.value || 0),
+                    nombre: nombreBorradorSalida?.value || '',
+                    almacen_id: datos.almacen_id,
+                    resurtido_id: datos.resurtido_id,
+                    tipo_solicitud: datos.tipo_solicitud,
+                    datos
+                })
+            }
+        );
+        const borrador = resultado.borrador || {};
+
+        if (borradorIdInput) {
+            borradorIdInput.value = String(borrador.id || 0);
+        }
+        if (nombreBorradorSalida) {
+            nombreBorradorSalida.value = borrador.nombre || '';
+        }
+
+        actualizarEstadoBorradorSalida(
+            `Borrador "${borrador.nombre || 'Sin nombre'}" guardado con `
+            + `${borrador.total_productos || 0} producto(s).`
+        );
+        mostrarToast('💾 Borrador de salida guardado');
+        await actualizarConteoBorradoresSalida();
+    } catch (error) {
+        mostrarToast(`❌ ${escapeHtml(error.message)}`, 'error');
+    } finally {
+        if (boton) {
+            boton.disabled = false;
+            boton.textContent = '💾 Guardar borrador';
+        }
+    }
+}
+
+function cerrarBorradoresSalida() {
+    modalBorradoresSalida?.classList.remove('active');
+}
+
+async function abrirBorradoresSalida() {
+    if (!modalBorradoresSalida || !listaBorradoresSalida) return;
+
+    modalBorradoresSalida.classList.add('active');
+    listaBorradoresSalida.innerHTML =
+        '<div class="draft-empty">Cargando borradores...</div>';
+
+    try {
+        const borradores = await obtenerListaBorradoresSalida();
+
+        if (borradores.length === 0) {
+            listaBorradoresSalida.innerHTML = `
+                <div class="draft-empty">
+                    No hay borradores guardados en esta cuenta.
+                </div>
+            `;
+            return;
+        }
+
+        listaBorradoresSalida.innerHTML = borradores.map(borrador => {
+            const origen = borrador.resurtido_id
+                ? `${borrador.tipo_solicitud || 'SOLICITUD'} #${borrador.resurtido_id}`
+                : 'Salida normal';
+
+            return `
+                <article class="draft-card">
+                    <div class="draft-card-info">
+                        <strong>${escapeHtml(borrador.nombre || 'Sin nombre')}</strong>
+                        <span>
+                            ${escapeHtml(origen)} ·
+                            ${Number(borrador.total_productos || 0)} producto(s)
+                        </span>
+                        <small>
+                            ${escapeHtml(borrador.almacen_nombre || 'Sin almacén')} ·
+                            ${escapeHtml(formatearFechaBorradorSalida(borrador.actualizado_en))}
+                        </small>
+                    </div>
+                    <div class="draft-card-actions">
+                        <button
+                            type="button"
+                            class="btn-draft-continue"
+                            data-continuar-borrador-salida="${Number(borrador.id)}"
+                            data-resurtido-id="${Number(borrador.resurtido_id || 0)}"
+                        >Continuar</button>
+                        <button
+                            type="button"
+                            class="btn-draft-delete"
+                            data-eliminar-borrador-salida="${Number(borrador.id)}"
+                        >Eliminar</button>
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        listaBorradoresSalida.querySelectorAll(
+            '[data-continuar-borrador-salida]'
+        ).forEach(boton => {
+            boton.addEventListener('click', () => {
+                const id = Number(boton.dataset.continuarBorradorSalida || 0);
+                const solicitudId = Number(boton.dataset.resurtidoId || 0);
+                const solicitudActual = Number(solicitudPaginaId || 0);
+
+                if (solicitudId !== solicitudActual) {
+                    const url = solicitudId > 0
+                        ? `salidas.php?resurtido_id=${solicitudId}&cargar_borrador=${id}`
+                        : `salidas.php?cargar_borrador=${id}`;
+                    window.location.href = url;
+                    return;
+                }
+
+                continuarBorradorSalida(id);
+            });
+        });
+
+        listaBorradoresSalida.querySelectorAll(
+            '[data-eliminar-borrador-salida]'
+        ).forEach(boton => {
+            boton.addEventListener('click', () => {
+                eliminarBorradorSalida(
+                    Number(boton.dataset.eliminarBorradorSalida || 0)
+                );
+            });
+        });
+    } catch (error) {
+        listaBorradoresSalida.innerHTML = `
+            <div class="draft-empty draft-error">
+                ${escapeHtml(error.message)}
+            </div>
+        `;
+    }
+}
+
+function restaurarProductoPendienteSalida(pendiente) {
+    if (!pendiente || !pendiente.producto_id) return;
+
+    const producto = productos.find(
+        item => Number(item.id) === Number(pendiente.producto_id)
+    );
+    if (!producto) return;
+
+    productoSeleccionado = producto;
+    productoDisplayInput.value =
+        `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
+    cantidadInput.value = String(Math.max(1, Number(pendiente.cantidad || 1)));
+    precioInput.value = String(Math.max(0, Number(
+        pendiente.precio_unitario ?? producto.precio_compra ?? 0
+    )));
+    ubicacionInput.value = String(
+        pendiente.ubicacion || producto.ubicacion_sugerida || ''
+    );
+    document.getElementById('selectedInfo').style.display = 'block';
+    document.getElementById('infoCodigo').textContent = producto.codigo;
+    document.getElementById('infoDescripcion').textContent = producto.descripcion;
+    document.getElementById('infoUnidad').textContent = producto.unidad_medida;
+    document.getElementById('infoStock').textContent = producto.existencia_total;
+}
+
+async function continuarBorradorSalida(id, automatico = false) {
+    try {
+        const resultado = await solicitarJsonSalida(
+            `salidas.php?action=obtener_borrador&id=${Number(id)}`
+        );
+        const borrador = resultado.borrador || {};
+        const datos = borrador.datos || {};
+        const solicitudId = Number(borrador.resurtido_id || 0);
+        const solicitudActual = Number(solicitudPaginaId || 0);
+
+        if (solicitudId !== solicitudActual) {
+            const url = solicitudId > 0
+                ? `salidas.php?resurtido_id=${solicitudId}&cargar_borrador=${Number(id)}`
+                : `salidas.php?cargar_borrador=${Number(id)}`;
+            window.location.href = url;
+            return false;
+        }
+
+        if (solicitudId > 0 && !modoResurtido) {
+            throw new Error(
+                'La solicitud de este borrador ya está cerrada o no tiene piezas pendientes.'
+            );
+        }
+
+        const fecha = document.querySelector('input[name="fecha"]');
+        const tipoSalida = document.querySelector('select[name="tipo_salida"]');
+        const folioOperacion = document.querySelector(
+            'input[name="folio_operacion"]'
+        );
+        const observaciones = document.querySelector(
+            'textarea[name="observaciones"]'
+        );
+        const almacen = document.querySelector('select[name="almacen_id"]');
+
+        if (fecha && datos.fecha) fecha.value = datos.fecha;
+        if (tipoSalida) tipoSalida.value = datos.tipo_salida || '';
+        if (tipoOperacionSelect && !modoResurtido) {
+            tipoOperacionSelect.value = datos.tipo_operacion || '';
+        }
+        if (folioOperacion && !modoResurtido) {
+            folioOperacion.value = datos.folio_operacion || '';
+        }
+        if (observaciones) observaciones.value = datos.observaciones || '';
+        if (almacen && datos.almacen_id) {
+            almacen.value = String(datos.almacen_id);
+        }
+
+        controlarFolioOperacion();
+        detalleBody.innerHTML = '';
+
+        let restaurados = 0;
+        let ajustados = 0;
+
+        (Array.isArray(datos.productos) ? datos.productos : []).forEach(item => {
+            const producto = productos.find(
+                catalogo => Number(catalogo.id) === Number(item.producto_id)
+            );
+            if (!producto || Number(producto.existencia_total || 0) <= 0) {
+                return;
+            }
+
+            let limite = Number(producto.existencia_total || 0);
+            const pedido = obtenerPedidoResurtido(producto.id);
+
+            if (pedido && !puedeAjustarCantidadResurtido) {
+                limite = Math.min(limite, Number(pedido.pendiente || 0));
+            }
+
+            if (limite <= 0) return;
+
+            const solicitada = Math.max(1, Number(item.cantidad || 1));
+            const cantidad = Math.max(1, Math.min(solicitada, limite));
+            const ubicacion = String(
+                item.ubicacion
+                || producto.ubicacion_sugerida
+                || producto.ubicaciones?.[0]?.ubicacion
+                || ''
+            ).trim();
+
+            if (!ubicacion || ubicacion === 'SIN UBICACION') return;
+
+            const fila = agregarFila(
+                producto,
+                cantidad,
+                ubicacion,
+                Math.max(0, Number(
+                    item.precio_unitario ?? producto.precio_compra ?? 0
+                ))
+            );
+            const costo = fila.querySelector(
+                'input[name="costo_unitario[]"]'
+            );
+            if (costo) {
+                costo.value = String(Math.max(0, Number(
+                    item.costo_unitario ?? producto.precio_compra ?? 0
+                )));
+            }
+
+            restaurados++;
+            if (cantidad !== solicitada) ajustados++;
+        });
+
+        if (restaurados === 0) {
+            detalleBody.innerHTML = `
+                <tr id="filaVacia">
+                    <td colspan="8" class="fila-vacia-td">
+                        📭 El borrador no contiene productos disponibles actualmente.
+                    </td>
+                </tr>
+            `;
+        }
+
+        restaurarProductoPendienteSalida(datos.producto_pendiente);
+
+        const borradorIdInput = document.getElementById('borradorId');
+        if (borradorIdInput) borradorIdInput.value = String(borrador.id || 0);
+        if (nombreBorradorSalida) {
+            nombreBorradorSalida.value = borrador.nombre || '';
+        }
+
+        actualizarEstadoBorradorSalida(
+            `Continuando el borrador "${borrador.nombre || 'Sin nombre'}".`
+        );
+        cerrarBorradoresSalida();
+        actualizarTotales();
+        mostrarToast(
+            ajustados > 0
+                ? `📂 Borrador recuperado; ${ajustados} cantidad(es) se ajustaron al pendiente o stock actual`
+                : '📂 Borrador de salida recuperado',
+            ajustados > 0 ? 'warning' : 'success'
+        );
+        return true;
+    } catch (error) {
+        mostrarToast(`❌ ${escapeHtml(error.message)}`, 'error');
+        if (!automatico) abrirBorradoresSalida();
+        return false;
+    }
+}
+
+async function eliminarBorradorSalida(id) {
+    if (!confirm('¿Eliminar este borrador de salida?')) return;
+
+    try {
+        await solicitarJsonSalida(
+            'salidas.php?action=eliminar_borrador',
+            {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    csrf: csrfSalida,
+                    id: Number(id)
+                })
+            }
+        );
+
+        const borradorIdInput = document.getElementById('borradorId');
+        if (Number(borradorIdInput?.value || 0) === Number(id)) {
+            borradorIdInput.value = '0';
+            if (nombreBorradorSalida) nombreBorradorSalida.value = '';
+            actualizarEstadoBorradorSalida(
+                'La captura actual ya no está vinculada a un borrador.'
+            );
+        }
+
+        mostrarToast('🗑️ Borrador eliminado', 'info');
+        await actualizarConteoBorradoresSalida();
+        await abrirBorradoresSalida();
+    } catch (error) {
+        mostrarToast(`❌ ${escapeHtml(error.message)}`, 'error');
+    }
 }
 
 // ===== FOLIO DE OPERACION =====
@@ -2282,12 +3007,21 @@ function guardarSalida() {
 }
 
 // ===== EVENTOS =====
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     generarTodasLasUbicaciones();
     controlarFolioOperacion();
     ponerFechaActual();
 
-    if (!restaurarFilasPrevias()) {
+    let borradorRestaurado = false;
+
+    if (!modoEdicionSalida && borradorCargaId > 0) {
+        borradorRestaurado = await continuarBorradorSalida(
+            borradorCargaId,
+            true
+        );
+    }
+
+    if (!borradorRestaurado && !restaurarFilasPrevias()) {
         precargarResurtido();
     }
 
@@ -2320,6 +3054,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openModalBtn')?.addEventListener('click', abrirModal);
     document.getElementById('productoDisplayInput')?.addEventListener('click', abrirModal);
     document.getElementById('closeModalBtn')?.addEventListener('click', cerrarModal);
+    document.getElementById('guardarBorradorSalidaBtn')
+        ?.addEventListener('click', guardarBorradorSalida);
+    document.getElementById('abrirBorradoresSalidaBtn')
+        ?.addEventListener('click', abrirBorradoresSalida);
+    document.getElementById('cerrarBorradoresSalidaBtn')
+        ?.addEventListener('click', cerrarBorradoresSalida);
+
+    modalBorradoresSalida?.addEventListener('click', event => {
+        if (event.target === modalBorradoresSalida) {
+            cerrarBorradoresSalida();
+        }
+    });
+
+    actualizarConteoBorradoresSalida();
 
     document.getElementById('btnAgregarTodo')?.addEventListener('click', () => {
         let agregados = 0;
@@ -2344,6 +3092,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             cerrarModal();
+        } else if (
+            e.key === 'Escape'
+            && modalBorradoresSalida?.classList.contains('active')
+        ) {
+            cerrarBorradoresSalida();
         }
     });
 

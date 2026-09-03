@@ -86,9 +86,11 @@ class ExistenciaController
         $params = [];
         $esAdmin = $this->esAdministrador();
 
-        $campoPrecio = $esAdmin
-            ? 'p.precio_compra'
-            : 'NULL AS precio_compra';
+        $camposCostos = $esAdmin
+            ? "COALESCE(p.costo_ultimo, p.precio_compra, 0) AS costo_ultimo,
+               COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0) AS costo_promedio"
+            : "NULL AS costo_ultimo,
+               NULL AS costo_promedio";
 
         $almacenId = (int)($filtros['almacen_id'] ?? 0);
 
@@ -185,7 +187,7 @@ class ExistenciaController
                     pr.nombre AS proveedor,
                     p.laboratorio,
                     p.unidad_medida,
-                    {$campoPrecio},
+                    {$camposCostos},
 
                     COALESCE(stock.sucursal, 'SIN ALMACEN') AS sucursal,
                     COALESCE(stock.sucursales, 'SIN ALMACEN') AS sucursales,
@@ -307,7 +309,12 @@ class ExistenciaController
                     COALESCE(
                         SUM(
                             COALESCE(pe.existencia, 0)
-                            * COALESCE(p.precio_compra, 0)
+                            * COALESCE(
+                                p.costo_promedio,
+                                p.costo_ultimo,
+                                p.precio_compra,
+                                0
+                            )
                         ),
                         0
                     ) AS valor_inventario
@@ -347,7 +354,9 @@ class ExistenciaController
         foreach ($productos as $p) {
             $existencia = (int)($p['existencia'] ?? 0);
             $existenciaConUbicacion = (int)($p['existencia_con_ubicacion'] ?? 0);
-            $precio = (float)($p['precio_compra'] ?? 0);
+            $precio = (float)($p['costo_promedio']
+                ?? $p['costo_ultimo']
+                ?? 0);
             $estado = strtoupper(trim((string)($p['estado_stock'] ?? '')));
 
             $totalUnidades += $existenciaConUbicacion;

@@ -18,7 +18,7 @@ $controller = new ReporteController();
 
 $columnasDisponibles = $controller->columnasDisponibles();
 
-$columnasSeleccionadas = $_GET['columnas'] ?? [
+$columnasPredeterminadas = [
     'codigo',
     'descripcion',
     'sucursal',
@@ -26,6 +26,8 @@ $columnasSeleccionadas = $_GET['columnas'] ?? [
     'existencia',
     'estado_stock'
 ];
+
+$columnasSeleccionadas = $_GET['columnas'] ?? $columnasPredeterminadas;
 
 if (!is_array($columnasSeleccionadas)) {
     $columnasSeleccionadas = [];
@@ -72,7 +74,15 @@ echo "\xEF\xBB\xBF";
             <tr>
                 <?php foreach ($columnasSeleccionadas as $col): ?>
                     <?php if (isset($columnasDisponibles[$col])): ?>
-                        <td><?= htmlspecialchars((string)($fila[$col] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <?php if ($col === 'costo_ultimo' && $isAdmin): ?>
+                            <td style="mso-number-format:'$'#,##0.00;"><?= number_format((float)($fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 2, '.', '') ?></td>
+                        <?php elseif ($col === 'costo_promedio' && $isAdmin): ?>
+                            <td style="mso-number-format:'$'#,##0.0000;"><?= number_format((float)($fila['costo_promedio'] ?? $fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 4, '.', '') ?></td>
+                        <?php elseif ($col === 'valor_costo_promedio' && $isAdmin): ?>
+                            <td style="mso-number-format:'$'#,##0.00;"><?= number_format((float)($fila['valor_costo_promedio'] ?? 0), 2, '.', '') ?></td>
+                        <?php else: ?>
+                            <td><?= htmlspecialchars((string)($fila[$col] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <?php endif; ?>
                     <?php endif; ?>
                 <?php endforeach; ?>
             </tr>

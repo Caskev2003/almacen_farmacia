@@ -638,8 +638,27 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                 </div>
 
                 <div class="form-group">
-                    <label>Precio Unitario</label>
-                    <input type="number" step="0.01" min="0" name="precio_compra" value="<?= e($editando['precio_compra'] ?? '0.00') ?>">
+                    <label>Último costo</label>
+                    <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        name="precio_compra"
+                        value="<?= e($editando['costo_ultimo'] ?? $editando['precio_compra'] ?? '0.00') ?>"
+                    >
+                    <small>En productos nuevos funciona como costo inicial. Las entradas lo actualizan automáticamente.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Costo promedio</label>
+                    <input
+                        type="number"
+                        step="0.0001"
+                        value="<?= e($editando['costo_promedio'] ?? $editando['costo_ultimo'] ?? $editando['precio_compra'] ?? '0.0000') ?>"
+                        readonly
+                        style="background:#f3f4f6;"
+                    >
+                    <small>Se calcula automáticamente con las existencias y los costos de entrada.</small>
                 </div>
 
                 <div class="form-group">
@@ -760,7 +779,8 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         <th>Proveedor</th>
                         <th>Marca</th>
                         <th>Unidad</th>
-                        <th>Precio</th>
+                        <th>Último costo</th>
+                        <th>Costo promedio</th>
                         <?php if ($esAdmin): ?>
                             <th>Cd. Hidalgo</th>
                             <th>Tuxtla</th>
@@ -785,7 +805,8 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                                 <td><?= e($producto['proveedor'] ?? '') ?></td>
                                 <td><?= e($producto['laboratorio'] ?? '') ?></td>
                                 <td><?= e($producto['unidad_medida'] ?? '') ?></td>
-                                <td>$<?= number_format((float)($producto['precio_compra'] ?? 0), 2) ?></td>
+                                <td>$<?= number_format((float)($producto['costo_ultimo'] ?? $producto['precio_compra'] ?? 0), 2) ?></td>
+                                <td>$<?= number_format((float)($producto['costo_promedio'] ?? $producto['costo_ultimo'] ?? $producto['precio_compra'] ?? 0), 4) ?></td>
 
                                 <?php if ($esAdmin): ?>
                                     <td class="badge-hidalgo"><?= (int)($producto['existencia_hidalgo'] ?? 0) ?></td>
@@ -878,7 +899,7 @@ function estadoStockProducto(array $producto, bool $esAdmin): array
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?= $esAdmin ? '14' : '13' ?>" class="empty-table">
+                            <td colspan="<?= $esAdmin ? '15' : '14' ?>" class="empty-table">
                                 No hay productos registrados con esos filtros.
                              </td>
                         </tr>

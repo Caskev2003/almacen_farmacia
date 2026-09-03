@@ -289,3 +289,270 @@
         width: 100%;
     }
 }
+
+/* =========================================================
+   Vista rápida de costos
+   ========================================================= */
+.costos-cell {
+    text-align: center;
+}
+
+.btn-vista-costos {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 9px;
+    background: #eff6ff;
+    color: #0f4c81;
+    font-size: 11px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.btn-vista-costos:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    transform: translateY(-1px);
+}
+
+.btn-vista-costos:focus-visible,
+.costos-modal-close:focus-visible,
+.btn-cerrar-costos:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, .28);
+    outline-offset: 2px;
+}
+
+body.costos-modal-open {
+    overflow: hidden;
+}
+
+.costos-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.costos-modal.is-open {
+    display: flex;
+}
+
+.costos-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, .62);
+    backdrop-filter: blur(2px);
+}
+
+.costos-modal-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(760px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
+}
+
+.costos-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.costos-modal-eyebrow {
+    display: block;
+    margin-bottom: 3px;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.costos-modal-header h3 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 21px;
+}
+
+.costos-modal-header p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.costos-modal-close {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border: 0;
+    border-radius: 10px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 25px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.costos-modal-body {
+    padding: 20px 22px;
+}
+
+.costos-modal-section + .costos-modal-section {
+    margin-top: 20px;
+}
+
+.costos-modal-section h4 {
+    margin: 0 0 12px;
+    color: #0f4c81;
+    font-size: 14px;
+}
+
+.costos-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.costos-form-field {
+    min-width: 0;
+}
+
+.costos-form-field label {
+    display: block;
+    margin-bottom: 5px;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .025em;
+}
+
+.costos-form-field input,
+.costos-form-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #dbe3ee;
+    border-radius: 9px;
+    background: #f8fafc;
+    color: #0f172a;
+    padding: 10px 11px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    resize: none;
+}
+
+.costos-span-2 {
+    grid-column: span 2;
+}
+
+.costos-resumen-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.costo-resumen-card {
+    min-width: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 14px;
+}
+
+.costo-resumen-card.destacado {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+}
+
+.costo-resumen-card span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.costo-resumen-card strong {
+    display: block;
+    margin-top: 6px;
+    color: #0f172a;
+    font-size: 21px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+
+.costo-resumen-card small {
+    display: block;
+    margin-top: 7px;
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.costos-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 14px 22px 20px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.btn-cerrar-costos {
+    min-height: 38px;
+    padding: 8px 18px;
+    border: 0;
+    border-radius: 9px;
+    background: #0f62a5;
+    color: #ffffff;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.btn-cerrar-costos:hover {
+    background: #0b4f86;
+}
+
+@media (max-width: 640px) {
+    .costos-modal {
+        padding: 10px;
+    }
+
+    .costos-modal-dialog {
+        max-height: calc(100vh - 20px);
+        border-radius: 12px;
+    }
+
+    .costos-modal-header,
+    .costos-modal-body,
+    .costos-modal-footer {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+
+    .costos-form-grid,
+    .costos-resumen-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .costos-span-2 {
+        grid-column: span 1;
+    }
+
+    .btn-cerrar-costos {
+        width: 100%;
+    }
+}

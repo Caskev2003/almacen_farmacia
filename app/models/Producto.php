@@ -127,6 +127,8 @@ class Producto
                         p.laboratorio,
                         p.unidad_medida,
                         p.precio_compra,
+                        COALESCE(p.costo_ultimo, p.precio_compra, 0) AS costo_ultimo,
+                        COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0) AS costo_promedio,
                         p.precio_venta,
                         p.stock_minimo,
                         p.stock_maximo,
@@ -186,6 +188,8 @@ class Producto
                         p.laboratorio,
                         p.unidad_medida,
                         p.precio_compra,
+                        COALESCE(p.costo_ultimo, p.precio_compra, 0) AS costo_ultimo,
+                        COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0) AS costo_promedio,
                         p.precio_venta,
                         p.stock_minimo,
                         p.stock_maximo,
@@ -326,6 +330,8 @@ class Producto
                     p.laboratorio,
                     p.unidad_medida,
                     p.precio_compra,
+                    p.costo_ultimo,
+                    p.costo_promedio,
                     p.precio_venta,
                     p.stock_minimo,
                     p.stock_maximo,
@@ -540,6 +546,21 @@ class Producto
         return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
     }
 
+
+    private function existenciaTotalProducto(int $productoId): int
+    {
+        $sql = "SELECT COALESCE(SUM(COALESCE(existencia, 0)), 0)
+                FROM producto_existencias
+                WHERE producto_id = :producto_id";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId
+        ]);
+
+        return max(0, (int)$stmt->fetchColumn());
+    }
+
     public function create(array $data): bool
     {
         $proveedorId = $this->obtenerOCrearProveedor($data['proveedor_nombre'] ?? '');
@@ -558,6 +579,8 @@ class Producto
                     laboratorio,
                     unidad_medida,
                     precio_compra,
+                    costo_ultimo,
+                    costo_promedio,
                     precio_venta,
                     stock_minimo,
                     stock_maximo,
@@ -574,6 +597,8 @@ class Producto
                     :laboratorio,
                     :unidad_medida,
                     :precio_compra,
+                    :costo_ultimo,
+                    :costo_promedio,
                     :precio_venta,
                     0,
                     0,
@@ -594,6 +619,8 @@ class Producto
             ':laboratorio' => $data['laboratorio'] ?: null,
             ':unidad_medida' => $data['unidad_medida'] ?: null,
             ':precio_compra' => $data['precio_compra'] ?? 0,
+            ':costo_ultimo' => $data['precio_compra'] ?? 0,
+            ':costo_promedio' => $data['precio_compra'] ?? 0,
             ':precio_venta' => $data['precio_venta'] ?? 0,
             ':ubicacion' => $ubicacion
         ]);
@@ -608,6 +635,15 @@ class Producto
             $ubicacion = null;
         }
 
+        $productoActual = $this->findById($id);
+        $costoUltimo = (float)($data['precio_compra'] ?? 0);
+        $costoPromedio = $this->existenciaTotalProducto($id) > 0
+            ? (float)($productoActual['costo_promedio']
+                ?? $productoActual['costo_ultimo']
+                ?? $productoActual['precio_compra']
+                ?? $costoUltimo)
+            : $costoUltimo;
+
         $sql = "UPDATE productos SET
                     codigo = :codigo,
                     codigo_barras = :codigo_barras,
@@ -617,6 +653,8 @@ class Producto
                     laboratorio = :laboratorio,
                     unidad_medida = :unidad_medida,
                     precio_compra = :precio_compra,
+                    costo_ultimo = :costo_ultimo,
+                    costo_promedio = :costo_promedio,
                     precio_venta = :precio_venta,
                     stock_minimo = 0,
                     stock_maximo = 0,
@@ -633,7 +671,9 @@ class Producto
             ':proveedor_id' => $proveedorId,
             ':laboratorio' => $data['laboratorio'] ?: null,
             ':unidad_medida' => $data['unidad_medida'] ?: null,
-            ':precio_compra' => $data['precio_compra'] ?? 0,
+            ':precio_compra' => $costoUltimo,
+            ':costo_ultimo' => $costoUltimo,
+            ':costo_promedio' => $costoPromedio,
             ':precio_venta' => $data['precio_venta'] ?? 0,
             ':ubicacion' => $ubicacion,
             ':id' => $id
@@ -659,6 +699,15 @@ class Producto
             $ubicacion = null;
         }
 
+        $productoActual = $this->findById($id);
+        $costoUltimo = (float)($data['precio_compra'] ?? 0);
+        $costoPromedio = $this->existenciaTotalProducto($id) > 0
+            ? (float)($productoActual['costo_promedio']
+                ?? $productoActual['costo_ultimo']
+                ?? $productoActual['precio_compra']
+                ?? $costoUltimo)
+            : $costoUltimo;
+
         $sql = "UPDATE productos SET
                     codigo = :codigo,
                     codigo_barras = :codigo_barras,
@@ -668,6 +717,8 @@ class Producto
                     laboratorio = :laboratorio,
                     unidad_medida = :unidad_medida,
                     precio_compra = :precio_compra,
+                    costo_ultimo = :costo_ultimo,
+                    costo_promedio = :costo_promedio,
                     precio_venta = :precio_venta,
                     stock_minimo = 0,
                     stock_maximo = 0,
@@ -690,8 +741,9 @@ class Producto
                 $data['laboratorio'] ?: null,
             ':unidad_medida' =>
                 $data['unidad_medida'] ?: null,
-            ':precio_compra' =>
-                $data['precio_compra'] ?? 0,
+            ':precio_compra' => $costoUltimo,
+            ':costo_ultimo' => $costoUltimo,
+            ':costo_promedio' => $costoPromedio,
             ':precio_venta' =>
                 $data['precio_venta'] ?? 0,
             ':ubicacion' => $ubicacion,

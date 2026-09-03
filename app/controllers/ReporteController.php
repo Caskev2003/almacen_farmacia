@@ -186,6 +186,8 @@ class ReporteController
                 p.laboratorio,
                 p.unidad_medida,
                 p.precio_compra,
+                COALESCE(p.costo_ultimo, p.precio_compra, 0) AS costo_ultimo,
+                COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0) AS costo_promedio,
 
                 COALESCE(
                     stock.sucursal,
@@ -202,6 +204,11 @@ class ReporteController
                     stock.existencia,
                     0
                 ) AS existencia,
+
+                (
+                    COALESCE(stock.existencia, 0)
+                    * COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0)
+                ) AS valor_costo_promedio,
 
                 CASE
                     WHEN COALESCE(stock.existencia, 0) <= 0
@@ -349,7 +356,7 @@ class ReporteController
 
     public function columnasDisponibles(): array
     {
-        return [
+        $columnas = [
             'codigo' => 'Código',
             'codigo_barras' => 'Código de Barras',
             'descripcion' => 'Descripción',
@@ -357,11 +364,21 @@ class ReporteController
             'proveedor' => 'Proveedor',
             'laboratorio' => 'Laboratorio',
             'unidad_medida' => 'Unidad',
-            'precio_compra' => 'Precio Unitario',
             'sucursal' => 'Almacén',
             'ubicacion' => 'Ubicación',
             'existencia' => 'Existencia',
-            'estado_stock' => 'Estado Stock',
         ];
+
+        // Los campos de costos son exclusivos del administrador y se pueden
+        // seleccionar de forma independiente para pantalla, Excel y PDF.
+        if ($this->rol === 'ADMINISTRADOR') {
+            $columnas['costo_ultimo'] = 'Costo último';
+            $columnas['costo_promedio'] = 'Costo promedio';
+            $columnas['valor_costo_promedio'] = 'Valor a costo promedio';
+        }
+
+        $columnas['estado_stock'] = 'Estado Stock';
+
+        return $columnas;
     }
 }

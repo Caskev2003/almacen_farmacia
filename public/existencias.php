@@ -339,8 +339,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                         <th>Estado</th>
 
                         <?php if ($esAdmin): ?>
-                            <th>Precio</th>
-                            <th>Valor</th>
+                            <th>Costos</th>
                         <?php endif; ?>
                     </tr>
                 </thead>
@@ -359,12 +358,16 @@ include __DIR__ . '/../app/views/layouts/header.php';
                                     ?? 0
                                 );
 
-                                $precio = $esAdmin
-                                    ? (float)($producto['precio_compra'] ?? 0)
+                                $costoUltimo = $esAdmin
+                                    ? (float)($producto['costo_ultimo'] ?? 0)
+                                    : 0.0;
+
+                                $costoPromedio = $esAdmin
+                                    ? (float)($producto['costo_promedio'] ?? $costoUltimo)
                                     : 0.0;
 
                                 $valor = $esAdmin
-                                    ? $existencia * $precio
+                                    ? $existencia * $costoPromedio
                                     : 0.0;
 
                                 $estadoTexto = strtoupper(
@@ -425,12 +428,23 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
                                 <?php if ($esAdmin): ?>
 
-                                    <td class="text-right">
-                                        $<?= number_format($precio, 2) ?>
-                                    </td>
-
-                                    <td class="text-right">
-                                        $<?= number_format($valor, 2) ?>
+                                    <td class="costos-cell">
+                                        <button
+                                            type="button"
+                                            class="btn-vista-costos"
+                                            data-costos-modal-open
+                                            data-codigo="<?= e($producto['codigo'] ?? '') ?>"
+                                            data-barras="<?= e($producto['codigo_barras'] ?? '') ?>"
+                                            data-descripcion="<?= e($producto['descripcion'] ?? '') ?>"
+                                            data-almacen="<?= e($producto['sucursal'] ?? 'SIN ALMACEN') ?>"
+                                            data-ubicacion="<?= e($producto['ubicacion'] ?? 'SIN UBICACION') ?>"
+                                            data-existencia="<?= number_format($existencia) ?>"
+                                            data-costo-ultimo="$<?= number_format($costoUltimo, 2) ?>"
+                                            data-costo-promedio="$<?= number_format($costoPromedio, 4) ?>"
+                                            data-valor-promedio="$<?= number_format($valor, 2) ?>"
+                                        >
+                                            👁 Vista rápida
+                                        </button>
                                     </td>
 
                                 <?php endif; ?>
@@ -442,7 +456,7 @@ include __DIR__ . '/../app/views/layouts/header.php';
                     <?php else: ?>
 
                         <tr>
-                            <td colspan="<?= $esAdmin ? 12 : 10 ?>" class="empty-table">
+                            <td colspan="<?= $esAdmin ? 11 : 10 ?>" class="empty-table">
                                 No se encontraron productos con los filtros seleccionados.
                             </td>
                         </tr>
@@ -458,5 +472,144 @@ include __DIR__ . '/../app/views/layouts/header.php';
     </div>
 
 </div>
+
+<?php if ($esAdmin): ?>
+    <div class="costos-modal" id="costosModal" aria-hidden="true">
+        <div class="costos-modal-backdrop" data-costos-modal-close></div>
+
+        <div class="costos-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="costosModalTitulo">
+            <div class="costos-modal-header">
+                <div>
+                    <span class="costos-modal-eyebrow">Vista rápida</span>
+                    <h3 id="costosModalTitulo">Detalle de costos</h3>
+                    <p id="costosModalDescripcion">Consulta del producto seleccionado.</p>
+                </div>
+
+                <button type="button" class="costos-modal-close" data-costos-modal-close aria-label="Cerrar">×</button>
+            </div>
+
+            <div class="costos-modal-body">
+                <div class="costos-modal-section">
+                    <h4>Producto</h4>
+                    <div class="costos-form-grid">
+                        <div class="costos-form-field">
+                            <label>Código</label>
+                            <input type="text" id="modalCostoCodigo" readonly>
+                        </div>
+                        <div class="costos-form-field">
+                            <label>Código de barras</label>
+                            <input type="text" id="modalCostoBarras" readonly>
+                        </div>
+                        <div class="costos-form-field costos-span-2">
+                            <label>Descripción</label>
+                            <textarea id="modalCostoDescripcion" rows="2" readonly></textarea>
+                        </div>
+                        <div class="costos-form-field">
+                            <label>Almacén</label>
+                            <input type="text" id="modalCostoAlmacen" readonly>
+                        </div>
+                        <div class="costos-form-field">
+                            <label>Ubicación</label>
+                            <input type="text" id="modalCostoUbicacion" readonly>
+                        </div>
+                        <div class="costos-form-field">
+                            <label>Existencia</label>
+                            <input type="text" id="modalCostoExistencia" readonly>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="costos-modal-section costos-resumen-section">
+                    <h4>Costos</h4>
+                    <div class="costos-resumen-grid">
+                        <div class="costo-resumen-card">
+                            <span>Último costo</span>
+                            <strong id="modalCostoUltimo">$0.00</strong>
+                            <small>Último costo capturado en una entrada.</small>
+                        </div>
+                        <div class="costo-resumen-card">
+                            <span>Costo promedio</span>
+                            <strong id="modalCostoPromedio">$0.0000</strong>
+                            <small>Promedio ponderado vigente del producto.</small>
+                        </div>
+                        <div class="costo-resumen-card destacado">
+                            <span>Valor a costo promedio</span>
+                            <strong id="modalValorPromedio">$0.00</strong>
+                            <small>Existencia × costo promedio.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="costos-modal-footer">
+                <button type="button" class="btn-cerrar-costos" data-costos-modal-close>Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (() => {
+        const modal = document.getElementById('costosModal');
+        if (!modal) return;
+
+        const campos = {
+            codigo: document.getElementById('modalCostoCodigo'),
+            barras: document.getElementById('modalCostoBarras'),
+            descripcion: document.getElementById('modalCostoDescripcion'),
+            almacen: document.getElementById('modalCostoAlmacen'),
+            ubicacion: document.getElementById('modalCostoUbicacion'),
+            existencia: document.getElementById('modalCostoExistencia'),
+            costoUltimo: document.getElementById('modalCostoUltimo'),
+            costoPromedio: document.getElementById('modalCostoPromedio'),
+            valorPromedio: document.getElementById('modalValorPromedio')
+        };
+
+        let ultimoBoton = null;
+
+        const abrirModal = (boton) => {
+            ultimoBoton = boton;
+            campos.codigo.value = boton.dataset.codigo || '';
+            campos.barras.value = boton.dataset.barras || '';
+            campos.descripcion.value = boton.dataset.descripcion || '';
+            campos.almacen.value = boton.dataset.almacen || '';
+            campos.ubicacion.value = boton.dataset.ubicacion || '';
+            campos.existencia.value = boton.dataset.existencia || '0';
+            campos.costoUltimo.textContent = boton.dataset.costoUltimo || '$0.00';
+            campos.costoPromedio.textContent = boton.dataset.costoPromedio || '$0.0000';
+            campos.valorPromedio.textContent = boton.dataset.valorPromedio || '$0.00';
+
+            const descripcionTitulo = document.getElementById('costosModalDescripcion');
+            descripcionTitulo.textContent = `${boton.dataset.codigo || ''} · ${boton.dataset.descripcion || 'Producto'}`;
+
+            modal.classList.add('is-open');
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('costos-modal-open');
+            const closeButton = modal.querySelector('.costos-modal-close');
+            if (closeButton) closeButton.focus();
+        };
+
+        const cerrarModal = () => {
+            modal.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('costos-modal-open');
+            if (ultimoBoton) ultimoBoton.focus();
+        };
+
+        document.querySelectorAll('[data-costos-modal-open]').forEach((boton) => {
+            boton.addEventListener('click', () => abrirModal(boton));
+        });
+
+        modal.querySelectorAll('[data-costos-modal-close]').forEach((boton) => {
+            boton.addEventListener('click', cerrarModal);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && modal.classList.contains('is-open')) {
+                cerrarModal();
+            }
+        });
+    })();
+    </script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>

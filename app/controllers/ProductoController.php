@@ -28,6 +28,8 @@ class ProductoController
             'laboratorio',
             'unidad_medida',
             'precio_compra',
+            'costo_ultimo',
+            'costo_promedio',
             'precio_venta',
             'ubicacion',
             'estado',
@@ -165,7 +167,7 @@ class ProductoController
         if (!is_numeric($data['precio_compra']) || (float)$data['precio_compra'] < 0) {
             return [
                 'success' => false,
-                'message' => 'El precio unitario no es válido.'
+                'message' => 'El costo último no es válido.'
             ];
         }
 

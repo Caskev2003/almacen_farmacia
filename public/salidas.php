@@ -834,7 +834,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ========================================================= */
 
 $almacenes = $controller->almacenes();
-$productos = $controller->productos();
+$almacenSesion = (int)($user['almacen_id'] ?? 0);
+$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
+
+/*
+ * El ADMINISTRADOR puede no tener un almacén fijo en su sesión. Para que el
+ * catálogo de Salidas lea el stock real, determinamos el almacén que está
+ * surtiendo y usamos ese contexto SOLO durante la consulta del catálogo.
+ * Después restauramos inmediatamente la sesión original.
+ *
+ * Esto evita modificar Movimiento::getProductosParaSalida(), que es utilizado
+ * por el resto del módulo y fue la causa de incompatibilidad de la corrección
+ * anterior.
+ */
+$almacenSeleccionado = $almacenSesion;
+
+if ($modoEdicion && $salidaEditar) {
+    $almacenSeleccionado = (int)($salidaEditar['almacen_id'] ?? $almacenSesion);
+} elseif ($modoResurtido && $resurtido !== null) {
+    $almacenSeleccionado = (int)($resurtido['almacen_id'] ?? $almacenSesion);
+} elseif ($rolUsuario === 'ADMINISTRADOR') {
+    $almacenSeleccionado = (int)(
+        $_POST['almacen_id']
+        ?? $_GET['almacen_id']
+        ?? $almacenSesion
+    );
+}
+
+$productos = [];
+$usuarioSesionOriginal = $_SESSION['user'] ?? null;
+
+try {
+    if ($almacenSeleccionado > 0 && is_array($usuarioSesionOriginal)) {
+        $nombreAlmacenSeleccionado = '';
+
+        foreach ($almacenes as $almacenTmp) {
+            if ((int)($almacenTmp['id'] ?? 0) === $almacenSeleccionado) {
+                $nombreAlmacenSeleccionado = (string)($almacenTmp['nombre'] ?? '');
+                break;
+            }
+        }
+
+        $_SESSION['user']['almacen_id'] = $almacenSeleccionado;
+        $_SESSION['user']['almacen_nombre'] = $nombreAlmacenSeleccionado;
+    }
+
+    $productos = $controller->productos();
+} finally {
+    if ($usuarioSesionOriginal === null) {
+        unset($_SESSION['user']);
+    } else {
+        $_SESSION['user'] = $usuarioSesionOriginal;
+    }
+}
+
 $productosPorId = [];
 
 foreach ($productos as $productoTmp) {
@@ -842,16 +895,14 @@ foreach ($productos as $productoTmp) {
 }
 
 $tiposSalida = $controller->tiposSalida();
-$almacenSesion = (int)($user['almacen_id'] ?? 0);
-$rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
-$folio = $controller->generarFolio($almacenSesion);
+$folio = $controller->generarFolio($almacenSeleccionado);
 
 if ($modoEdicion && $salidaEditar) {
     $folio = $salidaEditar['folio'];
 }
 
-$folioAnterior = $controller->ultimoFolioSalida($almacenSesion);
+$folioAnterior = $controller->ultimoFolioSalida($almacenSeleccionado);
 
 // FECHA AUTOMÁTICA
 $fechaActual = date('Y-m-d\TH:i');
@@ -1159,16 +1210,21 @@ include __DIR__ . '/../app/views/layouts/header.php';
 
             <div class="form-field">
                 <label>🏪 Almacén que surte</label>
-                <select name="almacen_id" required <?= $rolUsuario !== 'ADMINISTRADOR' ? 'disabled' : '' ?>>
+                <select
+                    name="almacen_id"
+                    id="almacenSalidaSelect"
+                    required
+                    <?= ($rolUsuario !== 'ADMINISTRADOR' || $modoResurtido || $modoEdicion) ? 'disabled' : '' ?>
+                >
                     <option value="">Seleccione...</option>
                     <?php foreach ($almacenes as $almacen): ?>
-                        <option value="<?= (int)$almacen['id'] ?>" <?= (int)$almacen['id'] === $almacenSesion ? 'selected' : '' ?>>
+                        <option value="<?= (int)$almacen['id'] ?>" <?= (int)$almacen['id'] === $almacenSeleccionado ? 'selected' : '' ?>>
                             <?= e($almacen['nombre']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <?php if ($rolUsuario !== 'ADMINISTRADOR'): ?>
-                    <input type="hidden" name="almacen_id" value="<?= (int)$almacenSesion ?>">
+                <?php if ($rolUsuario !== 'ADMINISTRADOR' || $modoResurtido || $modoEdicion): ?>
+                    <input type="hidden" name="almacen_id" value="<?= (int)$almacenSeleccionado ?>">
                 <?php endif; ?>
             </div>
 
@@ -1513,6 +1569,7 @@ const productos = <?php
 
 const resurtidoData = <?= $resurtidoJs !== null ? json_encode($resurtidoJs, JSON_UNESCAPED_UNICODE) : 'null' ?>;
 const modoResurtido = resurtidoData !== null;
+const esAdministradorSalida = <?= $rolUsuario === 'ADMINISTRADOR' ? 'true' : 'false' ?>;
 const puedeAjustarCantidadResurtido =
     <?= $puedeAjustarCantidadResurtido ? 'true' : 'false' ?>;
 const esSolicitudTicketJs =
@@ -1532,6 +1589,33 @@ const csrfSalida = <?= json_encode($csrfSalida, JSON_UNESCAPED_UNICODE) ?>;
 const modoEdicionSalida = <?= $modoEdicion ? 'true' : 'false' ?>;
 const borradorCargaId = <?= (int) $borradorCargaId ?>;
 const solicitudPaginaId = <?= (int) $resurtidoId ?>;
+
+/*
+ * Salida manual de ADMINISTRADOR: al cambiar de almacén recargamos la página
+ * con el almacén elegido para que existencia, ubicaciones y folio pertenezcan
+ * a la misma bodega. Resurtidos/Tickets conservan el almacén de la solicitud.
+ */
+const almacenSalidaSelect = document.getElementById('almacenSalidaSelect');
+
+if (
+    almacenSalidaSelect
+    && esAdministradorSalida
+    && !modoResurtido
+    && !modoEdicionSalida
+) {
+    almacenSalidaSelect.addEventListener('change', () => {
+        const almacenId = Number(almacenSalidaSelect.value || 0);
+        const url = new URL(window.location.href);
+
+        if (almacenId > 0) {
+            url.searchParams.set('almacen_id', String(almacenId));
+        } else {
+            url.searchParams.delete('almacen_id');
+        }
+
+        window.location.href = url.toString();
+    });
+}
 
 let productoSeleccionado = null;
 let modalProductosFiltrados = [];

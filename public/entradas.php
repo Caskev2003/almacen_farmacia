@@ -57,6 +57,21 @@ if ($accionEntrada !== '') {
             exit;
         }
 
+        if ($accionEntrada === 'folio_almacen') {
+            $almacenId = (int)($_GET['almacen_id'] ?? 0);
+
+            if ($almacenId <= 0) {
+                throw new RuntimeException('Selecciona un almacén válido.');
+            }
+
+            echo json_encode([
+                'success' => true,
+                'folio' => $controller->generarFolio($almacenId),
+                'ultimo_folio' => $controller->ultimoFolioEntrada($almacenId),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             throw new RuntimeException(
                 'Método no permitido.'
@@ -236,14 +251,24 @@ $tiposEntrada = $controller->tiposEntrada();
 $almacenSesion = (int)($user['almacen_id'] ?? 0);
 $rolUsuario = strtoupper(trim($user['rol'] ?? ''));
 
-$folio = $controller->generarFolio($almacenSesion);
+$puedeSeleccionarAlmacenInicial = in_array(
+    $rolUsuario,
+    ['ADMINISTRADOR', 'ENCARGADO'],
+    true
+);
+
+$folio = $almacenSesion > 0
+    ? $controller->generarFolio($almacenSesion)
+    : '';
+
 if ($modoEdicion && $entradaEditar) {
     $folio = $entradaEditar['folio'];
 }
 
-$folioAnterior = method_exists($controller, 'ultimoFolioEntrada')
-    ? $controller->ultimoFolioEntrada($almacenSesion)
-    : '';
+$folioAnterior = $almacenSesion > 0
+    && method_exists($controller, 'ultimoFolioEntrada')
+        ? $controller->ultimoFolioEntrada($almacenSesion)
+        : '';
 
 date_default_timezone_set('America/Mexico_City');
 
@@ -305,6 +330,9 @@ foreach ($productos as $p) {
         'codigo' => $p['codigo'],
         'descripcion' => $p['descripcion'],
         'precio_compra' => (float)($p['precio_compra'] ?? 0),
+        'costo_ultimo' => (float)($p['costo_ultimo'] ?? $p['precio_compra'] ?? 0),
+        'costo_promedio' => (float)($p['costo_promedio'] ?? $p['costo_ultimo'] ?? $p['precio_compra'] ?? 0),
+        'existencia_total' => (int)($p['existencia_total'] ?? 0),
         'ubicacion_sugerida' => $ubicacionSugerida,
         'ubicaciones' => $ubicacionesProducto
     ];
@@ -1152,7 +1180,7 @@ body {
         <div class="form-grid">
             <div class="form-field">
                 <label>📄 Folio</label>
-                <input type="text" name="folio" value="<?= e($folio) ?>" readonly>
+                <input type="text" name="folio" id="folioEntrada" value="<?= e($folio) ?>" placeholder="Seleccione un almacén" data-modo-edicion="<?= $modoEdicion ? '1' : '0' ?>" readonly>
             </div>
 
             <div class="form-field">
@@ -1192,6 +1220,7 @@ body {
 
     <select
         name="almacen_id"
+        id="almacenEntradaSelect"
         required
         <?= !$puedeEditarAlmacen ? 'disabled' : '' ?>
     >
@@ -1247,7 +1276,7 @@ body {
         </div>
         
         <div class="folio-previous">
-            <span>📋 Último folio registrado: <?= e($folioAnterior ?: 'Sin entradas anteriores') ?></span>
+            <span id="folioAnteriorTexto">📋 Último folio registrado: <?= e($folioAnterior !== '' ? $folioAnterior : (($almacenSesion <= 0 && !$modoEdicion) ? 'Seleccione un almacén' : 'Sin entradas anteriores')) ?></span>
         </div>
 
         <?php if (!$modoEdicion): ?>
@@ -1304,7 +1333,7 @@ body {
             </div>
 
             <div class="capture-field">
-                <label>💰 Precio unitario</label>
+                <label>💰 Costo de entrada (nuevo último costo)</label>
                 <input type="number" id="precioInput" step="0.01" value="0.00">
             </div>
 
@@ -1346,6 +1375,9 @@ body {
             <div class="selected-info">
                 <div class="row"><span class="label">📦 Producto:</span><span class="value" id="infoCodigo">-</span></div>
                 <div class="row"><span class="label">📝 Descripción:</span><span class="value" id="infoDescripcion">-</span></div>
+                <div class="row"><span class="label">💵 Último costo actual:</span><span class="value" id="infoCostoUltimo">-</span></div>
+                <div class="row"><span class="label">📊 Costo promedio actual:</span><span class="value" id="infoCostoPromedio">-</span></div>
+                <div class="row"><span class="label">📦 Existencia total:</span><span class="value" id="infoExistenciaTotal">-</span></div>
                 <div class="row"><span class="label">📍 Ubicación sugerida:</span><span class="value" id="infoUbicacion">-</span></div>
             </div>
         </div>
@@ -1373,7 +1405,8 @@ body {
                         <th>Cantidad</th>
                         <th>Código</th>
                         <th>Descripción</th>
-                        <th>Precio U.</th>
+                        <th>Último costo</th>
+                        <th>Costo promedio</th>
                         <th>Lote</th>
                         <th>Ubicación</th>
                         <th>Importe</th>
@@ -1384,10 +1417,17 @@ body {
                     <?php if ($modoEdicion && !empty($entradaEditar['detalles'])): ?>
                         <?php foreach ($entradaEditar['detalles'] as $item): 
                             $cantidad = (int)($item['cantidad'] ?? 0);
-                            $precio = (float)($item['precio_unitario'] ?? 0);
-                            $importe = $cantidad * $precio;
                             $costoUnitario = (float)($item['costo_unitario'] ?? 0);
+                            $precio = $costoUnitario;
+                            $importe = $cantidad * $precio;
                             $productoId = (int)($item['producto_id'] ?? 0);
+                            $costoPromedioActual = 0.0;
+                            foreach ($productosJson as $productoCostoTmp) {
+                                if ((int)$productoCostoTmp['id'] === $productoId) {
+                                    $costoPromedioActual = (float)($productoCostoTmp['costo_promedio'] ?? 0);
+                                    break;
+                                }
+                            }
                             $ubicacion = trim($item['ubicacion'] ?? '');
                             $codigo = e($item['codigo'] ?? '');
                             $descripcion = e(substr($item['descripcion'] ?? '', 0, 60));
@@ -1410,7 +1450,10 @@ body {
                                 <td><strong><?= $codigo ?></strong></td>
                                 <td><?= $descripcion ?></td>
                                 <td>
-                                    <input type="number" class="price-input" value="<?= number_format($precio, 2) ?>" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
+                                    <input type="number" class="price-input" value="<?= number_format($precio, 2, '.', '') ?>" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:90px; padding:6px;">
+                                </td>
+                                <td class="costo-promedio-estimado" data-costo-promedio="<?= e((string)$costoPromedioActual) ?>">
+                                    $<?= number_format($costoPromedioActual, 4) ?>
                                 </td>
                                 <td><?= e($lote) ?></td>
                                 <td><?= e($ubicacion) ?></td>
@@ -1420,7 +1463,7 @@ body {
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr id="filaVacia">
-                            <td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">
+                            <td colspan="9" style="text-align: center; padding: 50px; color: #9ca3af;">
                                 📭 No hay productos. Presiona Ctrl+B para buscar
                             </td>
                         </tr>
@@ -1458,7 +1501,8 @@ body {
                     <tr>
                         <th>Código</th>
                         <th>Descripción</th>
-                        <th>Precio</th>
+                        <th>Último Costo</th>
+                        <th>Costo promedio</th>
                         <th>Ubicación sugerida</th>
                         <th>Ubicaciones disponibles</th>
                         <th>Copiar</th>
@@ -1563,7 +1607,7 @@ function cargarProductosEnModal(productosList) {
     modalResultCount.textContent = productosList.length;
     
     if (productosList.length === 0) {
-        modalTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+        modalTableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
         return;
     }
     
@@ -1583,7 +1627,8 @@ function cargarProductosEnModal(productosList) {
                     data-copy-idx="${idx}"
                     title="Clic para copiar la descripción"
                 >${escapeHtml(p.descripcion)}</td>
-                <td>$${p.precio_compra.toFixed(2)}</td>
+                <td>$${Number(p.costo_ultimo ?? p.precio_compra ?? 0).toFixed(2)}</td>
+                <td>$${Number(p.costo_promedio ?? p.costo_ultimo ?? p.precio_compra ?? 0).toFixed(4)}</td>
                 <td>${escapeHtml(p.ubicacion_sugerida || 'N/A')}</td>
                 <td><small>${escapeHtml(ubicacionesTexto || 'Ninguna')}</small></td>
                 <td>
@@ -1692,10 +1737,13 @@ function seleccionarProductoDelModal(producto) {
     document.getElementById('selectedInfo').style.display = 'block';
     document.getElementById('infoCodigo').innerHTML = `<strong>${escapeHtml(producto.codigo)}</strong>`;
     document.getElementById('infoDescripcion').textContent = producto.descripcion;
+    document.getElementById('infoCostoUltimo').textContent = `$${Number(producto.costo_ultimo ?? producto.precio_compra ?? 0).toFixed(2)}`;
+    document.getElementById('infoCostoPromedio').textContent = `$${Number(producto.costo_promedio ?? producto.costo_ultimo ?? producto.precio_compra ?? 0).toFixed(4)}`;
+    document.getElementById('infoExistenciaTotal').textContent = Number(producto.existencia_total ?? 0).toLocaleString();
     document.getElementById('infoUbicacion').textContent = producto.ubicacion_sugerida || 'No definida';
     
     productoDisplayInput.value = `${producto.codigo} - ${producto.descripcion.substring(0, 50)}`;
-    precioInput.value = producto.precio_compra;
+    precioInput.value = Number(producto.costo_ultimo ?? producto.precio_compra ?? 0).toFixed(2);
     if (producto.ubicacion_sugerida) {
         window.UbicacionesRapidas?.establecerValor(
             ubicacionInput,
@@ -1836,8 +1884,9 @@ function crearFilaProductoCapturado(item) {
         <td><strong>${escapeHtml(codigo)}</strong></td>
         <td title="${escapeHtml(descripcion)}">${escapeHtml(descripcion.substring(0, 60))}</td>
         <td>
-            <input type="number" class="price-input" value="${precio.toFixed(2)}" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:80px; padding:6px;">
+            <input type="number" class="price-input" value="${precio.toFixed(2)}" step="0.01" min="0" onchange="actualizarPrecioFila(this)" style="width:90px; padding:6px;">
         </td>
+        <td class="costo-promedio-estimado">$0.0000</td>
         <td>${escapeHtml(lote)}</td>
         <td>${escapeHtml(ubicacion)}</td>
         <td class="importe-fila" data-importe="${importe}"><strong>$${importe.toFixed(2)}</strong></td>
@@ -1847,6 +1896,7 @@ function crearFilaProductoCapturado(item) {
     detalleBody.appendChild(tr);
     prepararNavegacionFilas();
     activarFilaCapturada(tr);
+    actualizarCostosPromedioEstimados();
 
     return tr;
 }
@@ -1962,6 +2012,71 @@ function navegarFilasCapturadas(event) {
     );
 }
 
+
+function actualizarCostosPromedioEstimados() {
+    const estados = new Map();
+
+    document.querySelectorAll('#detalleBody tr[data-producto-id]').forEach((tr) => {
+        const productoId = Number.parseInt(tr.dataset.productoId || '0', 10);
+        const producto = productos.find((p) => Number(p.id) === productoId);
+        const celdaPromedio = tr.querySelector('.costo-promedio-estimado');
+
+        if (!producto || !celdaPromedio) {
+            return;
+        }
+
+        if (modoEdicionEntrada) {
+            const promedioActual = Number(
+                producto.costo_promedio
+                ?? producto.costo_ultimo
+                ?? producto.precio_compra
+                ?? 0
+            );
+            celdaPromedio.textContent = `$${promedioActual.toFixed(4)}`;
+            return;
+        }
+
+        if (!estados.has(productoId)) {
+            estados.set(productoId, {
+                existencia: Math.max(0, Number(producto.existencia_total ?? 0)),
+                promedio: Math.max(
+                    0,
+                    Number(
+                        producto.costo_promedio
+                        ?? producto.costo_ultimo
+                        ?? producto.precio_compra
+                        ?? 0
+                    )
+                ),
+            });
+        }
+
+        const estado = estados.get(productoId);
+        const cantidad = Math.max(
+            0,
+            Number.parseInt(tr.querySelector('.qty-input')?.value || '0', 10) || 0
+        );
+        const costoNuevo = Math.max(
+            0,
+            Number.parseFloat(tr.querySelector('.price-input')?.value || '0') || 0
+        );
+
+        const existenciaNueva = estado.existencia + cantidad;
+        const promedioNuevo = existenciaNueva > 0
+            ? (
+                (estado.existencia * estado.promedio)
+                + (cantidad * costoNuevo)
+            ) / existenciaNueva
+            : costoNuevo;
+
+        celdaPromedio.textContent = `$${promedioNuevo.toFixed(4)}`;
+        celdaPromedio.dataset.costoPromedio = promedioNuevo.toFixed(4);
+
+        estado.existencia = existenciaNueva;
+        estado.promedio = promedioNuevo;
+    });
+}
+
 function actualizarCantidadFila(input) {
     const tr = input.closest('tr');
     let cantidad = parseInt(input.value);
@@ -1981,6 +2096,7 @@ function actualizarCantidadFila(input) {
     if (hiddenInput) hiddenInput.value = cantidad;
     
     actualizarTotales();
+    actualizarCostosPromedioEstimados();
 }
 
 function actualizarPrecioFila(input) {
@@ -2002,21 +2118,23 @@ function actualizarPrecioFila(input) {
     if (hiddenInput) hiddenInput.value = precio.toFixed(2);
     
     actualizarTotales();
+    actualizarCostosPromedioEstimados();
 }
 
 function eliminarFila(btn) {
     btn.closest('tr').remove();
     if (detalleBody.children.length === 0) {
-        detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
+        detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="9" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
     }
     prepararNavegacionFilas();
     actualizarTotales();
+    actualizarCostosPromedioEstimados();
     mostrarToast('🗑️ Producto eliminado', 'info');
 }
 
 function limpiarTodo() {
     if (confirm('¿Eliminar todos los productos?')) {
-        detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="8" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
+        detalleBody.innerHTML = '<tr id="filaVacia"><td colspan="9" style="text-align: center; padding: 50px; color: #9ca3af;">📭 No hay productos. Presiona Ctrl+B para buscar</td></tr>';
         prepararNavegacionFilas();
         actualizarTotales();
         mostrarToast('🧹 Lista limpiada', 'info');
@@ -2492,7 +2610,7 @@ async function continuarBorrador(id) {
 
         if (productosBorrador.length === 0) {
             detalleBody.innerHTML =
-                '<tr id="filaVacia"><td colspan="8" '
+                '<tr id="filaVacia"><td colspan="9" '
                 + 'style="text-align:center;padding:50px;color:#9ca3af;">'
                 + '📭 No hay productos. Presiona Ctrl+B para buscar'
                 + '</td></tr>';
@@ -2579,6 +2697,74 @@ async function eliminarBorradorEntrada(id) {
 // ===== REFERENCIA DOCUMENTO =====
 const tipoDocumento = document.getElementById('tipo_documento');
 const folioDocumento = document.getElementById('folio_documento');
+const folioEntradaInput = document.getElementById('folioEntrada');
+const folioAnteriorTexto = document.getElementById('folioAnteriorTexto');
+const almacenEntradaSelect = document.getElementById('almacenEntradaSelect');
+
+async function actualizarFolioPorAlmacen() {
+    if (!folioEntradaInput || !almacenEntradaSelect) {
+        return;
+    }
+
+    // En edición se conserva el folio original del movimiento.
+    if (folioEntradaInput.dataset.modoEdicion === '1') {
+        return;
+    }
+
+    const almacenId = Number(almacenEntradaSelect.value || 0);
+
+    if (almacenId <= 0) {
+        folioEntradaInput.value = '';
+        folioEntradaInput.placeholder = 'Seleccione un almacén';
+
+        if (folioAnteriorTexto) {
+            folioAnteriorTexto.textContent = '📋 Último folio registrado: Seleccione un almacén';
+        }
+        return;
+    }
+
+    const valorAnterior = folioEntradaInput.value;
+    folioEntradaInput.value = 'Calculando...';
+
+    try {
+        const respuesta = await fetch(
+            `entradas.php?action=folio_almacen&almacen_id=${encodeURIComponent(almacenId)}`,
+            {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                cache: 'no-store'
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.success) {
+            throw new Error(datos.message || 'No se pudo generar el folio.');
+        }
+
+        folioEntradaInput.value = datos.folio || '';
+
+        if (folioAnteriorTexto) {
+            folioAnteriorTexto.textContent = '📋 Último folio registrado: '
+                + (datos.ultimo_folio || 'Sin entradas anteriores');
+        }
+    } catch (error) {
+        console.error('Error al actualizar folio:', error);
+        folioEntradaInput.value = valorAnterior || '';
+
+        if (!folioEntradaInput.value) {
+            folioEntradaInput.placeholder = 'Error al generar folio';
+        }
+    }
+}
+
+if (almacenEntradaSelect) {
+    almacenEntradaSelect.addEventListener('change', actualizarFolioPorAlmacen);
+
+    if (almacenEntradaSelect.value && folioEntradaInput?.dataset.modoEdicion !== '1') {
+        actualizarFolioPorAlmacen();
+    }
+}
 const referenciaFinal = document.getElementById('referencia_final');
 
 function construirReferencia() {

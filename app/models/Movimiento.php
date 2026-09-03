@@ -25,6 +25,197 @@ class Movimiento
         return $ubicacion !== '' ? $ubicacion : 'SIN UBICACION';
     }
 
+
+    /**
+     * Existencia total del producto en todo el sistema, antes de una nueva entrada.
+     * Se usa para calcular el costo promedio ponderado.
+     */
+    private function obtenerExistenciaTotalProducto(int $productoId): int
+    {
+        $sql = "SELECT COALESCE(SUM(COALESCE(existencia, 0)), 0)
+                FROM producto_existencias
+                WHERE producto_id = :producto_id";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId
+        ]);
+
+        return max(0, (int)$stmt->fetchColumn());
+    }
+
+    /**
+     * Actualiza el costo último y el costo promedio ponderado de una entrada.
+     *
+     * Fórmula:
+     * ((existencia anterior * costo promedio anterior)
+     *  + (cantidad entrada * costo nuevo))
+     * / (existencia anterior + cantidad entrada)
+     */
+    private function actualizarCostosPorEntrada(
+        int $productoId,
+        int $cantidadEntrada,
+        float $costoNuevo,
+        string $ubicacion
+    ): array {
+        $cantidadEntrada = max(0, $cantidadEntrada);
+        $costoNuevo = max(0, $costoNuevo);
+        $existenciaAnterior = $this->obtenerExistenciaTotalProducto(
+            $productoId
+        );
+
+        $sqlCosto = "SELECT
+                        COALESCE(costo_ultimo, precio_compra, 0) AS costo_ultimo,
+                        COALESCE(costo_promedio, costo_ultimo, precio_compra, 0) AS costo_promedio
+                     FROM productos
+                     WHERE id = :producto_id
+                     LIMIT 1";
+
+        $stmtCosto = $this->conn->prepare($sqlCosto);
+        $stmtCosto->execute([
+            ':producto_id' => $productoId
+        ]);
+
+        $producto = $stmtCosto->fetch(PDO::FETCH_ASSOC);
+
+        if (!$producto) {
+            throw new Exception('Producto no encontrado para actualizar costos.');
+        }
+
+        $costoPromedioAnterior = (float)($producto['costo_promedio'] ?? 0);
+
+        if ($existenciaAnterior > 0 && $costoPromedioAnterior <= 0) {
+            $costoPromedioAnterior = (float)($producto['costo_ultimo'] ?? 0);
+        }
+
+        $existenciaNueva = $existenciaAnterior + $cantidadEntrada;
+
+        $costoPromedioNuevo = $existenciaNueva > 0
+            ? (
+                ($existenciaAnterior * $costoPromedioAnterior)
+                + ($cantidadEntrada * $costoNuevo)
+            ) / $existenciaNueva
+            : $costoNuevo;
+
+        $sqlUpdate = "UPDATE productos
+                      SET costo_ultimo = :costo_ultimo,
+                          costo_promedio = :costo_promedio,
+                          precio_compra = :precio_compra,
+                          ubicacion = :ubicacion
+                      WHERE id = :producto_id";
+
+        $stmtUpdate = $this->conn->prepare($sqlUpdate);
+        $stmtUpdate->execute([
+            ':costo_ultimo' => $costoNuevo,
+            ':costo_promedio' => $costoPromedioNuevo,
+            // Compatibilidad: precio_compra continúa representando el último costo.
+            ':precio_compra' => $costoNuevo,
+            ':ubicacion' => $ubicacion,
+            ':producto_id' => $productoId,
+        ]);
+
+        return [
+            'existencia_anterior' => $existenciaAnterior,
+            'cantidad_entrada' => $cantidadEntrada,
+            'existencia_nueva' => $existenciaNueva,
+            'costo_ultimo' => $costoNuevo,
+            'costo_promedio_anterior' => $costoPromedioAnterior,
+            'costo_promedio_nuevo' => $costoPromedioNuevo,
+        ];
+    }
+
+
+    /**
+     * Revierte el efecto de costo de una entrada al editarla/cancelarla.
+     * Funciona de forma exacta mientras no se altere retroactivamente una entrada
+     * anterior a otras compras posteriores del mismo producto.
+     */
+    private function revertirCostosDeEntrada(
+        int $productoId,
+        int $cantidadEntrada,
+        float $costoEntrada
+    ): void {
+        $existenciaConEntrada = $this->obtenerExistenciaTotalProducto(
+            $productoId
+        );
+
+        $stmt = $this->conn->prepare(
+            "SELECT
+                COALESCE(costo_ultimo, precio_compra, 0) AS costo_ultimo,
+                COALESCE(costo_promedio, costo_ultimo, precio_compra, 0) AS costo_promedio
+             FROM productos
+             WHERE id = :producto_id
+             LIMIT 1"
+        );
+        $stmt->execute([
+            ':producto_id' => $productoId
+        ]);
+        $producto = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$producto) {
+            return;
+        }
+
+        $cantidadRestante = max(0, $existenciaConEntrada - $cantidadEntrada);
+        $valorActual = $existenciaConEntrada
+            * (float)($producto['costo_promedio'] ?? 0);
+        $valorRestante = max(
+            0,
+            $valorActual - ($cantidadEntrada * $costoEntrada)
+        );
+
+        $promedioRestante = $cantidadRestante > 0
+            ? $valorRestante / $cantidadRestante
+            : 0.0;
+
+        $stmtUpdate = $this->conn->prepare(
+            "UPDATE productos
+             SET costo_promedio = :costo_promedio
+             WHERE id = :producto_id"
+        );
+        $stmtUpdate->execute([
+            ':costo_promedio' => $promedioRestante,
+            ':producto_id' => $productoId
+        ]);
+    }
+
+
+    private function sincronizarCostoUltimoDesdeHistorial(int $productoId): void
+    {
+        $sql = "SELECT md.costo_unitario
+                FROM movimiento_detalle md
+                INNER JOIN movimientos m
+                    ON m.id = md.movimiento_id
+                WHERE md.producto_id = :producto_id
+                  AND m.tipo_movimiento = 'ENTRADA'
+                  AND COALESCE(m.cancelado, 0) = 0
+                ORDER BY m.fecha DESC, m.id DESC, md.id DESC
+                LIMIT 1";
+
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([
+            ':producto_id' => $productoId
+        ]);
+
+        $costo = $stmt->fetchColumn();
+
+        if ($costo === false) {
+            return;
+        }
+
+        $stmtUpdate = $this->conn->prepare(
+            "UPDATE productos
+             SET costo_ultimo = :costo_ultimo,
+                 precio_compra = :precio_compra
+             WHERE id = :producto_id"
+        );
+        $stmtUpdate->execute([
+            ':costo_ultimo' => (float)$costo,
+            ':precio_compra' => (float)$costo,
+            ':producto_id' => $productoId
+        ]);
+    }
+
     private function obtenerSucursalPorAlmacenId(?int $almacenId): string
     {
         $almacenId = (int)$almacenId;
@@ -744,9 +935,16 @@ class Movimiento
                     p.codigo_barras,
                     p.descripcion,
                     p.precio_compra,
+                    COALESCE(p.costo_ultimo, p.precio_compra, 0) AS costo_ultimo,
+                    COALESCE(p.costo_promedio, p.costo_ultimo, p.precio_compra, 0) AS costo_promedio,
                     p.precio_venta,
                     p.unidad_medida,
                     COALESCE(NULLIF(TRIM(p.ubicacion), ''), 'SIN UBICACION') AS ubicacion,
+                    COALESCE((
+                        SELECT SUM(COALESCE(pe.existencia, 0))
+                        FROM producto_existencias pe
+                        WHERE pe.producto_id = p.id
+                    ), 0) AS existencia_total,
                     0 AS existencia_actual,
                     0 AS existencia_bodega
                 FROM productos p
@@ -853,13 +1051,6 @@ class Movimiento
 
             $stmtLote = $this->conn->prepare($sqlLote);
 
-            $sqlActualizarProducto = "UPDATE productos
-                                      SET precio_compra = :precio_compra,
-                                          ubicacion = :ubicacion
-                                      WHERE id = :producto_id";
-
-            $stmtActualizarProducto = $this->conn->prepare($sqlActualizarProducto);
-
             foreach ($detalle as $item) {
                 $loteId = null;
 
@@ -896,13 +1087,20 @@ class Movimiento
                 ]);
 
                 if ($data['tipo_movimiento'] === 'ENTRADA') {
-                    $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+                    // Primero se calcula con la existencia que había antes de esta entrada.
+                    $this->actualizarCostosPorEntrada(
+                        $productoId,
+                        $cantidad,
+                        (float)$item['costo_unitario'],
+                        $ubicacion
+                    );
 
-                    $stmtActualizarProducto->execute([
-                        ':precio_compra' => $item['costo_unitario'],
-                        ':ubicacion' => $ubicacion,
-                        ':producto_id' => $productoId,
-                    ]);
+                    $this->aumentarExistencia(
+                        $productoId,
+                        $sucursal,
+                        $cantidad,
+                        $ubicacion
+                    );
                 }
             }
 
@@ -1860,6 +2058,17 @@ class Movimiento
                 ':id' => $movimientoId
             ]);
 
+            $productosCancelados = [];
+            foreach ($detalles as $detalle) {
+                $productosCancelados[(int)$detalle['producto_id']] = true;
+            }
+
+            foreach (array_keys($productosCancelados) as $productoIdCancelado) {
+                $this->sincronizarCostoUltimoDesdeHistorial(
+                    (int)$productoIdCancelado
+                );
+            }
+
             $this->conn->commit();
 
             return [
@@ -1904,7 +2113,7 @@ class Movimiento
 
             $sucursal = $this->obtenerSucursalPorAlmacenId((int)$movimiento['almacen_id']);
 
-            $sqlDetalle = "SELECT producto_id, lote_id, cantidad, ubicacion
+            $sqlDetalle = "SELECT producto_id, lote_id, cantidad, ubicacion, costo_unitario
                            FROM movimiento_detalle
                            WHERE movimiento_id = :movimiento_id";
 
@@ -1931,6 +2140,12 @@ class Movimiento
                 $loteId = (int)($detalle['lote_id'] ?? 0);
                 $cantidad = (int)$detalle['cantidad'];
                 $ubicacion = $this->limpiarUbicacion($detalle['ubicacion'] ?? '');
+
+                $this->revertirCostosDeEntrada(
+                    $productoId,
+                    $cantidad,
+                    (float)($detalle['costo_unitario'] ?? 0)
+                );
 
                 $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
                 $this->marcarUbicacionAgotadaSinEliminar($productoId, $sucursal, $ubicacion);
@@ -2227,19 +2442,31 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
         }
 
         // Obtener detalles originales para revertir inventario
-        $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion, lote_id
+        $sqlDetalleOriginal = "SELECT producto_id, cantidad, ubicacion, lote_id, costo_unitario
                                FROM movimiento_detalle
                                WHERE movimiento_id = :movimiento_id";
 
         $stmtDetalleOriginal = $this->conn->prepare($sqlDetalleOriginal);
         $stmtDetalleOriginal->execute([':movimiento_id' => $movimientoId]);
         $detallesOriginales = $stmtDetalleOriginal->fetchAll(PDO::FETCH_ASSOC);
+        $productosAfectados = [];
+
+        foreach ($detallesOriginales as $detalleOriginal) {
+            $productosAfectados[(int)$detalleOriginal['producto_id']] = true;
+        }
 
         // Revertir inventario (restar lo que se sumó en la entrada)
         foreach ($detallesOriginales as $item) {
             $productoId = (int)$item['producto_id'];
             $cantidad = (int)$item['cantidad'];
             $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+
+            // Revertir primero el valor de costo y después la existencia.
+            $this->revertirCostosDeEntrada(
+                $productoId,
+                $cantidad,
+                (float)($item['costo_unitario'] ?? 0)
+            );
 
             // Restar existencia (revertir entrada)
             $this->disminuirExistencia($productoId, $sucursal, $cantidad, $ubicacion);
@@ -2310,19 +2537,13 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
 
         $stmtLote = $this->conn->prepare($sqlLote);
 
-        $sqlActualizarProducto = "UPDATE productos
-                                  SET precio_compra = :precio_compra,
-                                      ubicacion = :ubicacion
-                                  WHERE id = :producto_id";
-
-        $stmtActualizarProducto = $this->conn->prepare($sqlActualizarProducto);
-
         foreach ($detalle as $item) {
             $loteId = null;
 
             $productoId = (int)$item['producto_id'];
             $cantidad = (int)$item['cantidad'];
             $ubicacion = $this->limpiarUbicacion($item['ubicacion'] ?? '');
+            $productosAfectados[$productoId] = true;
 
             if ($cantidad <= 0) {
                 throw new Exception('La cantidad debe ser mayor a 0.');
@@ -2353,14 +2574,26 @@ public function actualizarMovimiento(int $movimientoId, array $data, array $deta
                 ':ubicacion' => $ubicacion,
             ]);
 
-            // Sumar existencia (es una entrada)
-            $this->aumentarExistencia($productoId, $sucursal, $cantidad, $ubicacion);
+            // Calcular costo con la existencia ya revertida y luego sumar la nueva entrada.
+            $this->actualizarCostosPorEntrada(
+                $productoId,
+                $cantidad,
+                (float)$item['costo_unitario'],
+                $ubicacion
+            );
 
-            $stmtActualizarProducto->execute([
-                ':precio_compra' => $item['costo_unitario'],
-                ':ubicacion' => $ubicacion,
-                ':producto_id' => $productoId,
-            ]);
+            $this->aumentarExistencia(
+                $productoId,
+                $sucursal,
+                $cantidad,
+                $ubicacion
+            );
+        }
+
+        foreach (array_keys($productosAfectados) as $productoIdAfectado) {
+            $this->sincronizarCostoUltimoDesdeHistorial(
+                (int)$productoIdAfectado
+            );
         }
 
         $this->conn->commit();

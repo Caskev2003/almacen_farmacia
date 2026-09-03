@@ -20,7 +20,7 @@ $controller = new ReporteController();
 $columnasDisponibles = $controller->columnasDisponibles();
 $almacenes = $controller->obtenerAlmacenes();
 
-$columnasSeleccionadas = $_GET['columnas'] ?? [
+$columnasPredeterminadas = [
     'codigo',
     'descripcion',
     'sucursal',
@@ -28,6 +28,8 @@ $columnasSeleccionadas = $_GET['columnas'] ?? [
     'existencia',
     'estado_stock'
 ];
+
+$columnasSeleccionadas = $_GET['columnas'] ?? $columnasPredeterminadas;
 
 if (!is_array($columnasSeleccionadas)) {
     $columnasSeleccionadas = [];
@@ -211,6 +213,12 @@ $queryExport = http_build_query([
                                                 <span class="badge-stock <?= strtolower(str_replace(' ', '-', $fila[$col])) ?>">
                                                     <?= e($fila[$col]) ?>
                                                 </span>
+                                            <?php elseif ($col === 'costo_ultimo' && $isAdmin): ?>
+                                                $<?= number_format((float)($fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 2) ?>
+                                            <?php elseif ($col === 'costo_promedio' && $isAdmin): ?>
+                                                $<?= number_format((float)($fila['costo_promedio'] ?? $fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 4) ?>
+                                            <?php elseif ($col === 'valor_costo_promedio' && $isAdmin): ?>
+                                                $<?= number_format((float)($fila['valor_costo_promedio'] ?? 0), 2) ?>
                                             <?php else: ?>
                                                 <?= e((string)($fila[$col] ?? '')) ?>
                                             <?php endif; ?>
@@ -226,5 +234,6 @@ $queryExport = http_build_query([
     </div>
 
 </div>
+
 
 <?php include __DIR__ . '/../app/views/layouts/footer.php'; ?>

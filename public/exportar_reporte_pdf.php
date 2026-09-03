@@ -18,7 +18,7 @@ $controller = new ReporteController();
 
 $columnasDisponibles = $controller->columnasDisponibles();
 
-$columnasSeleccionadas = $_GET['columnas'] ?? [
+$columnasPredeterminadas = [
     'codigo',
     'descripcion',
     'sucursal',
@@ -26,6 +26,8 @@ $columnasSeleccionadas = $_GET['columnas'] ?? [
     'existencia',
     'estado_stock'
 ];
+
+$columnasSeleccionadas = $_GET['columnas'] ?? $columnasPredeterminadas;
 
 if (!is_array($columnasSeleccionadas)) {
     $columnasSeleccionadas = [];
@@ -45,6 +47,17 @@ $datos = $controller->obtenerDatosReporte(
     $isAdmin,
     $sucursalUsuario
 );
+
+$totalColumnasExportadas = 0;
+foreach ($columnasSeleccionadas as $col) {
+    if (!isset($columnasDisponibles[$col])) {
+        continue;
+    }
+
+    $totalColumnasExportadas++;
+}
+
+$claseDensidad = $totalColumnasExportadas >= 11 ? 'tabla-muy-densa' : ($totalColumnasExportadas >= 8 ? 'tabla-densa' : '');
 ?>
 
 <!DOCTYPE html>
@@ -94,6 +107,15 @@ $datos = $controller->obtenerDatosReporte(
         table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: auto;
+        }
+
+        table.tabla-densa {
+            font-size: 9px;
+        }
+
+        table.tabla-muy-densa {
+            font-size: 8px;
         }
 
         th {
@@ -107,6 +129,13 @@ $datos = $controller->obtenerDatosReporte(
         td {
             padding: 5px;
             border: 1px solid #555;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+
+        .money {
+            text-align: right;
+            white-space: nowrap;
         }
 
         .center {
@@ -132,7 +161,7 @@ $datos = $controller->obtenerDatosReporte(
         Total de registros: <?= count($datos) ?>
     </div>
 
-    <table>
+    <table class="<?= htmlspecialchars($claseDensidad, ENT_QUOTES, 'UTF-8') ?>">
         <thead>
             <tr>
                 <?php foreach ($columnasSeleccionadas as $col): ?>
@@ -146,7 +175,7 @@ $datos = $controller->obtenerDatosReporte(
         <tbody>
             <?php if (empty($datos)): ?>
                 <tr>
-                    <td colspan="<?= max(count($columnasSeleccionadas), 1) ?>" class="center">
+                    <td colspan="<?= max($totalColumnasExportadas, 1) ?>" class="center">
                         No se encontraron datos.
                     </td>
                 </tr>
@@ -155,7 +184,15 @@ $datos = $controller->obtenerDatosReporte(
                     <tr>
                         <?php foreach ($columnasSeleccionadas as $col): ?>
                             <?php if (isset($columnasDisponibles[$col])): ?>
-                                <td><?= htmlspecialchars((string)($fila[$col] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <?php if ($col === 'costo_ultimo' && $isAdmin): ?>
+                                    <td class="money">$<?= number_format((float)($fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 2) ?></td>
+                                <?php elseif ($col === 'costo_promedio' && $isAdmin): ?>
+                                    <td class="money">$<?= number_format((float)($fila['costo_promedio'] ?? $fila['costo_ultimo'] ?? $fila['precio_compra'] ?? 0), 4) ?></td>
+                                <?php elseif ($col === 'valor_costo_promedio' && $isAdmin): ?>
+                                    <td class="money">$<?= number_format((float)($fila['valor_costo_promedio'] ?? 0), 2) ?></td>
+                                <?php else: ?>
+                                    <td><?= htmlspecialchars((string)($fila[$col] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <?php endif; ?>
                             <?php endif; ?>
                         <?php endforeach; ?>
                     </tr>
